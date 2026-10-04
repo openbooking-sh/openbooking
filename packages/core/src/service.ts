@@ -53,6 +53,8 @@ export interface BookingEvent {
   replayed?: boolean;
   /** Who made the call (set when the request ran inside runAsActor). */
   actor?: Actor;
+  /** The booking as the operation left it (successful single-booking operations only). */
+  booking?: Booking;
 }
 
 export interface ListBookingsQuery {
@@ -447,7 +449,7 @@ export class BookingService {
         operation,
         ok: true,
         at: this.clock.now().toISOString(),
-        ...(booking ? { booking_id: booking.booking_id, status: booking.status } : hint),
+        ...(booking ? { booking_id: booking.booking_id, status: booking.status, booking } : hint),
         ...(meta.replayed ? { replayed: true } : {}),
       });
       return result;

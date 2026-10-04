@@ -244,3 +244,37 @@ describe('Studio routing', () => {
     expect((await ob.app.request('/studio/api/session')).status).toBe(401);
   });
 });
+
+describe('booking page', () => {
+  it('serves the booking page to browsers at / and JSON to everyone else', async () => {
+    const { app } = makeApp();
+    const html = await app.request('/', { headers: { accept: 'text/html,application/xhtml+xml' } });
+    expect(html.headers.get('content-type')).toContain('text/html');
+    const page = await html.text();
+    expect(page).toContain('Demo Bistro Oslo');
+    expect(page).toContain(`<link rel="canonical" href="${BASE}/book" />`);
+
+    const index = (await (
+      await app.request('/', { headers: { accept: 'application/json' } })
+    ).json()) as any;
+    expect(index.booking_page).toBe(`${BASE}/book`);
+    expect(index.protocols.mcp.status).toBe('supported');
+
+    const info = (await (await app.request('/book/api/info')).json()) as any;
+    expect(info.venue.name).toBe('Demo Bistro Oslo');
+    expect((await app.request('/book')).status).toBe(200);
+  });
+
+  it('can be turned off', async () => {
+    const ob = createOpenBookingApp({
+      provider: createDemoRestaurantProvider(),
+      baseUrl: BASE,
+      bookingPage: false,
+    });
+    cleanups.push(ob.close);
+    const res = await ob.app.request('/', { headers: { accept: 'text/html' } });
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(((await res.json()) as any).booking_page).toBeUndefined();
+    expect((await ob.app.request('/book')).status).toBe(404);
+  });
+});

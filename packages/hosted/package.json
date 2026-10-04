@@ -1,0 +1,47 @@
+{
+  "name": "@openbooking/hosted",
+  "version": "0.1.0",
+  "description": "Hosted multi-business OpenBooking: sign-up, Studio settings, one MCP app across all businesses.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/hono": "^2.0.1",
+    "@modelcontextprotocol/server": "^2.2.0",
+    "@openbooking/adapter-mcp": "workspace:^",
+    "@openbooking/booking-page": "workspace:^",
+    "@openbooking/core": "workspace:^",
+    "@openbooking/google-calendar": "workspace:^",
+    "@openbooking/notifications": "workspace:^",
+    "@openbooking/provider-memory": "workspace:^",
+    "@openbooking/server": "workspace:^",
+    "@openbooking/studio": "workspace:^",
+    "hono": "^4.13.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

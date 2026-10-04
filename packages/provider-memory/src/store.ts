@@ -10,6 +10,8 @@ export interface BookingRecord {
 }
 
 export interface BookingListQuery {
+  /** Only this venue's bookings (several businesses can share one store). */
+  venue_id?: string;
   from?: Date;
   to?: Date;
   limit?: number;
@@ -148,6 +150,7 @@ export class MemoryBookingStore implements BookingRecordStore {
     return [...this.#records.values()]
       .filter(
         (r) =>
+          (!query.venue_id || r.booking.venue_id === query.venue_id) &&
           (!query.from || r.start_ms >= query.from.getTime()) &&
           (!query.to || r.start_ms < query.to.getTime()),
       )

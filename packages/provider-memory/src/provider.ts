@@ -23,13 +23,34 @@ import {
   MemoryBookingStore,
   isBlocking,
   type BookingRecord,
+  type BookingListQuery,
   type BookingRecordStore,
 } from './store';
 
 export interface MemoryProviderOptions {
   /** Where bookings live. Defaults to an in-process Map; use a Postgres store in production. */
   store?: BookingRecordStore;
+  /**
+   * Busy time from outside OpenBooking (e.g. the staff member's Google Calendar). Busy resources
+   * are hidden from search and refused on hold. Throwing fails the call with a retryable error.
+   */
+  busy?: BusySource;
 }
+
+/** A resource that is unavailable for reasons the store doesn't know about. */
+export interface BusyInterval {
+  resource_id: string;
+  start_ms: number;
+  end_ms: number;
+}
+
+export type BusySource = (query: {
+  venue_id: string;
+  resource_ids: string[];
+  from_ms: number;
+  to_ms: number;
+  now: Date;
+}) => Promise<BusyInterval[]>;
 
 /** What a slot_id encodes. Opaque to agents; base64url JSON. */
 interface SlotKey {
@@ -50,9 +71,11 @@ export class MemoryBookingProvider implements BookingProvider {
   readonly info: { name: string; description?: string };
   readonly #venues: Map<string, VenueConfig>;
   readonly #store: BookingRecordStore;
+  readonly #busy: BusySource | undefined;
 
   constructor(config: MemoryProviderConfig, options: MemoryProviderOptions = {}) {
     this.#store = options.store ?? new MemoryBookingStore();
+    this.#busy = options.busy;
     this.info = {
       name: config.name,
       ...(config.description ? { description: config.description } : {}),
@@ -94,12 +117,13 @@ export class MemoryBookingProvider implements BookingProvider {
     if (!starts.length) return slots;
     // One read for the whole day; the per-slot checks below run against this snapshot.
     const longest = Math.max(...offerings.map((o) => o.duration_minutes), 0) + cfg.buffer_minutes;
-    const blocking = await this.#store.listBlocking(
-      cfg.venue.id,
-      starts[0]!.getTime(),
-      starts[starts.length - 1]!.getTime() + longest * 60_000,
-      ctx.now,
-    );
+    const fromMs = starts[0]!.getTime();
+    const toMs = starts[starts.length - 1]!.getTime() + longest * 60_000;
+    const [booked, busy] = await Promise.all([
+      this.#store.listBlocking(cfg.venue.id, fromMs, toMs, ctx.now),
+      this.#busyIn(cfg, fromMs, toMs, ctx.now),
+    ]);
+    const blocking: BusyInterval[] = [...booked, ...busy];
     for (const start of starts) {
       const local = time.localTime(start, cfg.venue.timezone);
       if (query.time_from && local < query.time_from) continue;
@@ -145,8 +169,10 @@ export class MemoryBookingProvider implements BookingProvider {
 
     const now = ctx.now.toISOString();
     const bookingId = `bk_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+    const busy = await this.#busyIn(cfg, start.getTime(), endOf(cfg, offering, start), ctx.now);
     // Best fit first; the store's atomic insert decides, so a lost race moves on to the next one.
     for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
+      if (!isFree(busy, resource.id, start, endOf(cfg, offering, start))) continue;
       const slot = this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id);
       const booking: Booking = {
         booking_id: bookingId,
@@ -264,10 +290,7 @@ export class MemoryBookingProvider implements BookingProvider {
   // Introspection (tests, benchmark)
   // ---------------------------------------------------------------------------
 
-  async listBookings(
-    query: { from?: Date; to?: Date; limit?: number },
-    ctx: ProviderContext,
-  ): Promise<Booking[]> {
+  async listBookings(query: BookingListQuery, ctx: ProviderContext): Promise<Booking[]> {
     return (await this.#store.list(query, ctx.now)).map((r) => r.booking);
   }
 
@@ -305,6 +328,24 @@ export class MemoryBookingProvider implements BookingProvider {
     const v = this.#venues.get(id);
     if (!v) throw new BookingError('not_found', `Unknown venue "${id}".`);
     return v;
+  }
+
+  async #busyIn(cfg: VenueConfig, fromMs: number, toMs: number, now: Date) {
+    if (!this.#busy) return [];
+    try {
+      return await this.#busy({
+        venue_id: cfg.venue.id,
+        resource_ids: cfg.resources.map((r) => r.id),
+        from_ms: fromMs,
+        to_ms: toMs,
+        now,
+      });
+    } catch (e) {
+      // Fail closed: without the outside calendar we can't promise the time is free.
+      throw new BookingError('provider_error', "Couldn't check the business calendar right now.", {
+        cause: e,
+      });
+    }
   }
 
   async #update(id: string, ctx: ProviderContext, fn: (b: Booking) => Booking): Promise<Booking> {
@@ -356,6 +397,7 @@ export class MemoryBookingProvider implements BookingProvider {
       .filter(
         (r) =>
           o.resource_kinds.includes(r.kind) &&
+          (!o.resource_ids || o.resource_ids.includes(r.id)) &&
           r.capacity.min <= party &&
           party <= r.capacity.max &&
           tags.every((t) => r.tags.includes(t)),
@@ -403,12 +445,7 @@ function endOf(cfg: VenueConfig, o: OfferingConfig, start: Date): number {
   return start.getTime() + (o.duration_minutes + cfg.buffer_minutes) * 60_000;
 }
 
-function isFree(
-  blocking: BookingRecord[],
-  resourceId: string,
-  start: Date,
-  endMs: number,
-): boolean {
+function isFree(blocking: BusyInterval[], resourceId: string, start: Date, endMs: number): boolean {
   const startMs = start.getTime();
   return !blocking.some(
     (r) => r.resource_id === resourceId && r.start_ms < endMs && startMs < r.end_ms,

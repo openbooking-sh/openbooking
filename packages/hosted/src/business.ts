@@ -1,0 +1,123 @@
+import type { GoogleTokens } from '@openbooking/google-calendar';
+import type { BusinessSettings } from '@openbooking/studio';
+
+/** One business on hosted OpenBooking. */
+export interface Business {
+  /**
+   * URL name and agent-facing `business_id`, e.g. `studio-nord`. Chosen at sign-up and never
+   * changed: it is in every shared link. Also the venue id of its bookings.
+   */
+  id: string;
+  owner: { email: string; password_hash: string };
+  settings: BusinessSettings;
+  google?: {
+    tokens: GoogleTokens;
+    /** Set when Google stopped accepting the connection; cleared on reconnect. */
+    error?: string;
+  };
+  created_at: string;
+  updated_at: string;
+  /** Bumped on every settings change; tenants rebuild their catalog when it moves. */
+  version: number;
+}
+
+export class BusinessConflictError extends Error {
+  constructor(readonly field: 'id' | 'email') {
+    super(field === 'id' ? 'That business name is taken.' : 'That email already has an account.');
+    this.name = 'BusinessConflictError';
+  }
+}
+
+/**
+ * Where businesses live. Memory by default; a Postgres implementation is one table with the
+ * record as JSON plus unique indexes on `id` and lower(`owner.email`).
+ */
+export interface BusinessStore {
+  /** Throws {@link BusinessConflictError} if the id or owner email is taken. */
+  create(business: Business): Promise<void>;
+  get(id: string): Promise<Business | undefined>;
+  /** Case-insensitive. */
+  getByEmail(email: string): Promise<Business | undefined>;
+  /** Atomic read-modify-write. Resolves undefined when the business doesn't exist. */
+  update(id: string, fn: (business: Business) => Business): Promise<Business | undefined>;
+  list(): Promise<Business[]>;
+}
+
+export class MemoryBusinessStore implements BusinessStore {
+  readonly #byId = new Map<string, Business>();
+
+  async create(business: Business) {
+    if (this.#byId.has(business.id)) throw new BusinessConflictError('id');
+    if (await this.getByEmail(business.owner.email)) throw new BusinessConflictError('email');
+    this.#byId.set(business.id, structuredClone(business));
+  }
+
+  async get(id: string) {
+    const b = this.#byId.get(id);
+    return b ? structuredClone(b) : undefined;
+  }
+
+  async getByEmail(email: string) {
+    const e = email.toLowerCase();
+    for (const b of this.#byId.values()) {
+      if (b.owner.email.toLowerCase() === e) return structuredClone(b);
+    }
+    return undefined;
+  }
+
+  async update(id: string, fn: (business: Business) => Business) {
+    const b = this.#byId.get(id);
+    if (!b) return undefined;
+    const next = fn(structuredClone(b));
+    this.#byId.set(id, structuredClone(next));
+    return structuredClone(next);
+  }
+
+  async list() {
+    return [...this.#byId.values()].map((b) => structuredClone(b));
+  }
+}
+
+/** `Studio Nord!` → `studio-nord`. */
+export function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/æ/g, 'ae')
+      .replace(/ø/g, 'o')
+      .replace(/å/g, 'a')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+      .replace(/-+$/, '') || 'business'
+  );
+}
+
+/** Ids that would collide with hosted routes or read as official. */
+export const RESERVED_IDS = new Set([
+  'api',
+  'admin',
+  'app',
+  'b',
+  'book',
+  'help',
+  'login',
+  'mcp',
+  'oauth',
+  'openbooking',
+  'signup',
+  'studio',
+  'support',
+  'www',
+]);
+
+/** Can customers and agents book this business yet? */
+export function isBookable(b: Business): boolean {
+  const s = b.settings;
+  return (
+    s.services.length > 0 &&
+    s.staff.length > 0 &&
+    Object.values(s.opening_hours).some((periods) => periods.length > 0)
+  );
+}

@@ -5,6 +5,11 @@ import {
   type AgentProvider,
 } from '@openbooking/adapter-a2a';
 import { createMcpHttpHandler } from '@openbooking/adapter-mcp';
+import {
+  createBookingPage,
+  type BookingPage,
+  type BookingPageOptions,
+} from '@openbooking/booking-page';
 import { buildUcpProfile, createUcpRouter } from '@openbooking/adapter-ucp';
 import {
   BookingService,
@@ -46,19 +51,34 @@ export interface OpenBookingServerOptions {
    * Pass `false` to disable.
    */
   studio?: { token?: string; path?: string; activity?: ActivityLog } | false;
+  /**
+   * Public booking page at `path` (default /book). Browsers asking for `/` (Accept: text/html)
+   * get the page too, so a single-business deployment's root is its booking page. Pass `false`
+   * to disable.
+   */
+  bookingPage?:
+    | {
+        path?: string;
+        /** Canonical public URL of the page when it isn't `baseUrl + path` (e.g. behind a rewrite). */
+        pageUrl?: string;
+        profile?: BookingPageOptions['profile'];
+      }
+    | false;
 }
 
 export interface OpenBookingApp {
   app: Hono;
   service: BookingService;
   studio: Studio | undefined;
+  bookingPage: BookingPage | undefined;
   close(): Promise<void>;
 }
 
 /**
  * One HTTP app exposing a BookingProvider over every supported agent protocol:
  *
- *   GET  /                              index (links to everything below)
+ *   GET  /                              index (links to everything below); the booking page for browsers
+ *   *    /book/...                      public booking page, its JSON API and manage links
  *   ALL  /mcp                           MCP Streamable HTTP (5 booking tools)
  *   *    /ucp/...                       UCP lodging booking-session REST (+ availability extension)
  *   GET  /.well-known/ucp               UCP business profile
@@ -88,10 +108,27 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  app.get('/', (c) =>
-    c.json({
+  const pagePath = options.bookingPage === false ? false : (options.bookingPage?.path ?? '/book');
+  const page = pagePath
+    ? createBookingPage({
+        service,
+        pageUrl: (options.bookingPage && options.bookingPage.pageUrl) || `${baseUrl}${pagePath}`,
+        apiBase: `${baseUrl}${pagePath}`,
+        ...(mcpPath ? { mcpUrl: `${baseUrl}${mcpPath}` } : {}),
+        ...(options.bookingPage && options.bookingPage.profile
+          ? { profile: options.bookingPage.profile }
+          : {}),
+      })
+    : undefined;
+
+  app.get('/', async (c) => {
+    if (page && (c.req.header('accept') ?? '').includes('text/html')) {
+      return c.html(await page.html(c.req.query()));
+    }
+    return c.json({
       name,
       description,
+      ...(page ? { booking_page: page.pageUrl } : {}),
       protocols: {
         ...(mcpPath ? { mcp: { status: 'supported', endpoint: `${baseUrl}${mcpPath}` } } : {}),
         ...(ucpPath
@@ -105,8 +142,10 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
           : {}),
         ...(a2aPath ? { a2a: { status: 'stub', agent_card: `${baseUrl}${AGENT_CARD_PATH}` } } : {}),
       },
-    }),
-  );
+    });
+  });
+
+  if (page && pagePath) app.route(pagePath, page.app);
 
   if (mcpPath) {
     mcpHandler = createMcpHttpHandler({ service, name: 'openbooking', version });
@@ -177,6 +216,7 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
     app,
     service,
     studio,
+    bookingPage: page,
     close: async () => {
       await studio?.idle();
       studio?.close();

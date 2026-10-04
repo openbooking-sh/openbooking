@@ -42,7 +42,8 @@
     "@openbooking/adapter-ucp": "workspace:^",
     "@openbooking/core": "workspace:^",
     "hono": "^4.13.12",
-    "@openbooking/studio": "workspace:^"
+    "@openbooking/studio": "workspace:^",
+    "@openbooking/booking-page": "workspace:^"
   },
   "publishConfig": {
     "access": "public"

@@ -15,7 +15,7 @@ import {
   type CreateMcpHandlerOptions,
   type McpHttpHandler,
 } from '@modelcontextprotocol/server';
-import type * as z from 'zod';
+import * as z from 'zod';
 import {
   BookingView,
   CancelBookingInput,
@@ -43,7 +43,7 @@ export const TOOL_NAMES = [
   'cancel_booking',
 ] as const;
 
-const BASE_INSTRUCTIONS = `Book tables/appointments with this booking system.
+export const BASE_INSTRUCTIONS = `Book tables/appointments with this booking system.
 Flow: search_availability → hold_slot → (show the user the details and get explicit approval) → confirm_booking.
 Rules:
 - A hold reserves the slot only until expires_at. Confirm before then, or search again.
@@ -122,27 +122,65 @@ export function createMcpServer(options: McpAdapterOptions): McpServer {
         : BASE_INSTRUCTIONS,
     },
   );
+  registerBookingTools(server, { resolve: () => service });
+  return server;
+}
 
-  const venueCache = new Map<string, Venue>();
-  const venueOf = async (id: string) => {
-    if (!venueCache.has(id)) for (const v of await service.listVenues()) venueCache.set(v.id, v);
-    const v = venueCache.get(id);
+export interface BookingToolsOptions {
+  /** The service a call runs against. One business: always the same one. */
+  resolve: (args: { business_id?: string }) => BookingService | Promise<BookingService>;
+  /**
+   * Add a required `business_id` to every tool, for one MCP app serving many businesses. The
+   * resolver turns it into that business's service (and throws `not_found` for unknown ids).
+   */
+  scoped?: boolean;
+}
+
+const BUSINESS_ID = z
+  .string()
+  .min(1)
+  .describe('business_id from find_business. Required on every booking call.');
+
+/**
+ * Register the five booking tools on `server`. `createMcpServer` does this for one business; a
+ * directory server registers them `scoped` next to its own discovery tools.
+ */
+export function registerBookingTools(server: McpServer, options: BookingToolsOptions): void {
+  // Typed as optional so handlers compile for both cases; validation enforces it when scoped.
+  const scope = <S extends z.ZodObject>(schema: S) =>
+    (options.scoped
+      ? schema.extend({ business_id: BUSINESS_ID })
+      : schema) as unknown as z.ZodObject<S['shape'] & { business_id: z.ZodOptional<z.ZodString> }>;
+  const forBusiness = options.scoped ? ' Pass the business_id from find_business.' : '';
+  const resolve = (businessId: unknown) =>
+    options.resolve(typeof businessId === 'string' ? { business_id: businessId } : {});
+
+  const venueCache = new WeakMap<BookingService, Map<string, Venue>>();
+  const venueOf = async (service: BookingService, id: string) => {
+    let cache = venueCache.get(service);
+    if (!cache) venueCache.set(service, (cache = new Map()));
+    if (!cache.has(id)) for (const v of await service.listVenues()) cache.set(v.id, v);
+    const v = cache.get(id);
     if (!v) throw new BookingError('not_found', `Unknown venue ${id}`);
     return v;
   };
-  const view = async (b: Booking) => bookingView(b, await venueOf(b.venue_id), service.clock.now());
+  const view = async (service: BookingService, b: Booking) =>
+    bookingView(b, await venueOf(service, b.venue_id), service.clock.now());
 
+  const search = scope(SearchAvailabilityInput);
   server.registerTool(
     'search_availability',
     {
       title: 'Search availability',
       description:
-        'Find bookable time slots for a date and party size. Returns slot_ids with price, deposit and cancellation policy. Slots are NOT reserved until you call hold_slot. Narrow with time_from/time_to (venue local time).',
-      inputSchema: advertised(SearchAvailabilityInput),
+        'Find bookable time slots for a date and party size. Returns slot_ids with price, deposit and cancellation policy. Slots are NOT reserved until you call hold_slot. Narrow with time_from/time_to (venue local time).' +
+        forBusiness,
+      inputSchema: advertised(search),
       outputSchema: SearchAvailabilityOutput,
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
-    tool(SearchAvailabilityInput, async (a) => {
+    tool(search, async (a) => {
+      const service = await resolve(a.business_id);
       const { venue, slots } = await service.searchAvailability({
         date: a.date,
         party_size: { total: a.party_size },
@@ -165,13 +203,15 @@ export function createMcpServer(options: McpAdapterOptions): McpServer {
     }),
   );
 
+  const hold = scope(HoldSlotInput);
   server.registerTool(
     'hold_slot',
     {
       title: 'Hold a slot',
       description:
-        'Temporarily reserve a slot so nobody else can take it. The hold expires at expires_at (a few minutes). Returns the booking_id, the exact cancellation policy and deposit terms to show the user. This does NOT confirm the booking.',
-      inputSchema: advertised(HoldSlotInput),
+        'Temporarily reserve a slot so nobody else can take it. The hold expires at expires_at (a few minutes). Returns the booking_id, the exact cancellation policy and deposit terms to show the user. This does NOT confirm the booking.' +
+        forBusiness,
+      inputSchema: advertised(hold),
       outputSchema: BookingView,
       annotations: {
         readOnlyHint: false,
@@ -180,16 +220,21 @@ export function createMcpServer(options: McpAdapterOptions): McpServer {
         openWorldHint: false,
       },
     },
-    tool(HoldSlotInput, async (a) => view(await service.hold(a))),
+    tool(hold, async ({ business_id, ...a }) => {
+      const service = await resolve(business_id);
+      return view(service, await service.hold(a));
+    }),
   );
 
+  const confirm = scope(ConfirmBookingInput);
   server.registerTool(
     'confirm_booking',
     {
       title: 'Confirm booking',
       description:
-        'Confirm a held booking. Only call after the user explicitly approved the details (time, party size, price, deposit, cancellation policy); pass user_confirmed=true. Requires customer details (here or on hold_slot) and a payment_token if a deposit is due at confirmation. Must be called before the hold expires.',
-      inputSchema: advertised(ConfirmBookingInput),
+        'Confirm a held booking. Only call after the user explicitly approved the details (time, party size, price, deposit, cancellation policy); pass user_confirmed=true. Requires customer details (here or on hold_slot) and a payment_token if a deposit is due at confirmation. Must be called before the hold expires.' +
+        forBusiness,
+      inputSchema: advertised(confirm),
       outputSchema: BookingView,
       annotations: {
         readOnlyHint: false,
@@ -198,28 +243,38 @@ export function createMcpServer(options: McpAdapterOptions): McpServer {
         openWorldHint: false,
       },
     },
-    tool(ConfirmBookingInput, async (a) => view(await service.confirm(a))),
+    tool(confirm, async ({ business_id, ...a }) => {
+      const service = await resolve(business_id);
+      return view(service, await service.confirm(a));
+    }),
   );
 
+  const get = scope(GetBookingInput);
   server.registerTool(
     'get_booking',
     {
       title: 'Get booking',
-      description: 'Look up the current status and details of a booking or hold by booking_id.',
-      inputSchema: advertised(GetBookingInput),
+      description:
+        'Look up the current status and details of a booking or hold by booking_id.' + forBusiness,
+      inputSchema: advertised(get),
       outputSchema: BookingView,
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
-    tool(GetBookingInput, async (a) => view(await service.getBooking(a.booking_id))),
+    tool(get, async ({ business_id, ...a }) => {
+      const service = await resolve(business_id);
+      return view(service, await service.getBooking(a.booking_id));
+    }),
   );
 
+  const cancel = scope(CancelBookingInput);
   server.registerTool(
     'cancel_booking',
     {
       title: 'Cancel booking',
       description:
-        'Release a hold, or cancel a confirmed booking. Cancelling a confirmed booking may cost a fee per the cancellation policy; the first call without user_confirmed returns the fee so you can ask the user, then call again with user_confirmed=true.',
-      inputSchema: advertised(CancelBookingInput),
+        'Release a hold, or cancel a confirmed booking. Cancelling a confirmed booking may cost a fee per the cancellation policy; the first call without user_confirmed returns the fee so you can ask the user, then call again with user_confirmed=true.' +
+        forBusiness,
+      inputSchema: advertised(cancel),
       outputSchema: BookingView,
       annotations: {
         readOnlyHint: false,
@@ -228,10 +283,11 @@ export function createMcpServer(options: McpAdapterOptions): McpServer {
         openWorldHint: false,
       },
     },
-    tool(CancelBookingInput, async (a) => view((await service.cancel(a)).booking)),
+    tool(cancel, async ({ business_id, ...a }) => {
+      const service = await resolve(business_id);
+      return view(service, (await service.cancel(a)).booking);
+    }),
   );
-
-  return server;
 }
 
 /**

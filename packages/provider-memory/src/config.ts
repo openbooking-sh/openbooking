@@ -27,6 +27,8 @@ export interface DepositRule {
 export interface OfferingConfig extends Offering {
   /** Resource kinds this offering can use, e.g. ["table"]. */
   resource_kinds: string[];
+  /** Only these resources may take this offering (e.g. the staff who do colour). Default: any. */
+  resource_ids?: string[];
   /** Restrict to these weekdays (0 = Sunday). Defaults to all opening days. */
   weekdays?: number[];
   /** Restrict start times to this local window. */

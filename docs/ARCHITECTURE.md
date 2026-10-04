@@ -34,6 +34,10 @@
 | `@openbooking/adapter-a2a`     | Agent Card builder plus a stub endpoint                                                                             | core                                                                    |
 | `@openbooking/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
 | `examples/demo`                | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
+| `@openbooking/booking-page`    | Public booking page and its JSON API, manage links, JSON-LD, WebMCP                                                 | core, `hono`                                                            |
+| `@openbooking/notifications`   | Booking emails with .ics invites (`Mailer`: Resend, console, memory)                                                | core                                                                    |
+| `@openbooking/google-calendar` | Google OAuth, busy-time source, bookings → events                                                                   | core, provider-memory                                                   |
+| `@openbooking/hosted`          | Many businesses: accounts, settings → catalog, per-business runtime, the OpenBooking MCP app (`find_business`)      | all of the above                                                        |
 | `bench`                        | Agent-success benchmark                                                                                             | server, provider-memory, MCP client                                     |
 
 ## Who owns what
