@@ -1,4 +1,10 @@
-export { MemoryBookingProvider, encodeSlotId, type MemoryProviderOptions } from './provider';
+export {
+  MemoryBookingProvider,
+  encodeSlotId,
+  type BusyInterval,
+  type BusySource,
+  type MemoryProviderOptions,
+} from './provider';
 export {
   MemoryBookingStore,
   applyExpiry,
