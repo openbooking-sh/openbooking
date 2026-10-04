@@ -3,7 +3,7 @@
  * the OpenBooking app (find_business) with a real MCP client, emails and Google Calendar.
  */
 import { randomUUID } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { ManualClock } from '@openbooking/core';
 import { MemoryMailer } from '@openbooking/notifications';
@@ -69,7 +69,15 @@ function setup() {
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     return r.json as { token: string; business_id: string; booking_page: string };
   };
-  return { hosted, clock, mailer, google, req, signup };
+  /** Click the link in the welcome email, so the business can be listed in the OpenBooking app. */
+  const confirmEmail = async (email: string) => {
+    await vi.waitFor(() => expect(mailer.sent.some((m) => m.to === email)).toBe(true));
+    const mail = mailer.sent.find((m) => m.to === email && m.subject.startsWith('Confirm'))!;
+    const url = new URL(/https?:\/\/\S+/.exec(mail.text)![0]);
+    const r = await req(url.pathname + url.search);
+    expect(r.headers.get('location')).toContain('verified=yes');
+  };
+  return { hosted, clock, mailer, google, req, signup, confirmEmail };
 }
 
 async function mcp(app: { fetch(r: Request): Response | Promise<Response> }, path: string) {
@@ -191,14 +199,17 @@ describe('Studio settings', () => {
 
 describe('the OpenBooking app (find_business)', () => {
   it('finds a business and books it end to end, with emails and Studio attribution', async () => {
-    const { hosted, req, signup, mailer } = setup();
-    const salon = await signup();
+    const { hosted, req, signup, mailer, confirmEmail } = setup();
+    const salon = await signup({ email: 'maria@example.com' });
     await signup({
       business_name: 'Bart Barbers',
       category: 'barber',
       city: 'Bergen',
       your_name: 'Bart',
+      email: 'bart@example.com',
     });
+    await confirmEmail('maria@example.com');
+    await confirmEmail('bart@example.com');
     const { client, call } = await mcp(hosted.app, '/mcp');
 
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
@@ -379,5 +390,87 @@ describe('Google Calendar', () => {
     const off = (await req('/studio/api/settings', { token })).json;
     expect(off.integrations.google).toMatchObject({ connected: false });
     expect(off.integrations.google.error).toBeUndefined();
+  });
+});
+
+describe('owner accounts', () => {
+  const linkIn = (text: string) => /https?:\/\/\S+/.exec(text)![0];
+
+  it('resets a forgotten password by email and logs out old sessions', async () => {
+    const { req, signup, mailer } = setup();
+    const { token: oldSession } = await signup({ email: 'maria@example.com' });
+
+    const unknown = await req('/api/password/forgot', { body: { email: 'nobody@example.com' } });
+    const known = await req('/api/password/forgot', { body: { email: 'Maria@Example.com' } });
+    // Same answer either way: the form doesn't reveal who has an account.
+    expect(known.json.message).toBe(unknown.json.message);
+    const resets = mailer.sent.filter((m) => m.subject.startsWith('Reset'));
+    expect(resets.map((m) => m.to)).toEqual(['maria@example.com']);
+
+    const token = decodeURIComponent(new URL(linkIn(resets[0]!.text)).hash.replace('#token=', ''));
+    const done = await req('/api/password/reset', { body: { token, password: 'new password 1' } });
+    expect(done.status, JSON.stringify(done.json)).toBe(200);
+
+    expect((await req('/studio/api/settings', { token: oldSession })).status).toBe(401);
+    const settings = await req('/studio/api/settings', { token: done.json.token });
+    expect(settings.json.account).toMatchObject({ email_verified: true });
+    const again = await req('/api/password/reset', { body: { token, password: 'other password' } });
+    expect(again.json.error.message).toContain('expired or was already used');
+
+    const login = (password: string) =>
+      req('/api/login', { body: { email: 'maria@example.com', password } });
+    expect((await login('correct horse')).status).toBe(401);
+    expect((await login('new password 1')).status).toBe(200);
+  });
+
+  it('rate-limits password guessing', async () => {
+    const { req, signup } = setup();
+    await signup({ email: 'maria@example.com' });
+    const login = (password: string) =>
+      req('/api/login', { body: { email: 'maria@example.com', password } });
+    for (let i = 0; i < 10; i++) expect((await login(`guess-${i}`)).status).toBe(401);
+    const blocked = await login('correct horse');
+    expect(blocked.status).toBe(429);
+    expect(blocked.json.error.code).toBe('rate_limited');
+  });
+
+  it('lists a business in the OpenBooking app only after the owner confirms their email', async () => {
+    const { hosted, req, signup, mailer, confirmEmail } = setup();
+    const { token } = await signup({ email: 'maria@example.com' });
+    const { call } = await mcp(hosted.app, '/mcp');
+    const listed = async () =>
+      (await call('find_business', { query: 'hair' })).data.businesses.map(
+        (b: any) => b.business_id,
+      );
+
+    expect(await listed()).toEqual([]);
+    const view = await req('/studio/api/settings', { token });
+    expect(view.json.account).toMatchObject({ email_verified: false });
+
+    const resend = await req('/studio/api/account/verify-email', { body: {}, token });
+    expect(resend.json).toMatchObject({ ok: true, sent: true });
+    expect(mailer.sent.filter((m) => m.subject.startsWith('Confirm'))).toHaveLength(2);
+
+    await confirmEmail('maria@example.com');
+    expect(await listed()).toEqual(['studio-nord']);
+
+    const forged = await req('/api/verify-email?token=not-a-token');
+    expect(forged.headers.get('location')).toContain('verified=expired');
+  });
+});
+
+describe('website snippet', () => {
+  it('gives the owner a one-line snippet that serves embed.js for their business', async () => {
+    const { req, signup } = setup();
+    const { token } = await signup();
+    const { json } = await req('/studio/api/settings', { token });
+    expect(json.install).toEqual({
+      booking_page: `${BASE}/b/studio-nord`,
+      snippet: `<script src="${BASE}/b/studio-nord/embed.js" async></script>`,
+    });
+    const script = await req('/b/studio-nord/embed.js');
+    expect(script.status).toBe(200);
+    expect(script.headers.get('content-type')).toContain('javascript');
+    expect(script.text).toContain(`${BASE}/b/studio-nord/book/api`);
   });
 });

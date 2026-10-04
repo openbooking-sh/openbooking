@@ -63,6 +63,8 @@ export interface TenantDeps {
   google?: GoogleCredentials & { fetch?: typeof fetch };
   calendarLinks: CalendarLinkStore;
   allowedHosts: string[];
+  /** Owners must confirm their email before the business is listed in the OpenBooking app. */
+  requireVerifiedEmail?: boolean;
   onEvent?: (businessId: string, event: BookingEvent) => void;
 }
 
@@ -189,7 +191,19 @@ export class Tenant {
           disconnect_path: '/integrations/google/disconnect',
         },
       },
-      account: { email: b.owner.email },
+      install: {
+        booking_page: this.pageUrl,
+        snippet: `<script src="${this.pageUrl}/embed.js" async></script>`,
+      },
+      account: {
+        email: b.owner.email,
+        ...(this.#deps.requireVerifiedEmail
+          ? {
+              email_verified: !!b.owner.email_verified_at,
+              resend_verification_path: '/account/verify-email',
+            }
+          : {}),
+      },
     };
   }
 

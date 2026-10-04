@@ -130,6 +130,11 @@ export const STUDIO_HTML = `<!doctype html>
   .err { color: var(--red); font-size: 13px; min-height: 18px; margin-bottom: 8px; }
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 40; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
+  .snip { font: 12.5px/1.5 var(--mono, ui-monospace, monospace); background: var(--bg-2, rgba(11,16,32,.04)); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; white-space: pre-wrap; word-break: break-all; }
+  .how { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; }
+  .how li { margin: 3px 0; }
+  .inst h3 { font-size: 14px; font-weight: 600; margin: 18px 0 2px; }
+  .inst h3:first-of-type { margin-top: 6px; }
   .login { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
   .login .card { width: min(400px, 100%); padding: 28px; }
   .login input { width: 100%; height: 42px; border: 1px solid var(--line-2); border-radius: 10px; padding: 0 12px; margin: 16px 0 12px; }
@@ -181,6 +186,7 @@ export const STUDIO_HTML = `<!doctype html>
     <input id="token" type="password" placeholder="Studio token" autocomplete="current-password" />
     <div class="err" id="login-err"></div>
     <button class="btn btn-primary" id="login-btn" style="width:100%;justify-content:center">Open Studio</button>
+    <div class="alt hidden" id="login-forgot"><a id="forgot-link" href="#">Forgot your password?</a></div>
     <div class="alt hidden" id="login-alt">New here? <a id="signup-link" href="#">Create your free account</a></div>
   </div>
 </div>
@@ -317,6 +323,7 @@ export const STUDIO_HTML = `<!doctype html>
       $('login-btn').textContent = 'Log in';
       $('login-msg').textContent = 'Log in to manage your bookings.';
       if (login.signup) { $('signup-link').href = login.signup; $('login-alt').classList.remove('hidden'); }
+      if (err.reset_url) { $('forgot-link').href = err.reset_url; $('login-forgot').classList.remove('hidden'); }
     } else if (err.message) {
       $('login-msg').textContent = err.message;
     }
@@ -614,6 +621,8 @@ export const STUDIO_HTML = `<!doctype html>
     return api('/settings').then(function (d) {
       SV = d; draft = JSON.parse(JSON.stringify(d.settings)); renderSettings();
       if (/[?&]google=connected/.test(location.search)) toast('Google Calendar connected');
+      if (/[?&]verified=yes/.test(location.search)) toast('Email confirmed');
+      if (/[?&]verified=expired/.test(location.search)) toast('That link expired. Send a new one from Settings.');
     });
   }
   function slug(s) { return String(s).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item'; }
@@ -633,12 +642,24 @@ export const STUDIO_HTML = `<!doctype html>
       ['Add your services and prices', s.services.length > 0]
     ];
     if (g && g.available) steps.push(['Connect Google Calendar', g.connected]);
+    var unverified = SV.account && SV.account.email_verified === false;
+    if (SV.account && SV.account.email_verified !== undefined) steps.unshift(['Confirm your email', !unverified]);
     var h = '';
-    h += '<div class="card"><h2>Get bookable</h2><div class="steps">' + steps.map(function (x) { return '<div class="step' + (x[1] ? ' done' : '') + '"><i>' + (x[1] ? '&#10003;' : '') + '</i><span>' + esc(x[0]) + '</span></div>'; }).join('') + '</div></div>';
+    h += '<div class="card"><h2>Get bookable</h2><div class="steps">' + steps.map(function (x) { return '<div class="step' + (x[1] ? ' done' : '') + '"><i>' + (x[1] ? '&#10003;' : '') + '</i><span>' + esc(x[0]) + '</span></div>'; }).join('') + '</div>' +
+      (unverified ? '<p class="hint" style="margin-top:12px">We emailed a link to <b>' + esc(SV.account.email) + '</b>. Confirm it to be listed in ChatGPT and Claude. <a href="#" id="resend-verify">Send it again</a></p>' : '') + '</div>';
     if (SV.links && SV.links.length) {
       h += '<div class="card"><h2>Share your booking links</h2><p class="hint">Post these on Instagram, Google and your website so customers can book you through ChatGPT, Claude and Gemini.</p>' + SV.links.map(function (l, i) {
         return '<div class="link-row"><div class="l"><b>' + esc(l.label) + '</b>' + (l.hint ? ' <span class="muted">· ' + esc(l.hint) + '</span>' : '') + '<div class="u">' + esc(l.url) + '</div></div><button class="btn btn-sm" data-copy="' + i + '">Copy</button><a class="btn btn-sm" href="' + esc(l.url) + '" target="_blank" rel="noopener">Open</a></div>';
       }).join('') + '</div>';
+    }
+    var I = SV.install;
+    if (I) {
+      h += '<div class="card inst"><h2>Get found on Google and your website</h2><p class="hint">Three places, a few minutes each. Customers can then book you from Google, your own site and any AI assistant.</p>' +
+        '<h3>1. Google (Search and Maps)</h3><ol class="how"><li>Open <a href="https://business.google.com/" target="_blank" rel="noopener">Google Business Profile</a> and choose <b>Bookings</b> (or <b>Edit profile</b>, then <b>Booking links</b>).</li><li>Paste your booking page link: <button class="btn btn-sm" data-copy-text="' + esc(I.booking_page) + '">Copy link</button></li><li>A <b>Book</b> button shows up on Google within a day or two.</li></ol>' +
+        '<h3>2. Your website</h3><p class="hint">Paste this one line into your site. It adds a Book button, lets AI browsers book you right on your site, and tells search engines what you offer.</p>' +
+        '<div class="snip">' + esc(I.snippet) + '</div><button class="btn btn-sm" data-copy-text="' + esc(I.snippet) + '">Copy code</button>' +
+        '<ol class="how"><li><b>Wix:</b> Settings, Custom code, Add custom code, place it in Body - end, all pages.</li><li><b>Squarespace:</b> Settings, Advanced, Code injection, Footer.</li><li><b>WordPress:</b> install the free WPCode plugin, then Code snippets, Header &amp; Footer, Footer.</li><li><b>Webflow:</b> Site settings, Custom code, Footer code.</li><li><b>Shopify:</b> Online Store, Themes, Edit code, theme.liquid, just before &lt;/body&gt;.</li><li><b>No website?</b> Skip this; your booking page is your website.</li></ol>' +
+        '<h3>3. Instagram and Facebook</h3><ol class="how"><li>Instagram: Edit profile, Links, add your booking page link.</li><li>Facebook: Edit page, Add action button, Book now, paste the same link.</li></ol></div>';
     }
     h += '<div class="card"><h2>Business</h2><p class="hint">Shown to customers and AI assistants.</p>' +
       '<div class="two-f">' + field('Name', 's-name', p.name) +
@@ -693,11 +714,15 @@ export const STUDIO_HTML = `<!doctype html>
     $('settings').querySelectorAll('[data-copy]').forEach(function (b) {
       b.onclick = function () { var u = SV.links[Number(b.getAttribute('data-copy'))].url; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { toast('Copied'); }, function () { prompt('Copy this link', u); }); };
     });
+    document.querySelectorAll('[data-copy-text]').forEach(function (b) {
+      b.onclick = function () { var u = b.getAttribute('data-copy-text'); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { toast('Copied'); }, function () { prompt('Copy this', u); }); };
+    });
     $('add-staff').onclick = function () { if (collect()) { draft.staff.push({ id: '', name: '' }); renderSettings(); } };
     $('add-svc').onclick = function () { if (collect()) { draft.services.push({ id: '', name: '', duration_minutes: 30, price: null, staff_ids: [] }); renderSettings(); } };
     $('settings').querySelectorAll('[data-rm-staff]').forEach(function (b) { b.onclick = function () { if (collect()) { var gone = draft.staff.splice(Number(b.getAttribute('data-rm-staff')), 1)[0]; draft.services.forEach(function (v) { v.staff_ids = v.staff_ids.filter(function (x) { return x !== gone.id; }); }); renderSettings(); } }; });
     $('settings').querySelectorAll('[data-rm-svc]').forEach(function (b) { b.onclick = function () { if (collect()) { draft.services.splice(Number(b.getAttribute('data-rm-svc')), 1); renderSettings(); } }; });
     if ($('g-on')) $('g-on').onclick = function () { api(g.connect_path, { method: 'POST', body: '{}' }).then(function (d) { location.href = d.url; }).catch(function (e) { toast(e.message); }); };
+    if ($('resend-verify')) $('resend-verify').onclick = function (e) { e.preventDefault(); api(SV.account.resend_verification_path, { method: 'POST', body: '{}' }).then(function () { toast('Sent. Check your inbox.'); }).catch(function (x) { toast(x.message); }); };
     if ($('g-off')) $('g-off').onclick = function () { if (confirm('Disconnect Google Calendar?')) api(g.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
     $('set-save').onclick = save;
   }

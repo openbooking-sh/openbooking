@@ -146,6 +146,10 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
   });
 
   if (page && pagePath) app.route(pagePath, page.app);
+  // Short URL for the website snippet: <script src="{baseUrl}/embed.js" async></script>
+  if (page && pagePath) {
+    app.get('/embed.js', (c) => page.app.fetch(new Request(new URL('/embed.js', c.req.url))));
+  }
 
   if (mcpPath) {
     mcpHandler = createMcpHttpHandler({ service, name: 'openbooking', version });

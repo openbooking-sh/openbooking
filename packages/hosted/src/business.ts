@@ -8,7 +8,14 @@ export interface Business {
    * changed: it is in every shared link. Also the venue id of its bookings.
    */
   id: string;
-  owner: { email: string; password_hash: string };
+  owner: {
+    email: string;
+    password_hash: string;
+    /** Set once the owner clicked the link in the verification (or password reset) email. */
+    email_verified_at?: string;
+    /** Bumped on password reset; session tokens from an older epoch stop working. */
+    session_epoch?: number;
+  };
   settings: BusinessSettings;
   google?: {
     tokens: GoogleTokens;
@@ -119,5 +126,12 @@ export function isBookable(b: Business): boolean {
     s.services.length > 0 &&
     s.staff.length > 0 &&
     Object.values(s.opening_hours).some((periods) => periods.length > 0)
+  );
+}
+
+/** Shown in the OpenBooking app (find_business): listed, bookable and, if required, verified. */
+export function isListable(b: Business, requireVerifiedEmail: boolean): boolean {
+  return (
+    b.settings.listed && isBookable(b) && (!requireVerifiedEmail || !!b.owner.email_verified_at)
   );
 }

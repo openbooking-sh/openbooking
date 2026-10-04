@@ -6,20 +6,25 @@ import {
 } from '@openbooking/studio';
 import { json, type Db } from './db';
 
-/** Studio activity and booked-via attribution in Postgres: history survives restarts. */
+/**
+ * Studio activity and booked-via attribution in Postgres: history survives restarts. On a hosted
+ * deployment give each business its own `scope` (its id) so Studios only see their own activity.
+ */
 export class PostgresActivityLog implements ActivityLog {
   readonly #db: Db;
+  readonly #scope: string;
 
-  constructor(db: Db) {
+  constructor(db: Db, options: { scope?: string } = {}) {
     this.#db = db;
+    this.#scope = options.scope ?? '';
   }
 
   async add(e: Omit<ActivityEntry, 'id'>): Promise<ActivityEntry> {
     return this.#db.transaction(async (tx) => {
       const { rows } = await tx.query<{ id: string }>(
-        `insert into ob_activity (at, booking_id, agent, entry)
-         values ($1::timestamptz, $2, $3, $4::jsonb) returning id::text as id`,
-        [e.at, e.booking_id ?? null, e.agent, json(e)],
+        `insert into ob_activity (at, booking_id, agent, entry, scope)
+         values ($1::timestamptz, $2, $3, $4::jsonb, $5) returning id::text as id`,
+        [e.at, e.booking_id ?? null, e.agent, json(e), this.#scope],
       );
       const credit = creditsBooking(e);
       if (credit) {
@@ -39,8 +44,8 @@ export class PostgresActivityLog implements ActivityLog {
   }
 
   async list(query: ActivityQuery = {}): Promise<ActivityEntry[]> {
-    const params: unknown[] = [];
-    const where: string[] = [];
+    const params: unknown[] = [this.#scope];
+    const where: string[] = ['scope = $1'];
     if (query.after !== undefined) {
       params.push(query.after);
       where.push(`id > $${params.length}`);
@@ -52,7 +57,7 @@ export class PostgresActivityLog implements ActivityLog {
     params.push(query.limit ?? 200);
     const { rows } = await this.#db.query<{ id: string; entry: Omit<ActivityEntry, 'id'> }>(
       `select id::text as id, entry from ob_activity
-        ${where.length ? `where ${where.join(' and ')}` : ''}
+        where ${where.join(' and ')}
         order by id desc limit $${params.length}`,
       params,
     );

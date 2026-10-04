@@ -41,10 +41,22 @@
     "@types/pg": "^8.23.1"
   },
   "peerDependencies": {
-    "@openbooking/provider-calcom": "workspace:^"
+    "@openbooking/provider-calcom": "workspace:^",
+    "@openbooking/hosted": "workspace:^",
+    "@openbooking/google-calendar": "workspace:^",
+    "@openbooking/notifications": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@openbooking/provider-calcom": {
+      "optional": true
+    },
+    "@openbooking/hosted": {
+      "optional": true
+    },
+    "@openbooking/google-calendar": {
+      "optional": true
+    },
+    "@openbooking/notifications": {
       "optional": true
     }
   },
@@ -53,6 +65,9 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@openbooking/provider-calcom": "workspace:^"
+    "@openbooking/provider-calcom": "workspace:^",
+    "@openbooking/hosted": "workspace:^",
+    "@openbooking/google-calendar": "workspace:^",
+    "@openbooking/notifications": "workspace:^"
   }
 }
