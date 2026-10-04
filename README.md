@@ -101,6 +101,17 @@ The booking system for the people running the business, at `/studio`:
 
 In local dev (`baseUrl` on localhost) the Studio opens without a login. Anywhere else, set a token: `createOpenBookingApp({ ..., studio: { token: process.env.STUDIO_TOKEN } })`. Without a token, the Studio API stays locked. Agent names are self-reported by clients, so use them for analytics only, never for access control.
 
+## Hosted: many businesses, one deployment
+
+```sh
+pnpm dev:hosted
+```
+
+Businesses sign up at `/signup` and set up services, staff, hours and cancellation rules in Studio.
+Each gets a booking page at `/b/<id>`. Every listed business is bookable through one MCP app at
+`/mcp` (`find_business` → booking tools), with optional Google Calendar sync and confirmation
+emails. See [docs/HOSTED.md](docs/HOSTED.md).
+
 ## The MCP tools
 
 | Tool                  | Does                                                                                                                     |
@@ -221,11 +232,15 @@ packages/
   adapter-mcp/      MCP tools (Streamable HTTP + stdio)
   adapter-ucp/      UCP discovery + booking sessions (draft)
   adapter-a2a/      A2A Agent Card (stub)
-  studio/           OpenBooking Studio dashboard (/studio)
+  studio/           OpenBooking Studio dashboard (/studio), incl. business settings
+  booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
+  notifications/    Confirmation/cancellation emails with .ics invites
+  google-calendar/  Google Calendar sync (busy times, bookings as events)
   server/           One Hono app mounting everything
+  hosted/           Many businesses on one deployment: sign-up, settings, the OpenBooking MCP app
 examples/demo/
 bench/              Agent-success benchmark (tasks + runner)
-docs/ARCHITECTURE.md, docs/SPEC-NOTES.md
+docs/ARCHITECTURE.md, docs/SPEC-NOTES.md, docs/HOSTED.md
 ```
 
 ## Development
