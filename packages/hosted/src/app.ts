@@ -44,13 +44,22 @@ import {
   BusinessConflictError,
   MemoryBusinessStore,
   RESERVED_IDS,
-  isBookable,
+  isListable,
   slugify,
   type Business,
   type BusinessStore,
 } from './business';
 import { CATEGORIES, starterSettings } from './catalog';
 import { createDirectoryServer } from './directory';
+import {
+  RESET_TTL_MS,
+  VERIFY_TTL_MS,
+  passwordTag,
+  resetEmail,
+  resetHtml,
+  verifyEmail,
+} from './account';
+import { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
 import { signupHtml } from './signup';
 import { Tenant, type TenantDeps } from './tenant';
 
@@ -75,6 +84,15 @@ export interface HostedOptions {
   calendarLinks?: CalendarLinkStore;
   /** Host header allow-list for MCP endpoints. Defaults to the baseUrl host plus localhost. */
   allowedHosts?: string[];
+  /** Limits for login, sign-up and password reset. Memory by default; Postgres across instances. */
+  rateLimiter?: RateLimiter;
+  /** The caller's IP for rate limits. Defaults to proxy headers (x-real-ip, x-forwarded-for). */
+  clientIp?: (request: Request) => string;
+  /**
+   * List a business in the OpenBooking app only after the owner confirmed their email. Defaults
+   * to true when `mail` is set (otherwise there is no way to confirm).
+   */
+  requireVerifiedEmail?: boolean;
   onEvent?: (businessId: string, event: BookingEvent) => void;
   version?: string;
 }
@@ -100,6 +118,8 @@ const SignupInput = z.object({
 });
 
 const LoginInput = z.object({ email: z.string().max(200), password: z.string().max(200) });
+const ForgotInput = z.object({ email: z.string().max(200) });
+const ResetInput = z.object({ token: z.string().max(500), password: z.string().min(8).max(200) });
 
 const STUDIO_PATH = '/studio';
 
@@ -107,6 +127,8 @@ const STUDIO_PATH = '/studio';
  * Hosted OpenBooking: many businesses on one deployment.
  *
  *   GET  /signup                      sign-up page; POST /api/signup, POST /api/login
+ *   GET  /reset                       password reset; POST /api/password/forgot, /api/password/reset
+ *   GET  /api/verify-email?token=     confirms the owner's email (link from the welcome email)
  *   GET  /studio                      Studio for the logged-in business (bearer session token)
  *   ALL  /mcp                         the OpenBooking app: find_business + booking tools for every listed business
  *   *    /b/{business_id}             that business: booking page (browsers), /mcp, /ucp, /.well-known/*
@@ -124,6 +146,9 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     '127.0.0.1',
     '[::1]',
   ];
+  const limiter = options.rateLimiter ?? new MemoryRateLimiter(() => clock.now().getTime());
+  const clientIp = options.clientIp ?? proxyClientIp;
+  const requireVerifiedEmail = options.requireVerifiedEmail ?? !!options.mail;
   const google: (GoogleCredentials & { fetch?: typeof fetch }) | undefined = options.google
     ? { ...options.google, redirectUri: `${baseUrl}/oauth/google/callback` }
     : undefined;
@@ -146,6 +171,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ...(google ? { google } : {}),
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
     allowedHosts,
+    requireVerifiedEmail,
     ...(options.onEvent ? { onEvent: options.onEvent } : {}),
   };
 
@@ -169,6 +195,51 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   const err = (c: Context, e: unknown, status: 400 | 401 | 404 | 409 | 500 = 400) =>
     c.json({ error: toErrorPayload(e) }, status);
 
+  const tooMany = (c: Context) =>
+    c.json(
+      {
+        error: {
+          code: 'rate_limited',
+          message: 'Too many attempts. Wait a few minutes and try again.',
+        },
+      },
+      429,
+    );
+  /** False when any of the limits is exceeded (every limit is still counted). */
+  const allowed = async (...hits: Array<[string, { limit: number; windowMs: number }]>) => {
+    const results = await Promise.all(
+      hits.map(([key, l]) => limiter.hit(key, l.limit, l.windowMs)),
+    );
+    return results.every(Boolean);
+  };
+
+  // Session tokens carry the owner's session epoch; a password reset bumps it.
+  const sessionToken = (b: Business) =>
+    signer.sign('session', `${b.id}.${b.owner.session_epoch ?? 0}`, SESSION_TTL_MS);
+  const sessionBusiness = async (token: string): Promise<Tenant | undefined> => {
+    const subject = token ? signer.verify('session', token) : undefined;
+    if (!subject) return undefined;
+    const dot = subject.lastIndexOf('.');
+    // Tokens issued before epochs existed carry just the id (epoch 0).
+    const [id, epoch] =
+      dot === -1 ? [subject, 0] : [subject.slice(0, dot), Number(subject.slice(dot + 1))];
+    const t = await tenant(id);
+    return t && (t.business.owner.session_epoch ?? 0) === epoch ? t : undefined;
+  };
+
+  const sendVerification = async (b: Business) => {
+    if (!options.mail || b.owner.email_verified_at) return;
+    const token = signer.sign(
+      'verify-email',
+      `${b.id}:${b.owner.email.toLowerCase()}`,
+      VERIFY_TTL_MS,
+    );
+    const url = `${baseUrl}/api/verify-email?token=${encodeURIComponent(token)}`;
+    await options.mail.mailer.send(
+      verifyEmail(b.owner.email, options.mail.from, url, b.settings.profile.name),
+    );
+  };
+
   app.get('/healthz', (c) => c.json({ ok: true }));
 
   app.get('/', (c) => {
@@ -191,6 +262,8 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   );
 
   app.post('/api/signup', async (c) => {
+    if (!(await allowed([`signup:ip:${clientIp(c.req.raw)}`, LIMITS.signupPerIp])))
+      return tooMany(c);
     const parsed = SignupInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return err(c, parsed.error);
     const input = parsed.data;
@@ -231,8 +304,11 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         }
         throw e;
       }
+      sendVerification(business).catch((e: unknown) =>
+        console.error('[openbooking] verification email failed', e),
+      );
       return c.json({
-        token: signer.sign('session', id, SESSION_TTL_MS),
+        token: sessionToken(business),
         business_id: id,
         studio_url: `${baseUrl}${STUDIO_PATH}`,
         booking_page: `${baseUrl}/b/${id}`,
@@ -243,6 +319,12 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.post('/api/login', async (c) => {
     const parsed = LoginInput.safeParse(await c.req.json().catch(() => null));
+    const email = parsed.success ? parsed.data.email.trim().toLowerCase() : '';
+    const permitted = await allowed(
+      [`login:email:${email}`, LIMITS.loginPerEmail],
+      [`login:ip:${clientIp(c.req.raw)}`, LIMITS.loginPerIp],
+    );
+    if (!permitted) return tooMany(c);
     const business = parsed.success
       ? await businesses.getByEmail(parsed.data.email.trim())
       : undefined;
@@ -251,10 +333,110 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     if (!ok) {
       return c.json({ error: { code: 'unauthorized', message: 'Wrong email or password.' } }, 401);
     }
+    return c.json({ token: sessionToken(business), business_id: business.id });
+  });
+
+  // ---------------------------------------------------------------- Password reset, email check
+
+  app.get('/reset', (c) =>
+    c.html(
+      resetHtml({
+        forgotApi: '/api/password/forgot',
+        resetApi: '/api/password/reset',
+        studioPath: STUDIO_PATH,
+      }),
+    ),
+  );
+
+  app.post('/api/password/forgot', async (c) => {
+    const parsed = ForgotInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return err(c, parsed.error);
+    const email = parsed.data.email.trim().toLowerCase();
+    if (!options.mail) {
+      return err(
+        c,
+        new BookingError(
+          'operation_not_supported',
+          'Password reset by email is not set up on this server. Contact the operator.',
+        ),
+      );
+    }
+    const permitted = await allowed(
+      [`reset:email:${email}`, LIMITS.resetEmailPerEmail],
+      [`reset:ip:${clientIp(c.req.raw)}`, LIMITS.resetEmailPerIp],
+    );
+    if (!permitted) return tooMany(c);
+    const business = await businesses.getByEmail(email);
+    if (business) {
+      const subject = `${business.id}:${passwordTag(business.owner.password_hash)}`;
+      const url = `${baseUrl}/reset#token=${encodeURIComponent(signer.sign('reset', subject, RESET_TTL_MS))}`;
+      try {
+        await options.mail.mailer.send(resetEmail(business.owner.email, options.mail.from, url));
+      } catch (e) {
+        console.error('[openbooking] reset email failed', e);
+      }
+    }
+    // Same answer either way, so the form can't be used to find out who has an account.
     return c.json({
-      token: signer.sign('session', business.id, SESSION_TTL_MS),
-      business_id: business.id,
+      ok: true,
+      message: 'If that email has an account, a reset link is on its way. Check your inbox.',
     });
+  });
+
+  app.post('/api/password/reset', async (c) => {
+    if (!(await allowed([`reset-submit:ip:${clientIp(c.req.raw)}`, LIMITS.resetSubmitPerIp]))) {
+      return tooMany(c);
+    }
+    const parsed = ResetInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return err(c, parsed.error);
+    const invalid = () =>
+      err(
+        c,
+        new BookingError(
+          'validation_error',
+          'This reset link has expired or was already used. Ask for a new one.',
+        ),
+      );
+    const subject = signer.verify('reset', parsed.data.token);
+    const [id, tag] = subject?.split(':') ?? [];
+    if (!id || !tag) return invalid();
+    const hash = await hashPassword(parsed.data.password);
+    let used = false;
+    const saved = await businesses.update(id, (b) => {
+      if (passwordTag(b.owner.password_hash) !== tag) {
+        used = true;
+        return b;
+      }
+      return {
+        ...b,
+        owner: {
+          ...b.owner,
+          password_hash: hash,
+          // They read the reset email, so the address is theirs.
+          email_verified_at: b.owner.email_verified_at ?? clock.now().toISOString(),
+          session_epoch: (b.owner.session_epoch ?? 0) + 1,
+        },
+      };
+    });
+    if (!saved || used) return invalid();
+    tenants.get(id)?.sync(saved);
+    return c.json({ token: sessionToken(saved), business_id: id });
+  });
+
+  app.get('/api/verify-email', async (c) => {
+    const subject = signer.verify('verify-email', c.req.query('token') ?? '');
+    const sep = subject?.indexOf(':') ?? -1;
+    if (!subject || sep < 0) return c.redirect(`${STUDIO_PATH}?verified=expired#settings`);
+    const id = subject.slice(0, sep);
+    const email = subject.slice(sep + 1);
+    const saved = await businesses.update(id, (b) =>
+      b.owner.email.toLowerCase() !== email || b.owner.email_verified_at
+        ? b
+        : { ...b, owner: { ...b.owner, email_verified_at: clock.now().toISOString() } },
+    );
+    if (saved) tenants.get(id)?.sync(saved);
+    const verified = !!saved?.owner.email_verified_at && saved.owner.email.toLowerCase() === email;
+    return c.redirect(`${STUDIO_PATH}?verified=${verified ? 'yes' : 'expired'}#settings`);
   });
 
   // ---------------------------------------------------------------- Studio
@@ -265,8 +447,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   // Every Studio API call: the session token decides which business's Studio answers.
   app.use(`${STUDIO_PATH}/api/*`, async (c, next) => {
     const token = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '');
-    const id = token ? signer.verify('session', token) : undefined;
-    const t = id ? await tenant(id) : undefined;
+    const t = await sessionBusiness(token);
     if (!t) {
       return c.json(
         {
@@ -276,6 +457,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
             login: 'password',
             login_url: '/api/login',
             signup_url: '/signup',
+            ...(options.mail ? { reset_url: '/reset' } : {}),
           },
         },
         401,
@@ -303,6 +485,13 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         loginHint: t.business.owner.email,
       }),
     });
+  });
+
+  app.post(`${STUDIO_PATH}/api/account/verify-email`, async (c) => {
+    const t = c.get('tenant');
+    if (!(await allowed([`verify:${t.id}`, LIMITS.resetEmailPerEmail]))) return tooMany(c);
+    await sendVerification(t.business);
+    return c.json({ ok: true, sent: !!options.mail && !t.business.owner.email_verified_at });
   });
 
   app.post(`${STUDIO_PATH}/api/integrations/google/disconnect`, async (c) => {
@@ -342,10 +531,11 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     createDirectoryServer({
       baseUrl,
       ...(options.version ? { version: options.version } : {}),
-      listBusinesses: () => businesses.list(),
+      listBusinesses: async () =>
+        (await businesses.list()).filter((b) => isListable(b, requireVerifiedEmail)),
       service: async (id) => {
         const b = await businesses.get(id);
-        const t = b && b.settings.listed && isBookable(b) ? await tenant(id) : undefined;
+        const t = b && isListable(b, requireVerifiedEmail) ? await tenant(id) : undefined;
         if (!t) {
           throw new BookingError('not_found', `No bookable business with business_id "${id}".`, {
             suggested_next_action: 'Call find_business and use a business_id it returns.',

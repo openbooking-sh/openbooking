@@ -181,6 +181,7 @@ export const STUDIO_HTML = `<!doctype html>
     <input id="token" type="password" placeholder="Studio token" autocomplete="current-password" />
     <div class="err" id="login-err"></div>
     <button class="btn btn-primary" id="login-btn" style="width:100%;justify-content:center">Open Studio</button>
+    <div class="alt hidden" id="login-forgot"><a id="forgot-link" href="#">Forgot your password?</a></div>
     <div class="alt hidden" id="login-alt">New here? <a id="signup-link" href="#">Create your free account</a></div>
   </div>
 </div>
@@ -317,6 +318,7 @@ export const STUDIO_HTML = `<!doctype html>
       $('login-btn').textContent = 'Log in';
       $('login-msg').textContent = 'Log in to manage your bookings.';
       if (login.signup) { $('signup-link').href = login.signup; $('login-alt').classList.remove('hidden'); }
+      if (err.reset_url) { $('forgot-link').href = err.reset_url; $('login-forgot').classList.remove('hidden'); }
     } else if (err.message) {
       $('login-msg').textContent = err.message;
     }
@@ -614,6 +616,8 @@ export const STUDIO_HTML = `<!doctype html>
     return api('/settings').then(function (d) {
       SV = d; draft = JSON.parse(JSON.stringify(d.settings)); renderSettings();
       if (/[?&]google=connected/.test(location.search)) toast('Google Calendar connected');
+      if (/[?&]verified=yes/.test(location.search)) toast('Email confirmed');
+      if (/[?&]verified=expired/.test(location.search)) toast('That link expired. Send a new one from Settings.');
     });
   }
   function slug(s) { return String(s).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item'; }
@@ -633,8 +637,11 @@ export const STUDIO_HTML = `<!doctype html>
       ['Add your services and prices', s.services.length > 0]
     ];
     if (g && g.available) steps.push(['Connect Google Calendar', g.connected]);
+    var unverified = SV.account && SV.account.email_verified === false;
+    if (SV.account && SV.account.email_verified !== undefined) steps.unshift(['Confirm your email', !unverified]);
     var h = '';
-    h += '<div class="card"><h2>Get bookable</h2><div class="steps">' + steps.map(function (x) { return '<div class="step' + (x[1] ? ' done' : '') + '"><i>' + (x[1] ? '&#10003;' : '') + '</i><span>' + esc(x[0]) + '</span></div>'; }).join('') + '</div></div>';
+    h += '<div class="card"><h2>Get bookable</h2><div class="steps">' + steps.map(function (x) { return '<div class="step' + (x[1] ? ' done' : '') + '"><i>' + (x[1] ? '&#10003;' : '') + '</i><span>' + esc(x[0]) + '</span></div>'; }).join('') + '</div>' +
+      (unverified ? '<p class="hint" style="margin-top:12px">We emailed a link to <b>' + esc(SV.account.email) + '</b>. Confirm it to be listed in ChatGPT and Claude. <a href="#" id="resend-verify">Send it again</a></p>' : '') + '</div>';
     if (SV.links && SV.links.length) {
       h += '<div class="card"><h2>Share your booking links</h2><p class="hint">Post these on Instagram, Google and your website so customers can book you through ChatGPT, Claude and Gemini.</p>' + SV.links.map(function (l, i) {
         return '<div class="link-row"><div class="l"><b>' + esc(l.label) + '</b>' + (l.hint ? ' <span class="muted">· ' + esc(l.hint) + '</span>' : '') + '<div class="u">' + esc(l.url) + '</div></div><button class="btn btn-sm" data-copy="' + i + '">Copy</button><a class="btn btn-sm" href="' + esc(l.url) + '" target="_blank" rel="noopener">Open</a></div>';
@@ -698,6 +705,7 @@ export const STUDIO_HTML = `<!doctype html>
     $('settings').querySelectorAll('[data-rm-staff]').forEach(function (b) { b.onclick = function () { if (collect()) { var gone = draft.staff.splice(Number(b.getAttribute('data-rm-staff')), 1)[0]; draft.services.forEach(function (v) { v.staff_ids = v.staff_ids.filter(function (x) { return x !== gone.id; }); }); renderSettings(); } }; });
     $('settings').querySelectorAll('[data-rm-svc]').forEach(function (b) { b.onclick = function () { if (collect()) { draft.services.splice(Number(b.getAttribute('data-rm-svc')), 1); renderSettings(); } }; });
     if ($('g-on')) $('g-on').onclick = function () { api(g.connect_path, { method: 'POST', body: '{}' }).then(function (d) { location.href = d.url; }).catch(function (e) { toast(e.message); }); };
+    if ($('resend-verify')) $('resend-verify').onclick = function (e) { e.preventDefault(); api(SV.account.resend_verification_path, { method: 'POST', body: '{}' }).then(function () { toast('Sent. Check your inbox.'); }).catch(function (x) { toast(x.message); }); };
     if ($('g-off')) $('g-off').onclick = function () { if (confirm('Disconnect Google Calendar?')) api(g.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
     $('set-save').onclick = save;
   }

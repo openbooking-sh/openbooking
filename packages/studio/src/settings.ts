@@ -152,7 +152,13 @@ export interface SettingsView {
   links?: Array<{ label: string; url: string; hint?: string }>;
   integrations?: { google?: GoogleIntegrationView };
   /** Account email (hosted). */
-  account?: { email: string };
+  account?: {
+    email: string;
+    /** false while the owner hasn't confirmed their email (hosted with email sending). */
+    email_verified?: boolean;
+    /** POST here (Studio API path) to send the confirmation email again. */
+    resend_verification_path?: string;
+  };
 }
 
 /** Where Studio reads and saves settings. Hosted OpenBooking implements it per business. */
