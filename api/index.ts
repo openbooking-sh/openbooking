@@ -11,6 +11,8 @@ import {
   createDemoSalonProvider,
 } from '@openbooking/provider-memory';
 import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
+import { createHostedApp } from '@openbooking/hosted';
+import { ResendMailer } from '@openbooking/notifications';
 import { createOpenBookingApp } from '@openbooking/server';
 
 const host = (v: string | undefined) => (v ? v.replace(/^https?:\/\//, '') : undefined);
@@ -35,6 +37,34 @@ async function boot() {
   if (db) await migrate(db);
   const stores = db ? postgresStores(db) : undefined;
   const store = stores ? { store: stores.bookings } : {};
+  const allowedHosts = [
+    ...new Set([new URL(baseUrl).hostname, ...vercelHosts, 'localhost', '127.0.0.1']),
+  ];
+  const env = process.env;
+
+  // OPENBOOKING_MODE=hosted serves many businesses (sign-up, Studio settings, the OpenBooking MCP
+  // app). Needs SESSION_SECRET. Bookings and idempotency use Postgres when DATABASE_URL is set;
+  // accounts are still in memory (see docs/HOSTED.md).
+  if (env.OPENBOOKING_MODE === 'hosted') {
+    return createHostedApp({
+      baseUrl,
+      sessionSecret: env.SESSION_SECRET ?? '',
+      allowedHosts,
+      ...(stores ? { bookings: stores.bookings, idempotency: stores.idempotency } : {}),
+      ...(env.RESEND_API_KEY
+        ? {
+            mail: {
+              mailer: new ResendMailer({ apiKey: env.RESEND_API_KEY }),
+              from: env.MAIL_FROM ?? 'bookings@openbooking.sh',
+            },
+          }
+        : {}),
+      ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } }
+        : {}),
+    }).app;
+  }
+
   return createOpenBookingApp({
     provider:
       process.env.DEMO === 'restaurant'
@@ -47,9 +77,7 @@ async function boot() {
       ...(stores ? { activity: stores.activity } : {}),
     },
     ...(stores ? { serviceOptions: { idempotencyStore: stores.idempotency } } : {}),
-    allowedHosts: [
-      ...new Set([new URL(baseUrl).hostname, ...vercelHosts, 'localhost', '127.0.0.1']),
-    ],
+    allowedHosts,
   }).app;
 }
 
