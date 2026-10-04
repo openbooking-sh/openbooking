@@ -1,0 +1,42 @@
+{
+  "name": "@openbooking/adapter-a2a",
+  "version": "0.1.0",
+  "description": "A2A (Agent2Agent) Agent Card generation for OpenBooking. Stub: task handling is not implemented yet.",
+  "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/adapter-a2a"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openbooking/core": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

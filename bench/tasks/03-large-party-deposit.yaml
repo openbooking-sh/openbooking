@@ -1,0 +1,15 @@
+id: large-party-deposit
+description: Party of 6 triggers a deposit due at confirmation; agent must pass the payment token.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Dinner for 6 on Friday 2 October 2026, 18:00-20:00. Name Katherine Johnson,
+  katherine@example.com. I'm fine with a deposit; use my saved card token tok_visa. Please confirm.
+intent:
+  date: 2026-10-02
+  party_size: 6
+  time_window: ['18:00', '20:00']
+  offering_id: dinner
+  customer: { first_name: Katherine, last_name: Johnson, email: katherine@example.com }
+  payment_token: tok_visa
+expect:
+  outcome: confirmed

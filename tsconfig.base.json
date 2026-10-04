@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // Resolve workspace packages to their TypeScript sources during dev/typecheck/test,
+    // so nothing needs to be built before `pnpm dev` or `pnpm test`.
+    "customConditions": ["@openbooking/source"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "noEmit": true,
+    // tsup's dts build injects `baseUrl`, deprecated in TS 6.
+    "ignoreDeprecations": "6.0"
+  }
+}

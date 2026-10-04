@@ -1,0 +1,22 @@
+{
+  "name": "@openbooking/example-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenBooking demo: a fictional hair salon (or restaurant) bookable by AI agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --conditions=@openbooking/source src/index.ts",
+    "start": "tsx --conditions=@openbooking/source src/index.ts",
+    "stdio": "tsx --conditions=@openbooking/source src/stdio.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openbooking/adapter-mcp": "workspace:^",
+    "@openbooking/core": "workspace:^",
+    "@openbooking/postgres": "workspace:^",
+    "@openbooking/provider-calcom": "workspace:^",
+    "@openbooking/provider-memory": "workspace:^",
+    "@openbooking/server": "workspace:^"
+  }
+}

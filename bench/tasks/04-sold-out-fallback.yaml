@@ -1,0 +1,17 @@
+id: sold-out-fallback
+description: Preferred time is taken (only 8-top booked at 19:00); agent must pick the alternative in the window.
+now: 2026-10-01T10:00:00+02:00
+setup:
+  - { date: 2026-10-02, time: '19:00', party_size: 8, offering_id: dinner }
+user_prompt: |
+  Table for 8 on Friday 2 October 2026, ideally 19:00 but anything from 18:00 to 21:00 works.
+  Name Alan Turing, alan@example.com. Book whatever is available in that window.
+intent:
+  date: 2026-10-02
+  party_size: 8
+  time_window: ['18:00', '21:00']
+  offering_id: dinner
+  customer: { first_name: Alan, last_name: Turing, email: alan@example.com }
+  payment_token: tok_visa
+expect:
+  outcome: confirmed

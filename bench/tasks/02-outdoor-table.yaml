@@ -1,0 +1,15 @@
+id: outdoor-table
+description: Preference handling (outdoor seating).
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  We're 4 people and want to sit outside. Saturday 3 October 2026, between 19:00 and 20:30.
+  Book it under Grace Hopper, phone +4791234567. Confirm it for me.
+intent:
+  date: 2026-10-03
+  party_size: 4
+  time_window: ['19:00', '20:30']
+  offering_id: dinner
+  preferences: [outdoor]
+  customer: { first_name: Grace, last_name: Hopper, phone_number: '+4791234567' }
+expect:
+  outcome: confirmed

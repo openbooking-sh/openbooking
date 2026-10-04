@@ -1,0 +1,20 @@
+{
+  "name": "@openbooking/bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent-success benchmark for OpenBooking MCP endpoints.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "bench": "tsx --conditions=@openbooking/source src/cli.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@openbooking/core": "workspace:^",
+    "@openbooking/provider-memory": "workspace:^",
+    "@openbooking/server": "workspace:^",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  }
+}

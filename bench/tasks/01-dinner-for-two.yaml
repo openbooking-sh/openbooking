@@ -1,0 +1,15 @@
+id: dinner-for-two
+description: Simple booking with all details given up front.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Book a table for 2 at Demo Bistro Oslo on Friday 2 October 2026, around 19:00
+  (anything between 18:30 and 19:30 is fine). Name: Ada Lovelace, email ada@example.com.
+  If the cancellation terms are normal, go ahead and confirm.
+intent:
+  date: 2026-10-02
+  party_size: 2
+  time_window: ['18:30', '19:30']
+  offering_id: dinner
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+expect:
+  outcome: confirmed

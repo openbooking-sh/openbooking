@@ -1,0 +1,15 @@
+id: tasting-menu
+description: Specific offering with a price, a deposit and a stricter cancellation policy.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Book the chef's tasting menu for 2 on Saturday 3 October 2026, any start time. Name Ada Lovelace,
+  ada@example.com. I accept the deposit and the cancellation terms; card token tok_visa.
+intent:
+  date: 2026-10-03
+  party_size: 2
+  time_window: ['17:00', '22:00']
+  offering_id: tasting
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+  payment_token: tok_visa
+expect:
+  outcome: confirmed

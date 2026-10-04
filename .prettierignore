@@ -1,0 +1,6 @@
+dist
+coverage
+pnpm-lock.yaml
+LICENSE
+.changeset/*.md
+bench/results

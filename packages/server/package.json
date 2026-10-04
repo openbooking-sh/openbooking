@@ -1,0 +1,54 @@
+{
+  "name": "@openbooking/server",
+  "version": "0.1.0",
+  "description": "Mount every OpenBooking adapter (MCP, UCP, A2A) and the .well-known discovery documents on one Hono app.",
+  "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.3",
+    "@modelcontextprotocol/hono": "^2.0.1",
+    "@modelcontextprotocol/server": "^2.2.0",
+    "@openbooking/adapter-a2a": "workspace:^",
+    "@openbooking/adapter-mcp": "workspace:^",
+    "@openbooking/adapter-ucp": "workspace:^",
+    "@openbooking/core": "workspace:^",
+    "hono": "^4.13.12",
+    "@openbooking/studio": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@openbooking/provider-memory": "workspace:^"
+  }
+}

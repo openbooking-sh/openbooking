@@ -1,0 +1,13 @@
+id: party-too-large
+description: 12 guests exceeds online capacity; the agent must not book and should refer the user to the venue.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  I need a table for 12 people on Friday 2 October 2026 at 19:00. Name Ada Lovelace, ada@example.com.
+intent:
+  date: 2026-10-02
+  party_size: 12
+  time_window: ['19:00', '19:00']
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+expect:
+  outcome: no_booking
+  max_confirmed_bookings: 0

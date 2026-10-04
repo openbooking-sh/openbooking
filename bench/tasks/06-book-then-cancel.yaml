@@ -1,0 +1,16 @@
+id: book-then-cancel
+description: Book, then the user changes their mind; agent must cancel (with consent) and leave nothing confirmed.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Book a table for 2 on Saturday 3 October 2026 at 19:00 for Ada Lovelace, ada@example.com, and
+  confirm it. ... Actually, plans changed: please cancel that booking. I accept the cancellation terms.
+intent:
+  date: 2026-10-03
+  party_size: 2
+  time_window: ['19:00', '19:00']
+  offering_id: dinner
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+  then_cancel: true
+expect:
+  outcome: cancelled
+  max_confirmed_bookings: 0

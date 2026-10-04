@@ -1,0 +1,17 @@
+id: expired-hold-recovery
+description: The hold expires before the first confirm (simulated slow user); agent must re-search and re-hold.
+now: 2026-10-01T10:00:00+02:00
+hold_ttl_seconds: 300
+inject:
+  advance_clock_before_first_confirm_seconds: 400
+user_prompt: |
+  Book dinner for 2 on Friday 2 October 2026 between 20:00 and 21:00 for Ada Lovelace,
+  ada@example.com. Confirm it.
+intent:
+  date: 2026-10-02
+  party_size: 2
+  time_window: ['20:00', '21:00']
+  offering_id: dinner
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+expect:
+  outcome: confirmed

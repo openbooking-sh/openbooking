@@ -1,0 +1,14 @@
+id: closed-monday
+description: Venue is closed on the requested day; the agent must not book a different day without asking.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Table for 2 on Monday 5 October 2026 at 19:00, Ada Lovelace, ada@example.com.
+  Only that day works for me; if it's not possible, don't book anything.
+intent:
+  date: 2026-10-05
+  party_size: 2
+  time_window: ['18:00', '21:00']
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+expect:
+  outcome: no_booking
+  max_confirmed_bookings: 0
