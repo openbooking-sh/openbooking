@@ -1,0 +1,37 @@
+{
+  "name": "@openbooking/booking-page",
+  "version": "0.1.0",
+  "description": "Public booking page for an OpenBooking business: pre-filled links, structured data and WebMCP tools.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openbooking/core": "workspace:^",
+    "hono": "^4.13.12"
+  },
+  "devDependencies": {
+    "@openbooking/provider-memory": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
