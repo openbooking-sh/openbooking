@@ -458,3 +458,19 @@ describe('owner accounts', () => {
     expect(forged.headers.get('location')).toContain('verified=expired');
   });
 });
+
+describe('website snippet', () => {
+  it('gives the owner a one-line snippet that serves embed.js for their business', async () => {
+    const { req, signup } = setup();
+    const { token } = await signup();
+    const { json } = await req('/studio/api/settings', { token });
+    expect(json.install).toEqual({
+      booking_page: `${BASE}/b/studio-nord`,
+      snippet: `<script src="${BASE}/b/studio-nord/embed.js" async></script>`,
+    });
+    const script = await req('/b/studio-nord/embed.js');
+    expect(script.status).toBe(200);
+    expect(script.headers.get('content-type')).toContain('javascript');
+    expect(script.text).toContain(`${BASE}/b/studio-nord/book/api`);
+  });
+});

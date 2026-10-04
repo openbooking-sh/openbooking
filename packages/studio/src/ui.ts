@@ -130,6 +130,11 @@ export const STUDIO_HTML = `<!doctype html>
   .err { color: var(--red); font-size: 13px; min-height: 18px; margin-bottom: 8px; }
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 40; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
+  .snip { font: 12.5px/1.5 var(--mono, ui-monospace, monospace); background: var(--bg-2, rgba(11,16,32,.04)); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; white-space: pre-wrap; word-break: break-all; }
+  .how { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; }
+  .how li { margin: 3px 0; }
+  .inst h3 { font-size: 14px; font-weight: 600; margin: 18px 0 2px; }
+  .inst h3:first-of-type { margin-top: 6px; }
   .login { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
   .login .card { width: min(400px, 100%); padding: 28px; }
   .login input { width: 100%; height: 42px; border: 1px solid var(--line-2); border-radius: 10px; padding: 0 12px; margin: 16px 0 12px; }
@@ -647,6 +652,15 @@ export const STUDIO_HTML = `<!doctype html>
         return '<div class="link-row"><div class="l"><b>' + esc(l.label) + '</b>' + (l.hint ? ' <span class="muted">· ' + esc(l.hint) + '</span>' : '') + '<div class="u">' + esc(l.url) + '</div></div><button class="btn btn-sm" data-copy="' + i + '">Copy</button><a class="btn btn-sm" href="' + esc(l.url) + '" target="_blank" rel="noopener">Open</a></div>';
       }).join('') + '</div>';
     }
+    var I = SV.install;
+    if (I) {
+      h += '<div class="card inst"><h2>Get found on Google and your website</h2><p class="hint">Three places, a few minutes each. Customers can then book you from Google, your own site and any AI assistant.</p>' +
+        '<h3>1. Google (Search and Maps)</h3><ol class="how"><li>Open <a href="https://business.google.com/" target="_blank" rel="noopener">Google Business Profile</a> and choose <b>Bookings</b> (or <b>Edit profile</b>, then <b>Booking links</b>).</li><li>Paste your booking page link: <button class="btn btn-sm" data-copy-text="' + esc(I.booking_page) + '">Copy link</button></li><li>A <b>Book</b> button shows up on Google within a day or two.</li></ol>' +
+        '<h3>2. Your website</h3><p class="hint">Paste this one line into your site. It adds a Book button, lets AI browsers book you right on your site, and tells search engines what you offer.</p>' +
+        '<div class="snip">' + esc(I.snippet) + '</div><button class="btn btn-sm" data-copy-text="' + esc(I.snippet) + '">Copy code</button>' +
+        '<ol class="how"><li><b>Wix:</b> Settings, Custom code, Add custom code, place it in Body - end, all pages.</li><li><b>Squarespace:</b> Settings, Advanced, Code injection, Footer.</li><li><b>WordPress:</b> install the free WPCode plugin, then Code snippets, Header &amp; Footer, Footer.</li><li><b>Webflow:</b> Site settings, Custom code, Footer code.</li><li><b>Shopify:</b> Online Store, Themes, Edit code, theme.liquid, just before &lt;/body&gt;.</li><li><b>No website?</b> Skip this; your booking page is your website.</li></ol>' +
+        '<h3>3. Instagram and Facebook</h3><ol class="how"><li>Instagram: Edit profile, Links, add your booking page link.</li><li>Facebook: Edit page, Add action button, Book now, paste the same link.</li></ol></div>';
+    }
     h += '<div class="card"><h2>Business</h2><p class="hint">Shown to customers and AI assistants.</p>' +
       '<div class="two-f">' + field('Name', 's-name', p.name) +
       '<div class="field"><label for="s-cat">Type of business</label><select id="s-cat">' + CATEGORIES.map(function (c) { return '<option value="' + c[0] + '"' + (p.category === c[0] ? ' selected' : '') + '>' + esc(c[1]) + '</option>'; }).join('') + '</select></div></div>' +
@@ -699,6 +713,9 @@ export const STUDIO_HTML = `<!doctype html>
 
     $('settings').querySelectorAll('[data-copy]').forEach(function (b) {
       b.onclick = function () { var u = SV.links[Number(b.getAttribute('data-copy'))].url; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { toast('Copied'); }, function () { prompt('Copy this link', u); }); };
+    });
+    document.querySelectorAll('[data-copy-text]').forEach(function (b) {
+      b.onclick = function () { var u = b.getAttribute('data-copy-text'); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { toast('Copied'); }, function () { prompt('Copy this', u); }); };
     });
     $('add-staff').onclick = function () { if (collect()) { draft.staff.push({ id: '', name: '' }); renderSettings(); } };
     $('add-svc').onclick = function () { if (collect()) { draft.services.push({ id: '', name: '', duration_minutes: 30, price: null, staff_ids: [] }); renderSettings(); } };

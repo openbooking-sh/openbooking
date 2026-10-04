@@ -191,6 +191,10 @@ export class Tenant {
           disconnect_path: '/integrations/google/disconnect',
         },
       },
+      install: {
+        booking_page: this.pageUrl,
+        snippet: `<script src="${this.pageUrl}/embed.js" async></script>`,
+      },
       account: {
         email: b.owner.email,
         ...(this.#deps.requireVerifiedEmail

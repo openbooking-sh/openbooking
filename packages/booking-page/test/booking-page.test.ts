@@ -253,3 +253,124 @@ describe('booking page HTML', () => {
     expect(llms).toContain('https://app.example.com/mcp');
   });
 });
+
+describe('embed.js (website snippet)', () => {
+  /** Just enough DOM to run the snippet: records what it appends and the tools it registers. */
+  function fakeBrowser(t: ReturnType<typeof setup>, attrs: Record<string, string> = {}) {
+    const appended: any[] = [];
+    const tools: any[] = [];
+    const el = (tag: string): any => ({
+      tagName: tag.toUpperCase(),
+      style: {},
+      attrs: {} as Record<string, string>,
+      children: [] as any[],
+      setAttribute(k: string, v: string) {
+        this.attrs[k] = v;
+      },
+      getAttribute(k: string) {
+        return this.attrs[k] ?? null;
+      },
+      appendChild(c: any) {
+        this.children.push(c);
+      },
+      addEventListener() {},
+    });
+    const document = {
+      readyState: 'complete',
+      currentScript: { getAttribute: (k: string) => attrs[k.replace(/^data-/, '')] ?? null },
+      createElement: el,
+      head: { appendChild: (c: any) => appended.push(c) },
+      body: { appendChild: (c: any) => appended.push(c) },
+      documentElement: { style: {} },
+      addEventListener() {},
+    };
+    // Cross-origin calls from the business's site land on the booking page's API.
+    const fetch = async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname.replace('/b/studio-nord/book', '');
+      return t.page.app.request(path + new URL(url).search, init);
+    };
+    const navigator = { modelContext: { registerTool: (tool: any) => tools.push(tool) } };
+    return { document, fetch, navigator, appended, tools };
+  }
+
+  async function run(t: ReturnType<typeof setup>, attrs: Record<string, string> = {}) {
+    const res = await t.page.app.request('/embed.js');
+    expect(res.headers.get('content-type')).toContain('javascript');
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    const code = await res.text();
+    const b = fakeBrowser(t, attrs);
+    const window: any = { matchMedia: () => ({ matches: false }) };
+    new Function('window', 'document', 'navigator', 'location', 'fetch', 'crypto', code)(
+      window,
+      b.document,
+      b.navigator,
+      { origin: 'https://studionord.example' },
+      b.fetch,
+      globalThis.crypto,
+    );
+    return { ...b, window, code };
+  }
+
+  it('adds a Book button, schema.org data and booking tools to the business site', async () => {
+    const t = setup();
+    const { appended, tools, window } = await run(t, { label: 'Bestill time' });
+
+    const button = appended.find((e) => e.tagName === 'BUTTON');
+    expect(button.textContent).toBe('Bestill time');
+    const ld = JSON.parse(appended.find((e) => e.type === 'application/ld+json').text);
+    expect(ld).toMatchObject({
+      '@type': 'HairSalon',
+      name: 'Studio Nord',
+      url: 'https://studionord.example/',
+    });
+    expect(ld.sameAs[0]).toBe(BASE);
+    expect(typeof window.OpenBooking.open).toBe('function');
+    expect(tools.map((x) => x.name)).toEqual([
+      'list_services',
+      'search_availability',
+      'hold_slot',
+      'confirm_booking',
+    ]);
+  });
+
+  it('books end to end through the WebMCP tools, credited to "Browser agent"', async () => {
+    const t = setup();
+    const { tools } = await run(t);
+    const tool = (name: string) => tools.find((x) => x.name === name);
+    const parse = (r: any) => JSON.parse(r.content[0].text);
+
+    const avail = parse(
+      await tool('search_availability').execute({ date: DATE, service_id: 'haircut' }),
+    );
+    const hold = parse(await tool('hold_slot').execute({ slot_id: avail.slots[0].slot_id }));
+    const refused = await tool('confirm_booking').execute({
+      booking_id: hold.booking.booking_id,
+      ...customer,
+      user_confirmed: false,
+    });
+    expect(refused.isError).toBe(true);
+    const done = parse(
+      await tool('confirm_booking').execute({
+        booking_id: hold.booking.booking_id,
+        ...customer,
+        user_confirmed: true,
+      }),
+    );
+    expect(done.booking.status).toBe('confirmed');
+    expect(t.events.find((e) => e.operation === 'confirm' && e.ok)?.actor?.agent).toBe(
+      'Browser agent',
+    );
+  });
+
+  it('respects data-button="none" and data-structured-data="off", and answers CORS preflights', async () => {
+    const t = setup();
+    const { appended } = await run(t, { button: 'none', 'structured-data': 'off' });
+    expect(appended).toEqual([]);
+    const pre = await t.page.app.request('/api/hold', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://studionord.example', 'access-control-request-method': 'POST' },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-headers')).toContain('x-openbooking-agent');
+  });
+});

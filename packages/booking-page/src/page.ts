@@ -13,7 +13,9 @@ import {
 } from '@openbooking/core';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { embedScript } from './embed';
 import {
+  jsonLd,
   readPrefill,
   renderManage,
   renderPage,
@@ -36,8 +38,10 @@ export interface BookingPageOptions {
 }
 
 export interface BookingPage {
-  /** Routes: `/`, `/manage/:id`, `/llms.txt`, `/api/*`. Mount at the path of `apiBase`. */
+  /** Routes: `/`, `/manage/:id`, `/llms.txt`, `/embed.js`, `/api/*`. Mount at the path of `apiBase`. */
   app: Hono;
+  /** `embed.js` for the business's own website (see embed.ts). */
+  embed(): Promise<string>;
   /** The booking page HTML. `query` holds pre-fill parameters (see readPrefill). */
   html(query?: Record<string, string | undefined>): Promise<string>;
   /** Link customers use to view or cancel a booking (undefined until it has a confirmation code). */
@@ -128,6 +132,48 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     if (!booking.confirmation_code || !sameCode(booking.confirmation_code, code)) throw missing();
     return booking;
   };
+
+  const embed = async () => {
+    const [cat, prof] = await Promise.all([catalog(), profile()]);
+    return embedScript({
+      name: cat.venue.name,
+      page_url: pageUrl,
+      api_url: `${apiBase}/api`,
+      json_ld: jsonLd({
+        venue: cat.venue,
+        offerings: cat.offerings,
+        staff: cat.staff,
+        showParty: false,
+        profile: prof,
+        pageUrl,
+        apiPath,
+        prefill: {},
+      }),
+    });
+  };
+
+  // The public booking API is called from businesses' own websites (embed.js WebMCP tools), so
+  // allow any origin. No cookies are involved; every write still needs a slot id, an idempotency
+  // key and, to confirm, explicit consent.
+  app.use('/api/*', async (c, next) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Vary', 'Origin');
+    if (c.req.method === 'OPTIONS') {
+      c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'content-type, x-openbooking-agent');
+      c.header('Access-Control-Max-Age', '86400');
+      return c.body(null, 204);
+    }
+    await next();
+  });
+
+  app.get('/embed.js', async (c) => {
+    c.header('Content-Type', 'text/javascript; charset=utf-8');
+    // Short cache: a renamed service or new staff member shows up within minutes.
+    c.header('Cache-Control', 'public, max-age=300');
+    c.header('Access-Control-Allow-Origin', '*');
+    return c.body(await embed());
+  });
 
   app.get('/', async (c) => c.html(await html(c.req.query())));
 
@@ -276,7 +322,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     }),
   );
 
-  return { app, html, manageUrl, pageUrl };
+  return { app, embed, html, manageUrl, pageUrl };
 }
 
 // ---------------------------------------------------------------------------

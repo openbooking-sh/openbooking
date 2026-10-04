@@ -10,15 +10,17 @@ pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / op
 
 ## Routes
 
-| Path                                                    | What                                                                                            |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `GET /signup`, `POST /api/signup`, `POST /api/login`    | Owner accounts (email + password, scrypt; 30-day signed session token)                          |
-| `GET /studio`, `/studio/api/*`                          | Studio for the logged-in business, including **Settings**                                       |
-| `ALL /mcp`                                              | **The OpenBooking app**: `find_business` plus the five booking tools, each taking `business_id` |
-| `/b/{id}`                                               | The business: booking page for browsers, JSON index otherwise                                   |
-| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*` | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                      |
-| `/b/{id}/book/*`                                        | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                     |
-| `GET /oauth/google/callback`                            | Google Calendar connection                                                                      |
+| Path                                                          | What                                                                                            |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 30-day signed session token)                          |
+| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                       |
+| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the five booking tools, each taking `business_id` |
+| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                   |
+| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                      |
+| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                     |
+| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                 |
+| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                           |
+| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                      |
 
 `{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
 `business_id` and the venue id on its bookings.
@@ -38,6 +40,31 @@ listed in the OpenBooking app. `catalog.ts` turns them into the provider configu
 
 Deposits are not offered in hosted settings yet; they need online payments (planned: Stripe payment
 links).
+
+## Getting found: Google, website, social
+
+Studio Settings has a **Get found on Google and your website** card with copy buttons:
+
+1. **Google Business Profile:** paste the booking page link under Bookings, so a Book button shows
+   in Google Search and Maps.
+2. **Website:** one line, pasted once (Wix custom code, Squarespace code injection, WordPress via
+   WPCode, Webflow footer code, Shopify `theme.liquid`):
+
+   ```html
+   <script src="https://app.openbooking.sh/b/studio-nord/embed.js" async></script>
+   ```
+
+   It adds a floating Book button and a booking popup, turns existing links to the booking page
+   (and elements with `data-openbooking`) into popup triggers, adds schema.org `LocalBusiness` data
+   with the services, and registers the booking tools for browser agents (WebMCP) on the
+   business's own site. Options on the tag: `data-label`, `data-color`, `data-position="left"`,
+   `data-button="none"`, `data-structured-data="off"`, `data-agents="off"`. The booking page API
+   allows any origin (CORS) for this; no cookies are involved.
+
+3. **Instagram and Facebook:** the booking page link in the bio and the Book now button.
+
+The schema.org block is added by script, which Google reads; crawlers that don't run JavaScript
+see the booking page's own server-rendered data instead.
 
 ## Google Calendar
 

@@ -151,6 +151,13 @@ export interface SettingsView {
   /** Links the owner shares: booking page, "Book me through ChatGPT", the MCP endpoint. */
   links?: Array<{ label: string; url: string; hint?: string }>;
   integrations?: { google?: GoogleIntegrationView };
+  /** How the owner adds booking to their own website and Google profile. */
+  install?: {
+    /** The booking page link (Google Business Profile, Instagram, Facebook). */
+    booking_page: string;
+    /** One line for their website: `<script src=".../embed.js" async></script>`. */
+    snippet: string;
+  };
   /** Account email (hosted). */
   account?: {
     email: string;
