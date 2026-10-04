@@ -62,22 +62,34 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 - Owner: new and cancelled bookings, except ones staff made in Studio.
 - Deduplicated per booking, so agent retries never send twice.
 
+## Owner accounts
+
+- **Password reset:** `/reset` emails a link that works once (it is tied to the current password
+  hash) and expires in an hour. Saving a new password logs out every other session.
+- **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
+  listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
+  page and per-business MCP work straight away. Studio shows a "Confirm your email" step.
+- **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP, reset
+  emails per email and IP. The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets;
+  pass `clientIp` when running without a proxy.
+
 ## Storage
 
-Everything stateful sits behind an interface with an in-memory default. Hosted takes them as
-options to `createHostedApp`:
+Everything stateful sits behind an interface with an in-memory default, and `@openbooking/postgres`
+implements all of them. `postgresStores(db)` returns them ready to pass to `createHostedApp`:
 
-| Option            | Interface             | Package         | Notes                                                                                     |
-| ----------------- | --------------------- | --------------- | ----------------------------------------------------------------------------------------- |
-| `bookings`        | `BookingRecordStore`  | provider-memory | ✅ `PostgresBookingStore`. One store for all businesses (`list()` filters by `venue_id`). |
-| `idempotency`     | `IdempotencyStore`    | core            | ✅ `PostgresIdempotencyStore`. Shared; hosted prefixes keys with the business id.         |
-| `activityFor`     | `(id) => ActivityLog` | studio          | Memory. `PostgresActivityLog` is one log per database; needs a `business_id` column.      |
-| `businesses`      | `BusinessStore`       | hosted          | Memory. One row per business: JSON record, unique `id` and lower(`owner.email`).          |
-| `notificationLog` | `NotificationLog`     | notifications   | Memory. `claim(key)` = insert-if-absent on a unique key.                                  |
-| `calendarLinks`   | `CalendarLinkStore`   | google-calendar | Memory. booking id → Google event.                                                        |
+| Option            | Interface             | Postgres                    | Notes                                                  |
+| ----------------- | --------------------- | --------------------------- | ------------------------------------------------------ |
+| `businesses`      | `BusinessStore`       | `PostgresBusinessStore`     | JSON record; unique id and lower-cased owner email.    |
+| `bookings`        | `BookingRecordStore`  | `PostgresBookingStore`      | One store for all businesses (venue id = business id). |
+| `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.     |
+| `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                              |
+| `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.          |
+| `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                             |
+| `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                |
 
-With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) keeps bookings and
-idempotency in Postgres, but accounts still reset on cold starts until a `BusinessStore` lands.
+With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) and `pnpm dev:hosted` use all
+of them and create the tables on start.
 Google refresh tokens are stored in the business record as-is; encrypt them at rest in that store.
 
 ## ChatGPT and Claude directory submissions
@@ -97,8 +109,7 @@ do by hand before submitting:
 
 ## Not done yet
 
-- Password reset and email verification (owners can't recover a forgotten password yet).
-- Login rate limiting.
 - Custom domains or subdomains per business (paths only: `/b/{id}`).
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
+- Encrypting Google refresh tokens at rest (they sit in the business record as-is).
 - Outlook (Nylas), deposits, rescheduling.

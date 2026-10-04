@@ -43,14 +43,24 @@ async function boot() {
   const env = process.env;
 
   // OPENBOOKING_MODE=hosted serves many businesses (sign-up, Studio settings, the OpenBooking MCP
-  // app). Needs SESSION_SECRET. Bookings and idempotency use Postgres when DATABASE_URL is set;
-  // accounts are still in memory (see docs/HOSTED.md).
+  // app). Needs SESSION_SECRET, and DATABASE_URL for anything real: without it accounts and
+  // bookings live in memory and vanish on cold starts (see docs/HOSTED.md).
   if (env.OPENBOOKING_MODE === 'hosted') {
     return createHostedApp({
       baseUrl,
       sessionSecret: env.SESSION_SECRET ?? '',
       allowedHosts,
-      ...(stores ? { bookings: stores.bookings, idempotency: stores.idempotency } : {}),
+      ...(stores
+        ? {
+            businesses: stores.businesses,
+            bookings: stores.bookings,
+            idempotency: stores.idempotency,
+            activityFor: stores.activityFor,
+            calendarLinks: stores.calendarLinks,
+            notificationLog: stores.notificationLog,
+            rateLimiter: stores.rateLimiter,
+          }
+        : {}),
       ...(env.RESEND_API_KEY
         ? {
             mail: {

@@ -404,6 +404,15 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.8
         version: 0.5.8
+      '@openbooking/google-calendar':
+        specifier: workspace:^
+        version: link:../google-calendar
+      '@openbooking/hosted':
+        specifier: workspace:^
+        version: link:../hosted
+      '@openbooking/notifications':
+        specifier: workspace:^
+        version: link:../notifications
       '@openbooking/provider-calcom':
         specifier: workspace:^
         version: link:../provider-calcom

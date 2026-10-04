@@ -56,6 +56,41 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       );
     `,
   },
+  {
+    version: 2,
+    name: 'hosted',
+    sql: `
+      create table ob_businesses (
+        id          text primary key,
+        -- Lower-cased; one account per email.
+        owner_email text not null,
+        created_at  timestamptz not null,
+        data        jsonb not null
+      );
+      create unique index ob_businesses_owner_email on ob_businesses (owner_email);
+
+      create table ob_calendar_links (
+        booking_id  text primary key,
+        calendar_id text not null,
+        event_id    text not null
+      );
+
+      create table ob_notification_log (
+        key        text primary key,
+        claimed_at timestamptz not null default now()
+      );
+
+      create table ob_rate_limits (
+        key          text primary key,
+        window_start timestamptz not null,
+        count        integer not null
+      );
+
+      -- Activity per business on a hosted deployment ('' for single-business servers).
+      alter table ob_activity add column scope text not null default '';
+      create index ob_activity_scope on ob_activity (scope, id desc);
+    `,
+  },
 ];
 
 /**
