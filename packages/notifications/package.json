@@ -1,0 +1,36 @@
+{
+  "name": "@openbooking/notifications",
+  "version": "0.1.0",
+  "description": "Booking confirmation and cancellation emails with calendar invites (.ics) for OpenBooking.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openbooking/core": "workspace:^"
+  },
+  "devDependencies": {
+    "@openbooking/provider-memory": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
