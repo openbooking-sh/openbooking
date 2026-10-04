@@ -11,7 +11,7 @@ import {
   createDemoSalonProvider,
 } from '@openbooking/provider-memory';
 import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
-import { createHostedApp } from '@openbooking/hosted';
+import { anthropicExtractor, createHostedApp } from '@openbooking/hosted';
 import { ResendMailer } from '@openbooking/notifications';
 import { createOpenBookingApp } from '@openbooking/server';
 
@@ -49,6 +49,10 @@ async function boot() {
     return createHostedApp({
       baseUrl,
       sessionSecret: env.SESSION_SECRET ?? '',
+      // Website import reads services and prices with Claude when ANTHROPIC_API_KEY is set.
+      ...(env.ANTHROPIC_API_KEY
+        ? { importer: { extractor: anthropicExtractor({ apiKey: env.ANTHROPIC_API_KEY }) } }
+        : {}),
       allowedHosts,
       ...(stores
         ? {

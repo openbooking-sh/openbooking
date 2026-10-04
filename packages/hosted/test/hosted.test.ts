@@ -474,3 +474,59 @@ describe('website snippet', () => {
     expect(script.text).toContain(`${BASE}/b/studio-nord/book/api`);
   });
 });
+
+describe('self-serve setup', () => {
+  it('sends new owners to /setup and imports their website into a proposal', async () => {
+    const site = `<html><head><script type="application/ld+json">{"@type":"HairSalon","name":"Studio Nord",
+      "telephone":"+4722000001","address":{"streetAddress":"Eksempelgata 12","postalCode":"0550","addressLocality":"Oslo"},
+      "openingHours":["Mo-Fr 09:00-18:00","Sa 10:00-15:00"]}</script></head><body></body></html>`;
+    const hosted = createHostedApp({
+      baseUrl: BASE,
+      sessionSecret: 'test-secret-0123456789',
+      importer: {
+        lookup: async () => ['93.184.216.34'],
+        fetch: (async () =>
+          new Response(site, { headers: { 'content-type': 'text/html' } })) as typeof fetch,
+      },
+    });
+    cleanups.push(hosted.close);
+    const call = async (path: string, body?: unknown, token?: string) => {
+      const res = await hosted.app.request(`${BASE}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const text = await res.text();
+      return {
+        status: res.status,
+        text,
+        json: text.startsWith('{') ? JSON.parse(text) : undefined,
+      };
+    };
+
+    expect((await call('/signup')).text).toContain('setupPath');
+    const setup = await call('/setup');
+    expect(setup.status).toBe(200);
+    expect(setup.text).toContain('Set up your booking');
+
+    const { json: account } = await call('/api/signup', {
+      business_name: 'Studio Nord',
+      your_name: 'Maria',
+      email: 'maria@example.com',
+      password: 'correct horse',
+      category: 'hair_salon',
+    });
+    expect((await call('/studio/api/import', { url: 'studionord.example' })).status).toBe(401);
+    const { status, json } = await call(
+      '/studio/api/import',
+      { url: 'studionord.example' },
+      account.token,
+    );
+    expect(status).toBe(200);
+    expect(json.profile.address).toMatchObject({ street_address: 'Eksempelgata 12' });
+    expect(json.opening_hours.sat).toEqual([{ open: '10:00', close: '15:00' }]);
+  });
+});

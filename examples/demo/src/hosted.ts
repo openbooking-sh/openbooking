@@ -10,7 +10,13 @@
  *      (redirect URI: {BASE_URL}/oauth/google/callback),
  *      DATABASE_URL to keep accounts, bookings and activity in Postgres (in memory otherwise).
  */
-import { createHostedApp, devSecret, hashPassword, starterSettings } from '@openbooking/hosted';
+import {
+  anthropicExtractor,
+  createHostedApp,
+  devSecret,
+  hashPassword,
+  starterSettings,
+} from '@openbooking/hosted';
 import { ConsoleMailer, ResendMailer } from '@openbooking/notifications';
 import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
 import { listen } from '@openbooking/server';
@@ -37,6 +43,10 @@ const hosted = createHostedApp({
       }
     : {}),
   sessionSecret: env.SESSION_SECRET ?? devSecret(),
+  // Website import reads services and prices with Claude when ANTHROPIC_API_KEY is set.
+  ...(env.ANTHROPIC_API_KEY
+    ? { importer: { extractor: anthropicExtractor({ apiKey: env.ANTHROPIC_API_KEY }) } }
+    : {}),
   mail: {
     mailer: env.RESEND_API_KEY
       ? new ResendMailer({ apiKey: env.RESEND_API_KEY })

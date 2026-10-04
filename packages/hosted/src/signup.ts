@@ -1,10 +1,11 @@
 /**
  * Sign-up page. Plain HTML, no build step. Creates the account, stores the session token where
- * Studio reads it, and drops the owner into Studio's settings with a ready-to-edit setup.
+ * Studio reads it, and continues to the guided setup (/setup).
  * The script avoids backticks and dollar-brace so it can live in this template literal.
  */
 export function signupHtml(opts: {
   studioPath: string;
+  setupPath: string;
   signupApi: string;
   loginPath: string;
 }): string {
@@ -94,7 +95,7 @@ export function signupHtml(opts: {
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || 'Sign-up failed'); return j; }); })
       .then(function (j) {
         try { sessionStorage.setItem('ob-studio-token', j.token); } catch (e) {}
-        location.href = cfg.studioPath + '#settings';
+        location.href = cfg.setupPath;
       })
       .catch(function (e) { $('err').textContent = e.message; $('go').disabled = false; });
   };
