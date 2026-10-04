@@ -190,5 +190,15 @@ export function describeBookingStore(
       const [one] = await store.list({ limit: 1 }, NOW);
       expect(one).toMatchObject({ resource_id: 'r3', start_ms: T0 + 120 * MIN });
     });
+
+    it('lists one venue when venue_id is given', async () => {
+      const store = await factory();
+      await store.insertIfFree(record({ id: 'a1' }), NOW);
+      await store.insertIfFree(record({ id: 'b1', venue: 'v2' }), NOW);
+      const ids = async (venue_id: string) =>
+        (await store.list({ venue_id }, NOW)).map((r) => r.booking.booking_id);
+      expect(await ids('v1')).toEqual(['a1']);
+      expect(await ids('v2')).toEqual(['b1']);
+    });
   });
 }

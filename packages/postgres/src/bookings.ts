@@ -109,6 +109,10 @@ export class PostgresBookingStore implements BookingRecordStore {
   async list(query: BookingListQuery, now: Date) {
     const params: unknown[] = [];
     const where: string[] = [];
+    if (query.venue_id) {
+      params.push(query.venue_id);
+      where.push(`venue_id = $${params.length}`);
+    }
     if (query.from) {
       params.push(query.from.toISOString());
       where.push(`start_at >= $${params.length}::timestamptz`);
