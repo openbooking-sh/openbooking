@@ -28,3 +28,13 @@ export { createSigner, hashPassword, verifyPassword, type Signer } from './auth'
 export { Tenant, TenantProvider, type TenantDeps } from './tenant';
 export { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
 export { passwordTag } from './account';
+export {
+  ImportError,
+  anthropicExtractor,
+  importFromWebsite,
+  isPrivateAddress,
+  type Extractor,
+  type ImportOptions,
+  type ImportProposal,
+  type ImportedService,
+} from './importer';

@@ -60,6 +60,8 @@ import {
   verifyEmail,
 } from './account';
 import { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
+import { ImportError, importFromWebsite, type ImportOptions } from './importer';
+import { setupHtml } from './setup';
 import { signupHtml } from './signup';
 import { Tenant, type TenantDeps } from './tenant';
 
@@ -93,6 +95,12 @@ export interface HostedOptions {
    * to true when `mail` is set (otherwise there is no way to confirm).
    */
   requireVerifiedEmail?: boolean;
+  /**
+   * "Import from your website" during setup. Pass an `extractor` (e.g. `anthropicExtractor`) to
+   * also read services and prices with an LLM; without it only structured data and page basics are
+   * used. `fetch`/`lookup` are for tests.
+   */
+  importer?: Pick<ImportOptions, 'extractor' | 'fetch' | 'lookup'>;
   onEvent?: (businessId: string, event: BookingEvent) => void;
   version?: string;
 }
@@ -257,7 +265,12 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.get('/signup', (c) =>
     c.html(
-      signupHtml({ studioPath: STUDIO_PATH, signupApi: '/api/signup', loginPath: STUDIO_PATH }),
+      signupHtml({
+        studioPath: STUDIO_PATH,
+        setupPath: '/setup',
+        signupApi: '/api/signup',
+        loginPath: STUDIO_PATH,
+      }),
     ),
   );
 
@@ -441,6 +454,9 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   // ---------------------------------------------------------------- Studio
 
+  app.get('/setup', (c) =>
+    c.html(setupHtml({ studioPath: STUDIO_PATH, api: `${STUDIO_PATH}/api` })),
+  );
   app.get(STUDIO_PATH, (c) => c.html(STUDIO_HTML));
   app.get(`${STUDIO_PATH}/`, (c) => c.redirect(STUDIO_PATH));
 
@@ -485,6 +501,26 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         loginHint: t.business.owner.email,
       }),
     });
+  });
+
+  app.post(`${STUDIO_PATH}/api/import`, async (c) => {
+    const t = c.get('tenant');
+    if (!(await allowed([`import:${t.id}`, { limit: 10, windowMs: 3_600_000 }]))) return tooMany(c);
+    const body = (await c.req.json().catch(() => ({}))) as { url?: unknown };
+    if (typeof body.url !== 'string' || !body.url.trim()) {
+      return err(c, new BookingError('validation_error', 'Enter your website address.'));
+    }
+    try {
+      return c.json(
+        await importFromWebsite(body.url, {
+          ...options.importer,
+          currency: t.business.settings.profile.currency,
+        }),
+      );
+    } catch (e) {
+      if (e instanceof ImportError) return err(c, new BookingError('validation_error', e.message));
+      throw e;
+    }
   });
 
   app.post(`${STUDIO_PATH}/api/account/verify-email`, async (c) => {

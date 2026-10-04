@@ -25,13 +25,27 @@ pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / op
 `{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
 `business_id` and the venue id on its bookings.
 
-## Setup in ten minutes
+## Self-serve setup
 
-Sign-up asks for the business name, type, city, owner name, email and password. It creates a
+Sign-up asks for the business name, type, city, owner name, email and password, and creates a
 business that is bookable straight away: the owner as the only staff member, typical services for
-the type (example NOK prices), weekday hours, and free cancellation until 24 hours before. Studio
-opens on **Settings** with a checklist and the links to share (booking page, "Book me through
-ChatGPT/Claude" links that open the assistant with the booking page, and the MCP URL).
+the type (example NOK prices), weekday hours, and free cancellation until 24 hours before.
+
+The owner then lands on **`/setup`**, one short screen per step, each saved as they go:
+
+1. **Import from your website** (optional): `POST /studio/api/import` reads their site and proposes
+   address, phone, opening hours and services. Sources: schema.org JSON-LD, page meta and `tel:`
+   links, and, when `ANTHROPIC_API_KEY` is set, Claude reading the home page plus up to two
+   likely prices pages. Only public http(s) addresses are fetched (every redirect re-checked),
+   with an 8-second timeout and a 1.5 MB cap; 10 imports per business per hour.
+2. **Contact:** street, postal code, city, phone, one line about the business.
+3. **Services:** name, minutes, price; add and remove rows.
+4. **Opening hours:** one-tap presets, then any day adjusted.
+5. **Team:** names ("just me" is fine).
+6. **Live:** "Try it yourself" in ChatGPT and Claude, the booking page link, the Google step and
+   the website snippet.
+
+Everything stays editable in Studio **Settings**, which also has the checklist and links.
 
 Settings are in owner terms (`BusinessSettingsSchema` in `@openbooking/studio`): profile, opening
 hours per weekday, closed dates, staff, services (duration, price, who does it), one cancellation
