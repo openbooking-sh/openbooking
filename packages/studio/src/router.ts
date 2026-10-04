@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BookingError,
   formatMoney,
+  fromZodError,
   runAsActor,
   time,
   toErrorPayload,
@@ -12,6 +13,7 @@ import {
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ActivityStore, recordActivity, type ActivityLog } from './activity';
+import { BusinessSettingsSchema, type StudioSettingsAdapter } from './settings';
 import { computeOverview } from './stats';
 import { STUDIO_HTML } from './ui';
 
@@ -31,6 +33,8 @@ export interface StudioOptions {
   activity?: ActivityLog;
   /** Display name in the Studio header. */
   name?: string;
+  /** Lets the owner edit business settings in Studio (hosted OpenBooking). */
+  settings?: StudioSettingsAdapter;
 }
 
 export interface Studio {
@@ -113,6 +117,7 @@ export function createStudio(options: StudioOptions): Studio {
         name: options.name ?? service.provider.info.name,
         venues,
         hold_ttl_seconds: service.holdTtlSeconds,
+        settings: !!options.settings,
       };
     }),
   );
@@ -176,6 +181,18 @@ export function createStudio(options: StudioOptions): Studio {
       return { booking: await oneWithVia(booking) };
     }),
   );
+
+  if (options.settings) {
+    const settings = options.settings;
+    app.get('/api/settings', (c) => json(c, () => settings.get()));
+    app.put('/api/settings', (c) =>
+      json(c, async () => {
+        const parsed = BusinessSettingsSchema.safeParse(await c.req.json().catch(() => null));
+        if (!parsed.success) throw fromZodError(parsed.error, 'settings');
+        return settings.update(parsed.data);
+      }),
+    );
+  }
 
   app.get('/api/activity', (c) =>
     json(c, async () => {
