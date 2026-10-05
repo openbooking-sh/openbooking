@@ -133,6 +133,19 @@ With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) and `pnpm 
 of them and create the tables on start.
 Google refresh tokens are stored in the business record as-is; encrypt them at rest in that store.
 
+## Observability
+
+All optional, set as environment variables on the Vercel project:
+
+| Variable                      | Tool                          | What it does                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SENTRY_DSN`                  | Sentry (EU region)            | Server errors plus anything logged with `console.error` (failed emails, calendar syncs). No IPs, cookies or request bodies.                                                                                                                                                                                                                    |
+| `POSTHOG_KEY`, `POSTHOG_HOST` | PostHog (EU cloud by default) | Server events keyed by business id: `business_signed_up`, `email_verified`, `website_imported`, `google_calendar_connected`, `password_reset`, `slot_held`, `booking_confirmed` and `booking_cancelled` with their channel. Plus a cookieless browser snippet on owner pages (sign-up, setup, reset, Studio), never on customer booking pages. |
+| `SLACK_WEBHOOK_URL`           | Slack incoming webhook        | Operator notifications: new business, email confirmed, Google connected, every booking and cancellation with its channel, server errors (at most one a minute). Business names only. Previews prefix `[preview]`.                                                                                                                              |
+
+No customer names, emails or phone numbers are sent to any of them. Background work (emails,
+calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
+
 ## ChatGPT and Claude directory submissions
 
 The OpenBooking app (`/mcp`) is built for this: no login for customers, one server for every

@@ -8,7 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { ManualClock } from '@openbooking/core';
 import { MemoryMailer } from '@openbooking/notifications';
 import { createFakeGoogle } from '../../google-calendar/test/fake-google';
-import { createHostedApp } from '../src';
+import { PostHogAnalytics, SlackNotifier, createHostedApp } from '../src';
 
 const BASE = 'http://localhost:3000';
 // Tuesday 6 October 2026, 09:00 in Oslo.
@@ -528,5 +528,122 @@ describe('self-serve setup', () => {
     expect(status).toBe(200);
     expect(json.profile.address).toMatchObject({ street_address: 'Eksempelgata 12' });
     expect(json.opening_hours.sat).toEqual([{ open: '10:00', close: '15:00' }]);
+  });
+});
+
+describe('analytics and operator notifications', () => {
+  it('reports sign-ups and bookings by channel, without customer data', async () => {
+    const posted: Array<{ url: string; body: any }> = [];
+    const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+      posted.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return new Response('{}');
+    }) as typeof fetch;
+    const hosted = createHostedApp({
+      baseUrl: BASE,
+      sessionSecret: 'test-secret-0123456789',
+      clock: new ManualClock(NOW),
+      analytics: new PostHogAnalytics({ apiKey: 'phc_test', fetch: fakeFetch }),
+      ops: new SlackNotifier('https://hooks.slack.test/T/B/x', { fetch: fakeFetch }),
+      pageAnalytics: { posthogKey: 'phc_test' },
+    });
+    cleanups.push(hosted.close);
+    const call = async (path: string, body?: unknown, headers: Record<string, string> = {}) => {
+      const res = await hosted.app.request(`${BASE}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const text = await res.text();
+      return {
+        status: res.status,
+        text,
+        json: text.startsWith('{') ? JSON.parse(text) : undefined,
+      };
+    };
+
+    // Owner pages carry the PostHog snippet; customer booking pages don't.
+    expect((await call('/signup')).text).toContain('phc_test');
+    await call('/api/signup', {
+      business_name: 'Studio Nord',
+      your_name: 'Maria',
+      email: 'maria@example.com',
+      password: 'correct horse',
+      category: 'hair_salon',
+      city: 'Oslo',
+    });
+    expect((await call('/b/studio-nord', undefined, { accept: 'text/html' })).text).not.toContain(
+      'phc_test',
+    );
+
+    const api = '/b/studio-nord/book/api';
+    const { json: avail } = await call(`${api}/availability?date=${DAY}&service=haircut`);
+    const { json: hold } = await call(`${api}/hold`, {
+      slot_id: avail.slots[0].slot_id,
+      idempotency_key: 'hold-key-analytics',
+    });
+    const confirmed = await call(`${api}/confirm`, {
+      booking_id: hold.booking.booking_id,
+      idempotency_key: 'confirm-key-analytics',
+      customer: ada,
+      user_confirmed: true,
+    });
+    expect(confirmed.status).toBe(200);
+    await hosted.idle();
+
+    const events = posted.filter((p) => p.url.includes('posthog')).map((p) => p.body);
+    expect(events.map((e) => e.event)).toEqual([
+      'business_signed_up',
+      'slot_held',
+      'booking_confirmed',
+    ]);
+    expect(events[2]).toMatchObject({
+      distinct_id: 'business:studio-nord',
+      properties: { channel: 'Booking page', protocol: 'web', business_id: 'studio-nord' },
+    });
+
+    const slack = posted.filter((p) => p.url.includes('slack')).map((p) => p.body.text);
+    expect(slack[0]).toContain(':tada: New business: *Studio Nord* (hair salon, Oslo)');
+    expect(slack[1]).toBe(':calendar: *Studio Nord* got a booking via Booking page');
+
+    // Neither tool ever sees the owner's or customer's personal details.
+    const everything = JSON.stringify(posted);
+    for (const pii of ['maria@example.com', 'ada@example.com', 'Lovelace']) {
+      expect(everything).not.toContain(pii);
+    }
+  });
+});
+
+describe('visitor pings', () => {
+  it('posts one Slack message per visitor, skips bots, and stores nothing', async () => {
+    const posted: string[] = [];
+    const hosted = createHostedApp({
+      baseUrl: BASE,
+      sessionSecret: 'test-secret-0123456789',
+      ops: new SlackNotifier('https://hooks.slack.test/x', {
+        fetch: (async (_u: unknown, init?: RequestInit) => {
+          posted.push(JSON.parse(String(init?.body)).text);
+          return new Response('ok');
+        }) as typeof fetch,
+      }),
+    });
+    cleanups.push(hosted.close);
+    const visit = (ip: string, ua = 'Mozilla/5.0 (Macintosh)') =>
+      hosted.app.request(`${BASE}/api/visit`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'text/plain',
+          'user-agent': ua,
+          'x-real-ip': ip,
+          'x-vercel-ip-city': 'Oslo',
+          'x-vercel-ip-country': 'NO',
+        },
+        body: JSON.stringify({ page: '/#pricing', referrer: 'https://www.google.com/search?q=x' }),
+      });
+
+    expect((await visit('203.0.113.1')).status).toBe(204);
+    await visit('203.0.113.1'); // same visitor again: no second message
+    await visit('203.0.113.2', 'Googlebot/2.1');
+    await hosted.idle();
+    expect(posted).toEqual([':eyes: Visitor on /#pricing · Oslo, NO · via www.google.com']);
   });
 });

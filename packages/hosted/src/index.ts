@@ -38,3 +38,11 @@ export {
   type ImportProposal,
   type ImportedService,
 } from './importer';
+export {
+  PostHogAnalytics,
+  posthogSnippet,
+  withHeadSnippet,
+  type Analytics,
+  type PostHogOptions,
+} from './analytics';
+export { SlackNotifier, slackEscape, type OpsNotifier } from './slack';

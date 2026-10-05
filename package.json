@@ -37,10 +37,12 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
+    "@openbooking/hosted": "workspace:^",
+    "@openbooking/notifications": "workspace:^",
     "@openbooking/postgres": "workspace:^",
     "@openbooking/provider-memory": "workspace:^",
     "@openbooking/server": "workspace:^",
-    "@openbooking/hosted": "workspace:^",
-    "@openbooking/notifications": "workspace:^"
+    "@sentry/node": "^11.4.0",
+    "@vercel/functions": "^3.9.11"
   }
 }
