@@ -612,3 +612,38 @@ describe('analytics and operator notifications', () => {
     }
   });
 });
+
+describe('visitor pings', () => {
+  it('posts one Slack message per visitor, skips bots, and stores nothing', async () => {
+    const posted: string[] = [];
+    const hosted = createHostedApp({
+      baseUrl: BASE,
+      sessionSecret: 'test-secret-0123456789',
+      ops: new SlackNotifier('https://hooks.slack.test/x', {
+        fetch: (async (_u: unknown, init?: RequestInit) => {
+          posted.push(JSON.parse(String(init?.body)).text);
+          return new Response('ok');
+        }) as typeof fetch,
+      }),
+    });
+    cleanups.push(hosted.close);
+    const visit = (ip: string, ua = 'Mozilla/5.0 (Macintosh)') =>
+      hosted.app.request(`${BASE}/api/visit`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'text/plain',
+          'user-agent': ua,
+          'x-real-ip': ip,
+          'x-vercel-ip-city': 'Oslo',
+          'x-vercel-ip-country': 'NO',
+        },
+        body: JSON.stringify({ page: '/#pricing', referrer: 'https://www.google.com/search?q=x' }),
+      });
+
+    expect((await visit('203.0.113.1')).status).toBe(204);
+    await visit('203.0.113.1'); // same visitor again: no second message
+    await visit('203.0.113.2', 'Googlebot/2.1');
+    await hosted.idle();
+    expect(posted).toEqual([':eyes: Visitor on /#pricing · Oslo, NO · via www.google.com']);
+  });
+});

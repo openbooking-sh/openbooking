@@ -322,6 +322,48 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
+  // "Someone is on your site": the marketing site sends one beacon per visit (see the snippet in
+  // docs/HOSTED.md) and the operator gets a Slack message. Page, referrer and approximate place
+  // (from the host's geo headers) only; the IP is used for rate limiting and never stored.
+  app.post('/api/visit', async (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    if (!options.ops) return c.body(null, 204);
+    const ua = c.req.header('user-agent') ?? '';
+    if (BOT_UA.test(ua)) return c.body(null, 204);
+    const permitted = await allowed(
+      [`visit:ip:${clientIp(c.req.raw)}`, { limit: 1, windowMs: 30 * 60_000 }],
+      ['visit:all', { limit: 60, windowMs: 3_600_000 }],
+    );
+    if (!permitted) return c.body(null, 204);
+    // sendBeacon posts text/plain (no CORS preflight), so parse the body ourselves.
+    let body: { page?: unknown; referrer?: unknown } = {};
+    try {
+      body = JSON.parse(await c.req.text()) as typeof body;
+    } catch {
+      // ignore
+    }
+    const clean = (v: unknown, max: number) =>
+      typeof v === 'string' ? slackEscape(v.replace(/[\r\n]/g, ' ').slice(0, max)) : '';
+    const page = clean(body.page, 200) || '/';
+    let from = '';
+    try {
+      const ref =
+        typeof body.referrer === 'string' && body.referrer ? new URL(body.referrer) : null;
+      if (ref && !ref.hostname.endsWith('openbooking.sh'))
+        from = ` · via ${clean(ref.hostname, 80)}`;
+    } catch {
+      // not a URL
+    }
+    const city = decodeURIComponent(c.req.header('x-vercel-ip-city') ?? '');
+    const country = c.req.header('x-vercel-ip-country') ?? '';
+    const place = [city, country]
+      .filter(Boolean)
+      .map((x) => clean(x, 60))
+      .join(', ');
+    options.ops.notify(`:eyes: Visitor on ${page}${place ? ` · ${place}` : ''}${from}`);
+    return c.body(null, 204);
+  });
+
   app.get('/', (c) => {
     if ((c.req.header('accept') ?? '').includes('text/html')) return c.redirect('/signup');
     return c.json({
@@ -711,6 +753,10 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     },
   };
 }
+
+/** Crawlers and headless browsers: no Slack message for them. */
+const BOT_UA =
+  /bot|crawl|spider|slurp|preview|headless|lighthouse|monitor|uptime|curl|wget|python|node-fetch/i;
 
 /** Booking operations worth counting, by engine operation. */
 const BOOKING_EVENTS: Partial<Record<BookingEvent['operation'], string>> = {
