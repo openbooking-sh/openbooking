@@ -1,0 +1,1265 @@
+# OpenBooking: full documentation for AI tools
+
+> OpenBooking is an open-source TypeScript SDK and booking backend that makes any website or booking platform bookable by AI assistants (Claude, ChatGPT, Gemini, AI browsers) through MCP, WebMCP and UCP. It enforces agent safety: holds that expire, idempotent retries that never double-book, explicit customer consent, and cancellation terms shown before booking. Packages are published on npm as @openbooking-sh/*.
+
+
+<!-- Recipes (docs/RECIPES.md) -->
+
+# Recipes
+
+Copy-paste starting points. Every snippet uses the published `@openbooking-sh/*` packages.
+
+## 1. A booking backend in one file
+
+```sh
+npm install @openbooking-sh/server @openbooking-sh/provider-memory
+```
+
+```ts
+// server.ts: run with `npx tsx server.ts`
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
+import { MemoryBookingProvider, type MemoryProviderConfig } from '@openbooking-sh/provider-memory';
+
+const salon: MemoryProviderConfig = {
+  name: 'Studio Nord',
+  venues: [
+    {
+      venue: {
+        id: 'studio-nord',
+        name: 'Studio Nord',
+        timezone: 'Europe/Oslo',
+        currency: 'NOK',
+        address: {
+          street_address: 'Eksempelgata 12',
+          postal_code: '0550',
+          address_locality: 'Oslo',
+          address_country: 'NO',
+        },
+      },
+      currency: 'NOK',
+      // Who or what gets booked. Tags let customers ask for someone by name.
+      resources: [
+        {
+          id: 'maria',
+          venue_id: 'studio-nord',
+          kind: 'staff',
+          name: 'Maria',
+          capacity: { min: 1, max: 1 },
+          tags: ['maria'],
+        },
+        {
+          id: 'jonas',
+          venue_id: 'studio-nord',
+          kind: 'staff',
+          name: 'Jonas',
+          capacity: { min: 1, max: 1 },
+          tags: ['jonas'],
+        },
+      ],
+      offerings: [
+        {
+          id: 'haircut',
+          venue_id: 'studio-nord',
+          name: 'Haircut',
+          duration_minutes: 45,
+          price_per_person: { amount: 65000, currency: 'NOK' }, // minor units: 650.00 NOK
+          resource_kinds: ['staff'],
+          cancellation: {
+            refundability: 'refundable',
+            free_until_hours_before: 24,
+            late_fee_per_person: 32500,
+            no_show_fee_per_person: 32500,
+          },
+          deposit: null,
+        },
+      ],
+      // Weekday 0 = Sunday … 6 = Saturday. Missing = closed.
+      opening_hours: {
+        2: [{ open: '09:00', close: '18:00' }],
+        3: [{ open: '09:00', close: '18:00' }],
+        4: [{ open: '09:00', close: '18:00' }],
+        5: [{ open: '09:00', close: '18:00' }],
+        6: [{ open: '10:00', close: '16:00' }],
+      },
+      slot_interval_minutes: 15,
+      buffer_minutes: 10, // break between appointments with the same person
+      min_lead_minutes: 60,
+      max_days_ahead: 60,
+    },
+  ],
+};
+
+const { app } = createOpenBookingApp({
+  provider: new MemoryBookingProvider(salon),
+  baseUrl: process.env.BASE_URL ?? 'http://localhost:3000',
+  studio: { token: process.env.STUDIO_TOKEN }, // Studio is open without a token on localhost only
+});
+await listen(app, { port: 3000 });
+```
+
+You get:
+
+- `/book`: the booking page;
+- `/book/embed.js`: the website snippet;
+- `/mcp`: for Claude, ChatGPT and other MCP clients;
+- `/ucp` and `/.well-known/ucp`: UCP;
+- `/.well-known/agent-card.json`: A2A;
+- `/studio`: the dashboard.
+
+## 2. Keep bookings in Postgres
+
+```sh
+npm install @openbooking-sh/postgres
+```
+
+```ts
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
+
+const db = connectPostgres(process.env.DATABASE_URL!);
+await migrate(db); // creates and upgrades tables; safe on every start
+const stores = postgresStores(db);
+
+const { app } = createOpenBookingApp({
+  provider: new MemoryBookingProvider(salon, { store: stores.bookings }),
+  serviceOptions: { idempotencyStore: stores.idempotency },
+  studio: { token: process.env.STUDIO_TOKEN, activity: stores.activity },
+  baseUrl: process.env.BASE_URL!,
+});
+```
+
+Holds are reserved under a per-resource lock, so two servers can never sell the same time.
+
+## 3. Deploy to Vercel
+
+Export the app as a Vercel Function and send every path to it:
+
+```ts
+// api/index.ts
+const handle = (request: Request) => app.fetch(request);
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const DELETE = handle;
+export const OPTIONS = handle;
+```
+
+```json
+// vercel.json
+{ "rewrites": [{ "source": "/(.*)", "destination": "/api" }] }
+```
+
+Set `BASE_URL` to your public URL, plus `STUDIO_TOKEN` and `DATABASE_URL`.
+
+## 4. Add booking to an existing website
+
+One line, before `</body>`:
+
+```html
+<script src="https://your-booking-backend.example.com/book/embed.js" async></script>
+```
+
+What it does:
+
+- adds a floating Book button and a booking popup;
+- makes links to the booking page (and any element with `data-openbooking`) open the popup;
+- adds schema.org data for search engines and AI;
+- registers WebMCP booking tools for AI browsers.
+
+Options on the tag: `data-label`, `data-color`, `data-position="left"`, `data-button="none"`,
+`data-structured-data="off"`, `data-agents="off"`.
+
+On hosted OpenBooking, the snippet is `https://app.openbooking.sh/b/<business>/embed.js`.
+
+## 5. Connect an existing booking system
+
+Implement `BookingProvider` from `@openbooking-sh/core`. The engine handles agent safety (consent,
+idempotency, hold expiry, cancellation rules); you translate to your system:
+
+```ts
+import type { BookingProvider } from '@openbooking-sh/core';
+
+export class MySystemProvider implements BookingProvider {
+  readonly info = { name: 'My booking system' };
+  async listVenues() {
+    /* your locations */
+  }
+  async searchAvailability(query, ctx) {
+    /* free slots with price and cancellation policy */
+  }
+  async createHold(req, ctx) {
+    /* reserve atomically until req.expires_at */
+  }
+  async confirmHold(req, ctx) {
+    /* turn the hold into a booking; re-check expiry */
+  }
+  async getBooking(id, ctx) {
+    /* … */
+  }
+  async cancelBooking(req, ctx) {
+    /* release a hold or cancel with req.fee / req.refund */
+  }
+}
+```
+
+The contract:
+
+- every mutation is atomic;
+- two overlapping holds must never both succeed (throw `BookingError('slot_unavailable')`);
+- expired holds stop blocking inventory.
+
+`@openbooking-sh/provider-memory` and `@openbooking-sh/provider-calcom` are complete examples.
+
+## Rules for AI coding tools
+
+If you're an AI assistant adding OpenBooking to a project:
+
+- **Use the packages; don't reimplement booking logic.** Holds, idempotency and consent are subtle.
+- **Prices are in minor units:** `65000` = 650.00 NOK.
+- **Opening hours use weekday numbers,** 0 = Sunday.
+- **Never call `confirm` without the end user's explicit yes** to time, price and cancellation
+  terms (`user_confirmed: true`).
+- **Every hold and confirm needs a fresh `idempotency_key`** (8+ characters); reuse it only to
+  retry the same request.
+- **Protect Studio with `STUDIO_TOKEN` anywhere but localhost.**
+
+---
+
+<!-- README (README.md) -->
+
+# OpenBooking
+
+**Make any booking system bookable by AI agents through one integration.**
+
+Restaurants, salons, clinics: implement one `BookingProvider` interface, and OpenBooking exposes
+it to agents over **MCP**, **UCP** and **A2A**. It enforces the rules that make agent bookings
+safe:
+
+- holds that expire;
+- idempotent retries that never double-book;
+- explicit user confirmation;
+- policy terms disclosed up front.
+
+| Protocol                              | Status       | What you get                                                                                                                        |
+| ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **MCP** (Model Context Protocol)      | ✅ Supported | 5 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
+| **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
+| **A2A** (Agent2Agent)                 | ⚪ Stub      | v1.0 Agent Card at `/.well-known/agent-card.json`; task endpoint not implemented yet                                                |
+
+## Install
+
+```sh
+npm install @openbooking-sh/server @openbooking-sh/core
+```
+
+```ts
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
+import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
+
+const { app } = createOpenBookingApp({
+  provider: createDemoSalonProvider(), // or your own BookingProvider
+  baseUrl: 'http://localhost:3000',
+});
+await listen(app, { port: 3000 });
+// MCP at /mcp · booking page at /book · Studio at /studio · UCP at /.well-known/ucp
+```
+
+| Package                                                                                                                             | What it is                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`@openbooking-sh/core`](packages/core)                                                                                             | The engine and the `BookingProvider` interface                           |
+| [`@openbooking-sh/server`](packages/server)                                                                                         | One app for MCP, UCP, A2A, booking page and Studio                       |
+| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                       | Configured provider (services, staff, hours, rules) on a pluggable store |
+| [`@openbooking-sh/postgres`](packages/postgres)                                                                                     | Postgres storage for everything                                          |
+| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                             | Booking page, embed snippet and WebMCP                                   |
+| [`@openbooking-sh/studio`](packages/studio)                                                                                         | Dashboard for the business                                               |
+| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
+| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                       | Cal.com connector (beta)                                                 |
+| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
+| [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
+
+**More:** [recipes](docs/RECIPES.md) (Postgres, Vercel, website snippet, your own booking system) · [docs for AI coding tools](llms.txt) · [contributing](CONTRIBUTING.md)
+
+## 5-minute quickstart
+
+Requires Node 22.12+ and pnpm. The published packages run on Node 20+. Run `corepack enable` or `npm i -g pnpm`.
+
+```sh
+git clone <this repo> openbooking && cd openbooking
+pnpm install
+pnpm dev
+```
+
+This starts **Studio Nord**, a fictional hair salon (in-memory) with three stylists, three services (haircut, beard trim, color & cut with a deposit), opening hours and a cancellation policy. Run `DEMO=restaurant pnpm dev` for the restaurant demo instead.
+
+```
+MCP (Streamable HTTP)  http://localhost:3000/mcp
+UCP profile            http://localhost:3000/.well-known/ucp
+UCP REST               http://localhost:3000/ucp/booking-sessions
+A2A Agent Card         http://localhost:3000/.well-known/agent-card.json
+Studio (dashboard)     http://localhost:3000/studio
+```
+
+**Try it with an agent.** Point any MCP client at `http://localhost:3000/mcp`. For example, run
+`npx @modelcontextprotocol/inspector`. Then ask the agent to _"book me a haircut with Maria on Friday
+afternoon"_.
+
+For stdio clients, use `pnpm --dir examples/demo stdio` (config snippet in
+[`examples/demo/src/stdio.ts`](examples/demo/src/stdio.ts)).
+
+**Try it with curl (UCP REST).**
+
+```sh
+# 1. find a slot (EXTENSION: sh.openbooking.availability)
+curl "localhost:3000/ucp/availability?date=2026-10-09&party_size=1&offering_id=haircut&time_from=15:00"
+
+# 2. hold it (a UCP booking session); copy an offer id from step 1
+curl -X POST localhost:3000/ucp/booking-sessions \
+  -H 'content-type: application/json' -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"stays":[{"id":"<offer id>"}],"booker":{"first_name":"Ada","last_name":"Lovelace","email":"ada@example.com"}}'
+
+# 3. confirm, only with explicit user consent
+curl -X POST localhost:3000/ucp/booking-sessions/<id>/complete \
+  -H 'content-type: application/json' -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"user_confirmed":true}'
+```
+
+## Keep bookings in Postgres
+
+The demos are in-memory by default. Set `DATABASE_URL` and bookings, holds, idempotency records and Studio activity are stored in Postgres (tables are created on start):
+
+```sh
+DATABASE_URL=postgres://user:pass@localhost:5432/openbooking pnpm dev
+```
+
+On Vercel, add a Postgres database from the Marketplace (Neon, Supabase…) and use its pooled connection string. In code:
+
+```ts
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
+
+const db = connectPostgres(process.env.DATABASE_URL!);
+await migrate(db);
+const stores = postgresStores(db);
+
+createOpenBookingApp({
+  provider: createDemoSalonProvider({ store: stores.bookings }), // or new CalcomBookingProvider({ store: stores.calcom, ... })
+  serviceOptions: { idempotencyStore: stores.idempotency },
+  studio: { token: process.env.STUDIO_TOKEN, activity: stores.activity },
+  baseUrl,
+});
+```
+
+Holds are reserved under a per-resource lock, so two servers can never hand out the same time.
+
+## OpenBooking Studio
+
+The booking system for the people running the business, at `/studio`:
+
+- **Calendar:** a day view with a column per staff member or table, and the day's bookings and takings at a glance.
+- **New booking:** staff book phone calls and walk-ins. It finds free times, takes customer details, and records a deposit collected at the desk.
+- **Bookings:** filter by status. Open a booking for guest details, deposit, cancellation terms and history. Cancel or release a hold.
+- **Customers:** everyone who booked, with visits, spend, next visit and the channel they first came through.
+- **Services & staff:** what customers and AI assistants can book.
+- **Insights and agent log:** bookings per channel (Claude, ChatGPT, Studio…) and every agent call with its result.
+
+In local dev (`baseUrl` on localhost) the Studio opens without a login. Anywhere else, set a token: `createOpenBookingApp({ ..., studio: { token: process.env.STUDIO_TOKEN } })`. Without a token, the Studio API stays locked. Agent names are self-reported by clients, so use them for analytics only, never for access control.
+
+## Hosted: many businesses, one deployment
+
+```sh
+pnpm dev:hosted
+```
+
+Businesses sign up at `/signup` and set up services, staff, hours and cancellation rules in Studio.
+Each gets a booking page at `/b/<id>`. Every listed business is bookable through one MCP app at
+`/mcp` (`find_business` → booking tools), with optional Google Calendar sync and confirmation
+emails. See [docs/HOSTED.md](docs/HOSTED.md).
+
+## The MCP tools
+
+| Tool                  | Does                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `search_availability` | Slots for a date and party size, with price, deposit and cancellation policy. Nothing is reserved.                       |
+| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                 |
+| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.           |
+| `get_booking`         | Current status and details.                                                                                              |
+| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy. |
+
+**Design rules:**
+
+- Every mutating tool takes an `idempotency_key`.
+- Every error is `{ code, message, suggested_next_action }`.
+- Every booking response includes `next_step`.
+
+## Connect Cal.com (beta)
+
+Already on [Cal.com](https://cal.com) or self-hosted Cal.diy? Your event types become bookable by AI agents with no code:
+
+```sh
+CAL_API_KEY=cal_live_... VENUE_NAME="Studio Nord" VENUE_TIMEZONE=Europe/Oslo pnpm dev
+# optional: CAL_EVENT_TYPE_IDS="123,456"  CAL_BASE_URL=https://cal.example.com  VENUE_CURRENCY=NOK
+```
+
+Or in code:
+
+```ts
+import { CalcomBookingProvider } from '@openbooking-sh/provider-calcom';
+
+const provider = new CalcomBookingProvider({
+  apiKey: process.env.CAL_API_KEY!,
+  venue: { id: 'studio-nord', name: 'Studio Nord', timezone: 'Europe/Oslo', currency: 'NOK' },
+});
+```
+
+How it maps:
+
+- Each event type becomes an offering.
+- A hold is a Cal.com slot reservation for the hold time.
+- Confirm creates the Cal.com booking. Cal.com requires an email, so agents are asked for one.
+- Cancel cancels it in Cal.com.
+- Cancellations made in Cal.com show up in OpenBooking.
+
+Limits in this beta:
+
+- One person per appointment.
+- Paid event types aren't charged through OpenBooking.
+- Hold and booking records are in memory until a durable store is added.
+- Tested against the documented API v2 shapes, not yet end to end on a live account.
+
+## Implementing `BookingProvider`
+
+You own inventory and persistence. OpenBooking owns validation, idempotency, hold expiry, consent and cancellation rules.
+
+```ts
+import { BookingError, type BookingProvider } from '@openbooking-sh/core';
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
+
+class MySalonProvider implements BookingProvider {
+  info = { name: 'Studio Nord', description: 'Hair salon in Bergen' };
+
+  async listVenues() {
+    return [{ id: 'nord', name: 'Studio Nord', timezone: 'Europe/Oslo', currency: 'NOK' }];
+  }
+
+  async searchAvailability(query, ctx) {
+    // query: { venue_id, date, party_size, time_from?, time_to?, offering_id?, tags?, limit }
+    // Return Slot[]: each with an opaque slot_id, start/end (ISO with offset), price,
+    // deposit (or null) and a cancellation_policy computed for that slot.
+  }
+
+  async createHold({ slot_id, expires_at, customer, notes }, ctx) {
+    // ATOMICALLY reserve the slot until expires_at (transaction / unique constraint).
+    // If it's gone: throw new BookingError('slot_unavailable', 'Just taken.');
+    // Return the Booking with status 'held'.
+  }
+
+  async confirmHold({ booking_id, customer, payment_token }, ctx) {
+    // Re-check expiry atomically, charge the deposit if any, mark confirmed, return the Booking.
+  }
+
+  async getBooking(id, ctx) {
+    /* … */
+  }
+
+  async cancelBooking({ booking_id, reason, fee, refund }, ctx) {
+    // Release the hold, or cancel and record the fee/refund the engine computed.
+  }
+
+  // optional: updateBooking({ booking_id, customer?, notes? }, ctx)
+}
+
+const { app } = createOpenBookingApp({
+  provider: new MySalonProvider(),
+  baseUrl: 'https://book.studionord.example',
+});
+await listen(app, { port: 3000 });
+```
+
+The contract is documented in
+[`packages/core/src/provider.ts`](packages/core/src/provider.ts).
+[`provider-memory`](packages/provider-memory/src/provider.ts) is a complete reference
+implementation. The four rules:
+
+1. Mutations are atomic.
+2. Overlapping holds never both succeed.
+3. Expired holds stop blocking inventory.
+4. Business failures throw `BookingError` with a specific code.
+
+## Repository layout
+
+```
+packages/
+  core/             Domain model, BookingProvider, BookingService (agent-safety rules)
+  provider-memory/  Configured provider (catalog + slot rules) + demo salon and restaurant
+  postgres/         Postgres storage: bookings, idempotency, Studio activity, Cal.com records
+  adapter-mcp/      MCP tools (Streamable HTTP + stdio)
+  adapter-ucp/      UCP discovery + booking sessions (draft)
+  adapter-a2a/      A2A Agent Card (stub)
+  studio/           OpenBooking Studio dashboard (/studio), incl. business settings
+  booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
+  notifications/    Confirmation/cancellation emails with .ics invites
+  google-calendar/  Google Calendar sync (busy times, bookings as events)
+  server/           One Hono app mounting everything
+  hosted/           Many businesses on one deployment: sign-up, settings, the OpenBooking MCP app
+examples/demo/
+bench/              Agent-success benchmark (tasks + runner)
+docs/ARCHITECTURE.md, docs/SPEC-NOTES.md, docs/HOSTED.md
+```
+
+## Development
+
+```sh
+pnpm dev          # demo server with watch
+pnpm test         # vitest (unit + MCP end-to-end + bench smoke test)
+pnpm typecheck
+pnpm lint
+pnpm build        # tsup → dist/ per package
+pnpm bench        # run the agent benchmark (scripted baseline)
+pnpm changeset    # describe a change for release
+```
+
+The benchmark ([`bench/`](bench/README.md)) runs booking tasks against isolated servers. It measures:
+
+- completion rate;
+- double bookings;
+- expired-hold errors.
+
+LLM drivers plug into a stub interface.
+
+## License
+
+[Apache-2.0](LICENSE)
+
+---
+
+<!-- @openbooking-sh/adapter-a2a (packages/adapter-a2a/README.md) -->
+
+# @openbooking-sh/adapter-a2a
+
+**A2A Agent Card.** Builds an Agent2Agent (A2A) Agent Card that points agents to your booking endpoints, plus a stub A2A endpoint. Most apps use it through `@openbooking-sh/server`.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/adapter-a2a
+```
+
+## Usage
+
+```ts
+import { buildAgentCard, AGENT_CARD_PATH } from '@openbooking-sh/adapter-a2a';
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/adapter-mcp (packages/adapter-mcp/README.md) -->
+
+# @openbooking-sh/adapter-mcp
+
+**MCP server for booking.** Five booking tools for any MCP client (Claude, ChatGPT, Cursor and more): `search_availability`, `hold_slot`, `confirm_booking`, `get_booking` and `cancel_booking`. Served over Streamable HTTP or stdio.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/adapter-mcp
+```
+
+## Usage
+
+```ts
+import { createMcpHttpHandler } from '@openbooking-sh/adapter-mcp';
+
+const mcp = createMcpHttpHandler({ service }); // service: a BookingService from @openbooking-sh/core
+// Web-standard handler: return mcp.fetch(request) from any route, e.g. /mcp
+```
+
+Most apps use this through `@openbooking-sh/server`, which mounts it with host and origin checks.
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/adapter-ucp (packages/adapter-ucp/README.md) -->
+
+# @openbooking-sh/adapter-ucp
+
+**Universal Commerce Protocol (draft).** Exposes a `BookingService` over the Universal Commerce Protocol: the business profile at `/.well-known/ucp`, booking sessions over REST and an availability extension. UCP booking support follows a draft and may change with the spec.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/adapter-ucp
+```
+
+## Usage
+
+```ts
+import { createUcpRouter, buildUcpProfile } from '@openbooking-sh/adapter-ucp';
+
+app.route('/ucp', createUcpRouter({ service, baseUrl, ucpPath: '/ucp' }));
+app.get('/.well-known/ucp', (c) => c.json(buildUcpProfile({ baseUrl, ucpPath: '/ucp' })));
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/booking-page (packages/booking-page/README.md) -->
+
+# @openbooking-sh/booking-page
+
+**Public booking page, embed and WebMCP.** A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/booking-page
+```
+
+## Usage
+
+```ts
+import { createBookingPage } from '@openbooking-sh/booking-page';
+
+const page = createBookingPage({
+  service,
+  pageUrl: 'https://book.example.com/book',
+  apiBase: 'https://book.example.com/book',
+});
+app.route('/book', page.app);
+
+// On any website:
+// <script src="https://book.example.com/book/embed.js" async></script>
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/core (packages/core/README.md) -->
+
+# @openbooking-sh/core
+
+**The booking engine.** The domain model, the `BookingProvider` interface every booking system implements, and `BookingService`: the agent-safe engine that every protocol adapter runs through. It enforces holds that expire, idempotent retries, explicit customer consent, and cancellation and deposit terms shown before anything is confirmed.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/core
+```
+
+## Usage
+
+```ts
+import { BookingService } from '@openbooking-sh/core';
+
+const service = new BookingService({ provider: myProvider });
+
+const { slots } = await service.searchAvailability({
+  date: '2026-10-09',
+  party_size: { total: 1 },
+});
+const hold = await service.hold({
+  slot_id: slots[0].slot_id,
+  idempotency_key: crypto.randomUUID(),
+});
+const booking = await service.confirm({
+  booking_id: hold.booking_id,
+  idempotency_key: crypto.randomUUID(),
+  user_confirmed: true, // only after the customer said yes to time, price and terms
+  customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+});
+```
+
+Implement `BookingProvider` (`listVenues`, `searchAvailability`, `createHold`, `confirmHold`, `getBooking`, `cancelBooking`) to make any booking system bookable by AI agents.
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/google-calendar (packages/google-calendar/README.md) -->
+
+# @openbooking-sh/google-calendar
+
+**Google Calendar sync.** OAuth for Google Calendar, busy times that block availability, and bookings written to the calendar as events (updated and deleted with the booking).
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/google-calendar
+```
+
+## Usage
+
+```ts
+import {
+  googleAuthUrl,
+  exchangeCode,
+  attachCalendarSync,
+  googleBusySource,
+} from '@openbooking-sh/google-calendar';
+```
+
+See `@openbooking-sh/hosted` for a complete wiring.
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/hosted (packages/hosted/README.md) -->
+
+# @openbooking-sh/hosted
+
+**Hosted, multi-business OpenBooking.** Everything behind app.openbooking.sh: sign-up and a self-serve setup wizard (with website import), Studio per business, booking pages, one MCP app that finds and books any listed business (`find_business`), password reset, email confirmation, rate limits, Google Calendar, emails, analytics and Slack notifications.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/hosted
+```
+
+## Usage
+
+```ts
+import { createHostedApp } from '@openbooking-sh/hosted';
+
+const hosted = createHostedApp({
+  baseUrl: 'https://app.example.com',
+  sessionSecret: process.env.SESSION_SECRET!,
+  // plus Postgres stores, mail, google, analytics, ops: see the docs
+});
+// hosted.app is a web-standard app; serve it anywhere
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/notifications (packages/notifications/README.md) -->
+
+# @openbooking-sh/notifications
+
+**Booking emails with calendar invites.** Confirmation and cancellation emails for customers (with an `.ics` invite) and new-booking notices for the business. Sends through Resend or any `Mailer`, deduplicated so agent retries never email twice.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/notifications
+```
+
+## Usage
+
+```ts
+import { attachNotifications, ResendMailer } from '@openbooking-sh/notifications';
+
+attachNotifications({
+  service,
+  mailer: new ResendMailer({ apiKey: process.env.RESEND_API_KEY! }),
+  config: { from: 'Studio Nord <bookings@example.com>', ownerEmail: 'owner@example.com' },
+});
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/postgres (packages/postgres/README.md) -->
+
+# @openbooking-sh/postgres
+
+**Postgres storage.** Durable stores for everything OpenBooking keeps: bookings and holds (with a per-resource lock so two servers can never sell the same time), idempotency records, Studio activity, Cal.com records, and the hosted account, calendar, email and rate-limit stores. Works with `pg` pools and PGlite.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/postgres
+```
+
+## Usage
+
+```ts
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
+
+const db = connectPostgres(process.env.DATABASE_URL!);
+await migrate(db); // idempotent; safe on every start
+const stores = postgresStores(db);
+// stores.bookings, stores.idempotency, stores.activity, stores.calcom, ...
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/provider-calcom (packages/provider-calcom/README.md) -->
+
+# @openbooking-sh/provider-calcom
+
+**Cal.com connector (beta).** A `BookingProvider` for Cal.com (hosted) and self-hosted Cal.com, via the Cal.com API v2. Makes an existing Cal.com account bookable by AI agents with holds, consent and cancellation terms.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/provider-calcom
+```
+
+## Usage
+
+```ts
+import { CalcomBookingProvider } from '@openbooking-sh/provider-calcom';
+
+const provider = new CalcomBookingProvider({
+  apiKey: process.env.CAL_API_KEY!,
+  venue: { id: 'venue', name: 'Studio Nord', timezone: 'Europe/Oslo', currency: 'NOK' },
+});
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/provider-memory (packages/provider-memory/README.md) -->
+
+# @openbooking-sh/provider-memory
+
+**Configured booking provider.** A `BookingProvider` driven by a plain config: venues, staff or tables, services, opening hours, buffers, deposits and cancellation rules. Bookings go to a pluggable store: memory by default, Postgres via `@openbooking-sh/postgres`. Includes a demo salon and a demo restaurant.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/provider-memory
+```
+
+## Usage
+
+```ts
+import { createDemoSalonProvider, MemoryBookingProvider } from '@openbooking-sh/provider-memory';
+
+const provider = createDemoSalonProvider();
+// or: new MemoryBookingProvider(myConfig, { store: postgresStores(db).bookings })
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/server (packages/server/README.md) -->
+
+# @openbooking-sh/server
+
+**One app for every agent protocol.** Mounts a `BookingProvider` on one web-standard app (Hono): MCP for Claude and ChatGPT, UCP, an A2A Agent Card, a public booking page with WebMCP, and OpenBooking Studio. Runs on Node, Vercel, Cloudflare, Deno and Bun.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/server
+```
+
+## Usage
+
+```ts
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
+import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
+
+const { app } = createOpenBookingApp({
+  provider: createDemoSalonProvider(), // or your own BookingProvider
+  baseUrl: 'https://book.example.com',
+});
+
+await listen(app, { port: 3000 });
+// MCP at /mcp · booking page at /book · Studio at /studio · UCP at /.well-known/ucp
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/studio (packages/studio/README.md) -->
+
+# @openbooking-sh/studio
+
+**OpenBooking Studio.** The dashboard for the people running the business: calendar per staff member, bookings, customers, services, settings, insights, and a log of every AI agent call. Mount it on any Hono app; protect it with a token.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/studio
+```
+
+## Usage
+
+```ts
+import { createStudio } from '@openbooking-sh/studio';
+
+const studio = createStudio({ service, token: process.env.STUDIO_TOKEN });
+app.route('/studio', studio.app);
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- Architecture (docs/ARCHITECTURE.md) -->
+
+# Architecture
+
+```
+            AI agents / platforms
+   ┌──────────────┬───────────────┬──────────────┐
+   │ MCP client   │ UCP platform  │ A2A client   │
+   └──────┬───────┴───────┬───────┴──────┬───────┘
+          │ /mcp          │ /ucp/*       │ /a2a  (+ /.well-known/ucp, /.well-known/agent-card.json)
+   ┌──────▼───────────────▼──────────────▼───────┐
+   │ @openbooking-sh/server   (one Hono app)        │
+   │  adapter-mcp   adapter-ucp   adapter-a2a    │  ← thin protocol translation
+   └──────────────────────┬──────────────────────┘
+                          │
+   ┌──────────────────────▼──────────────────────┐
+   │ @openbooking-sh/core  BookingService           │  ← agent-safety lives here, once
+   │  validation · idempotency · hold TTL ·      │
+   │  explicit consent · cancellation rules      │
+   └──────────────────────┬──────────────────────┘
+                          │ BookingProvider (the ONE interface you implement)
+   ┌──────────────────────▼──────────────────────┐
+   │ provider-memory | your POS / PMS / calendar │  ← inventory + persistence
+   └─────────────────────────────────────────────┘
+```
+
+## Packages
+
+| Package                           | Responsibility                                                                                                      | Depends on                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `@openbooking-sh/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
+| `@openbooking-sh/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
+| `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
+| `@openbooking-sh/adapter-mcp`     | Five MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
+| `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
+| `@openbooking-sh/adapter-a2a`     | Agent Card builder plus a stub endpoint                                                                             | core                                                                    |
+| `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
+| `examples/demo`                   | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
+| `@openbooking-sh/booking-page`    | Public booking page and its JSON API, manage links, JSON-LD, WebMCP                                                 | core, `hono`                                                            |
+| `@openbooking-sh/notifications`   | Booking emails with .ics invites (`Mailer`: Resend, console, memory)                                                | core                                                                    |
+| `@openbooking-sh/google-calendar` | Google OAuth, busy-time source, bookings → events                                                                   | core, provider-memory                                                   |
+| `@openbooking-sh/hosted`          | Many businesses: accounts, settings → catalog, per-business runtime, the OpenBooking MCP app (`find_business`)      | all of the above                                                        |
+| `bench`                           | Agent-success benchmark                                                                                             | server, provider-memory, MCP client                                     |
+
+## Who owns what
+
+The split matters. Every protocol must behave identically, and booking-system vendors should only
+have to think about inventory.
+
+**The provider** (`BookingProvider`) owns:
+
+- what exists: venues, resources, offerings, opening hours, prices, policies;
+- what is free;
+- atomic reservation.
+
+Its contract:
+
+1. Every mutating method is atomic: it fully succeeds, or throws without side effects.
+2. `createHold` reserves capacity **exclusively** until `expires_at`. Two overlapping holds for the same capacity must never both succeed.
+3. Expired holds stop blocking inventory. Report them as `expired`.
+4. Business failures throw `BookingError` with a specific code. Anything else is reported to agents as a retryable `provider_error`.
+
+**The `BookingService`** owns the agent-safety rules:
+
+- **Validation.** Zod at the boundary. Failures become a `validation_error` that lists every bad field.
+- **Idempotency.**
+  - Every mutating call needs an `idempotency_key`. Same key and same request replays the result; same key and a different request is `idempotency_conflict`.
+  - Concurrent calls with the same key share one execution. The in-flight entry is registered synchronously, before any `await`.
+  - Only successes are stored, because failed calls changed nothing.
+  - Replays return the **current** state of the booking.
+- **Hold TTL.** The engine computes `expires_at`; every hold response carries it. Reads present a past-expiry hold as `expired` even if the provider hasn't swept it yet.
+- **Consent.** `confirm` requires `user_confirmed === true`, as does cancelling a _confirmed_ booking. Releasing a hold doesn't need it.
+- **Prerequisites.**
+  - Customer details (name plus email or phone) are required before confirmation.
+  - A `payment_token` is required when a deposit is due at confirmation.
+- **Cancellation rules.** The pure function `evaluateCancellation()`:
+  - free before `free_cancellation_until`;
+  - the late fee after that (for `non_refundable`, the paid deposit is retained);
+  - not cancellable online once the booking has started.
+
+  The provider just records the computed fee and refund.
+
+- **State idempotency.** Confirming an already-confirmed booking returns it, even with a fresh key. Cancelling an already-cancelled booking is a no-op. An agent that loses a response and retries with a new key therefore still can't double-book or double-charge.
+- **Events.** `onEvent` fires after every operation (operation, ok, booking id, status, error code, replayed). The demo logs it; the bench counts with it.
+
+**Adapters** only translate. They never call the provider directly.
+
+## Lifecycle
+
+```
+search_availability ──► slots (with price, deposit, cancellation policy; not reserved)
+        │
+hold_slot ─────────────► booking { status: held, expires_at }      ── TTL passes ──► expired
+        │                       │
+        │                  update (customer/notes)
+        │                       │
+confirm_booking(user_confirmed=true) ──► confirmed { confirmation_code }
+        │
+cancel_booking ────────► held: released (no fee)
+                         confirmed: needs user_confirmed; fee/refund per policy ──► cancelled
+```
+
+The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mapping).
+
+## Agent-friendly design choices
+
+- **Few tools, flat inputs.** Five tools, and `party_size` is an integer. Each tool description says what it does and does **not** do, e.g. "hold does NOT confirm".
+- **Responses tell the agent what to do.** Every booking response includes `next_step`, and every error includes `suggested_next_action`. Holds carry both `expires_at` and `expires_in_seconds`.
+- **Policy terms up front.** Search results and holds carry the cancellation policy (human-readable `description` plus structured fields) and the deposit terms _before_ confirmation.
+- **Opaque slot ids.** A `slot_id` encodes everything needed to hold it, so the agent doesn't re-send dates and times and can't get them wrong.
+
+## Scaling beyond the demo
+
+- **Postgres.** `@openbooking-sh/postgres` makes everything durable and safe across instances. `PostgresBookingStore` reserves under a transaction-scoped advisory lock per venue resource (check overlap, then insert), so overlapping holds can never both commit. Updates take the same lock, and a confirm that turns blocking re-checks for overlaps: a late confirm whose hold lapsed and was re-booked fails with `hold_expired` instead of double-booking. Expiry is applied on read, so no sweeper job is needed. Run `migrate(db)` on start (idempotent, lock-serialised).
+- **Idempotency store.** `PostgresIdempotencyStore` (or your own `IdempotencyStore` on Redis/SQL) as `serviceOptions.idempotencyStore`. The in-flight dedupe is per process. Across instances, two simultaneous first calls with one key can both run; inventory stays safe through the atomic store, and the later record wins.
+- **Clock.** Inject a `Clock` for tests and simulations (`ManualClock`, the bench's `OffsetClock`).
+- **MCP.** `createMcpHandler` is stateless, so any instance can serve any request. Set `allowedHosts` to your public hostnames.
+
+## Development notes
+
+- **Source-first packages.** Each package's `exports` has a custom `@openbooking/source` condition that points at `src/index.ts`. `tsc` (`customConditions`), vitest (`resolve.conditions`) and `tsx --conditions` all use it, so `pnpm dev`, `pnpm test` and `pnpm typecheck` need no build. Published consumers get `dist/`.
+- **Build.** `tsup` builds ESM plus `.d.ts` per package.
+- **Tests.**
+  - Unit tests per package live in `packages/*/test`.
+  - The end-to-end MCP test in `packages/server/test` drives the full Hono app with a real MCP client, in-process, on both protocol eras.
+  - The bench smoke test runs every task with the scripted driver.
+
+---
+
+<!-- Hosted OpenBooking (docs/HOSTED.md) -->
+
+# Hosted OpenBooking
+
+Many businesses on one deployment (`@openbooking-sh/hosted`): sign-up and Studio settings, Google
+Calendar sync, confirmation emails, one OpenBooking app across every business, and a public booking
+page per business.
+
+```sh
+pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / openbooking-demo
+```
+
+## Routes
+
+| Path                                                          | What                                                                                            |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 30-day signed session token)                          |
+| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                       |
+| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the five booking tools, each taking `business_id` |
+| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                   |
+| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                      |
+| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                     |
+| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                 |
+| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                           |
+| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                      |
+
+`{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
+`business_id` and the venue id on its bookings.
+
+## Self-serve setup
+
+Sign-up asks for the business name, type, city, owner name, email and password, and creates a
+business that is bookable straight away: the owner as the only staff member, typical services for
+the type (example NOK prices), weekday hours, and free cancellation until 24 hours before.
+
+The owner then lands on **`/setup`**, one short screen per step, each saved as they go:
+
+1. **Import from your website** (optional): `POST /studio/api/import` reads their site and proposes
+   address, phone, opening hours and services. Sources: schema.org JSON-LD, page meta and `tel:`
+   links, and, when `ANTHROPIC_API_KEY` is set, Claude reading the home page plus up to two
+   likely prices pages. Only public http(s) addresses are fetched (every redirect re-checked),
+   with an 8-second timeout and a 1.5 MB cap; 10 imports per business per hour.
+2. **Contact:** street, postal code, city, phone, one line about the business.
+3. **Services:** name, minutes, price; add and remove rows.
+4. **Opening hours:** one-tap presets, then any day adjusted.
+5. **Team:** names ("just me" is fine).
+6. **Live:** "Try it yourself" in ChatGPT and Claude, the booking page link, the Google step and
+   the website snippet.
+
+Everything stays editable in Studio **Settings**, which also has the checklist and links.
+
+Settings are in owner terms (`BusinessSettingsSchema` in `@openbooking-sh/studio`): profile, opening
+hours per weekday, closed dates, staff, services (duration, price, who does it), one cancellation
+rule as percentages of the price, booking rules, email preferences, and whether the business is
+listed in the OpenBooking app. `catalog.ts` turns them into the provider configuration.
+
+Deposits are not offered in hosted settings yet; they need online payments (planned: Stripe payment
+links).
+
+## Getting found: Google, website, social
+
+Studio Settings has a **Get found on Google and your website** card with copy buttons:
+
+1. **Google Business Profile:** paste the booking page link under Bookings, so a Book button shows
+   in Google Search and Maps.
+2. **Website:** one line, pasted once (Wix custom code, Squarespace code injection, WordPress via
+   WPCode, Webflow footer code, Shopify `theme.liquid`):
+
+   ```html
+   <script src="https://app.openbooking.sh/b/studio-nord/embed.js" async></script>
+   ```
+
+   It adds a floating Book button and a booking popup, turns existing links to the booking page
+   (and elements with `data-openbooking`) into popup triggers, adds schema.org `LocalBusiness` data
+   with the services, and registers the booking tools for browser agents (WebMCP) on the
+   business's own site. Options on the tag: `data-label`, `data-color`, `data-position="left"`,
+   `data-button="none"`, `data-structured-data="off"`, `data-agents="off"`. The booking page API
+   allows any origin (CORS) for this; no cookies are involved.
+
+3. **Instagram and Facebook:** the booking page link in the bio and the Book now button.
+
+The schema.org block is added by script, which Google reads; crawlers that don't run JavaScript
+see the booking page's own server-rendered data instead.
+
+## Google Calendar
+
+Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (a Google Cloud OAuth web client with the Calendar
+API enabled, redirect URI `{BASE_URL}/oauth/google/callback`). Scopes: `openid email`,
+`calendar.events`, `calendar.freebusy`, `calendar.calendarlist.readonly`. Google requires app
+verification for these scopes before outside users can connect without warnings; plan for that.
+
+- **Busy time blocks availability.** Each staff member maps to a calendar (default: the owner's
+  primary). Events there hide those times from search and refuse holds. OpenBooking's own events,
+  free (transparent), cancelled and declined events don't count. All-day events block the day.
+- **Bookings become events** (on confirm) and are deleted on cancel.
+- **Failures.** Google down → bookings fail with a retryable error (we can't promise the time is
+  free). Access revoked → Studio shows "reconnect", and bookings continue without Google.
+
+## Emails
+
+Set `RESEND_API_KEY` (and `MAIL_FROM`, default `bookings@openbooking.sh`, which must be a verified
+Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instead).
+
+- Customer: confirmation with an `.ics` invite and a manage link; cancellation with `METHOD:CANCEL`.
+- Owner: new and cancelled bookings, except ones staff made in Studio.
+- Deduplicated per booking, so agent retries never send twice.
+
+## Owner accounts
+
+- **Password reset:** `/reset` emails a link that works once (it is tied to the current password
+  hash) and expires in an hour. Saving a new password logs out every other session.
+- **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
+  listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
+  page and per-business MCP work straight away. Studio shows a "Confirm your email" step.
+- **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP, reset
+  emails per email and IP. The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets;
+  pass `clientIp` when running without a proxy.
+
+## Storage
+
+Everything stateful sits behind an interface with an in-memory default, and `@openbooking-sh/postgres`
+implements all of them. `postgresStores(db)` returns them ready to pass to `createHostedApp`:
+
+| Option            | Interface             | Postgres                    | Notes                                                  |
+| ----------------- | --------------------- | --------------------------- | ------------------------------------------------------ |
+| `businesses`      | `BusinessStore`       | `PostgresBusinessStore`     | JSON record; unique id and lower-cased owner email.    |
+| `bookings`        | `BookingRecordStore`  | `PostgresBookingStore`      | One store for all businesses (venue id = business id). |
+| `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.     |
+| `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                              |
+| `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.          |
+| `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                             |
+| `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                |
+
+With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) and `pnpm dev:hosted` use all
+of them and create the tables on start.
+Google refresh tokens are stored in the business record as-is; encrypt them at rest in that store.
+
+## Observability
+
+All optional, set as environment variables on the Vercel project:
+
+| Variable                      | Tool                          | What it does                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SENTRY_DSN`                  | Sentry (EU region)            | Server errors plus anything logged with `console.error` (failed emails, calendar syncs). No IPs, cookies or request bodies.                                                                                                                                                                                                                    |
+| `POSTHOG_KEY`, `POSTHOG_HOST` | PostHog (EU cloud by default) | Server events keyed by business id: `business_signed_up`, `email_verified`, `website_imported`, `google_calendar_connected`, `password_reset`, `slot_held`, `booking_confirmed` and `booking_cancelled` with their channel. Plus a cookieless browser snippet on owner pages (sign-up, setup, reset, Studio), never on customer booking pages. |
+| `SLACK_WEBHOOK_URL`           | Slack incoming webhook        | Operator notifications: new business, email confirmed, Google connected, every booking and cancellation with its channel, server errors (at most one a minute). Business names only. Previews prefix `[preview]`.                                                                                                                              |
+
+No customer names, emails or phone numbers are sent to any of them. Background work (emails,
+calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
+
+## ChatGPT and Claude directory submissions
+
+The OpenBooking app (`/mcp`) is built for this: no login for customers, one server for every
+business, read-only tools annotated, and consent enforced by the engine (`user_confirmed`). Still to
+do by hand before submitting:
+
+- [ ] Deploy hosted with durable storage on a stable domain (e.g. `app.openbooking.sh/mcp`).
+- [ ] Publish a privacy policy and terms (we process customer names, emails and phone numbers on
+      behalf of businesses) and a support contact.
+- [ ] App name, icon, short and long description, example prompts ("Book a haircut in Oslo on
+      Friday afternoon").
+- [ ] Test the full flow in ChatGPT developer mode and as a Claude custom connector.
+- [ ] Submit to the ChatGPT app directory and the Claude connectors directory, and check each
+      program's current requirements at submission time.
+
+## Not done yet
+
+- Custom domains or subdomains per business (paths only: `/b/{id}`).
+- Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
+- Encrypting Google refresh tokens at rest (they sit in the business record as-is).
+- Outlook (Nylas), deposits, rescheduling.

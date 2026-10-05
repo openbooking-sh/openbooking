@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Minimal steps or code. Remove any customer data.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Packages and versions, Node version, and the AI client if relevant (e.g. Claude, ChatGPT).
+      placeholder: '@openbooking-sh/server 0.1.0, Node 22, Claude desktop'
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        [
+          Engine / core,
+          MCP,
+          UCP,
+          A2A,
+          Booking page / embed,
+          Studio,
+          Postgres,
+          Hosted (app.openbooking.sh),
+          Cal.com,
+          Google Calendar,
+          Emails,
+          Other,
+        ]

@@ -1,0 +1,65 @@
+// Publishes every public package whose current version isn't on npm yet.
+//
+// pnpm pack turns `workspace:^` into real version ranges; npm publish then uploads the tarball. In
+// GitHub Actions, npm uses trusted publishing (OIDC, no token) and adds provenance. Prints
+// "New tag: name@version" lines so changesets/action creates GitHub releases, and tags each
+// published version in git.
+//
+// Run: node scripts/publish.mjs [--dry-run]
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const root = resolve(new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const out = join(root, '.release');
+const dryRun = process.argv.includes('--dry-run');
+const ci = !!process.env.GITHUB_ACTIONS;
+const sh = (cmd, args, cwd = root) =>
+  execFileSync(cmd, args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+    shell: process.platform === 'win32',
+  });
+
+async function published(name, version) {
+  const res = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2f')}`);
+  if (res.status === 404) return false;
+  const doc = await res.json();
+  return !!doc.versions?.[version];
+}
+
+rmSync(out, { recursive: true, force: true });
+mkdirSync(out);
+
+let count = 0;
+for (const dir of readdirSync(join(root, 'packages'))) {
+  const pkgDir = join(root, 'packages', dir);
+  const file = join(pkgDir, 'package.json');
+  if (!existsSync(file)) continue;
+  const pkg = JSON.parse(readFileSync(file, 'utf8'));
+  if (pkg.private) continue;
+  if (await published(pkg.name, pkg.version)) {
+    console.log(`skip ${pkg.name}@${pkg.version} (already on npm)`);
+    continue;
+  }
+  const before = new Set(readdirSync(out));
+  sh('pnpm', ['pack', '--pack-destination', out], pkgDir);
+  const tarball = readdirSync(out).find((f) => !before.has(f));
+  const args = [
+    'publish',
+    join(out, tarball),
+    '--access',
+    'public',
+    ...(ci ? ['--provenance'] : []),
+  ];
+  if (dryRun) {
+    console.log(`would run: npm ${args.join(' ')}`);
+    continue;
+  }
+  sh('npm', args);
+  console.log(`New tag: ${pkg.name}@${pkg.version}`);
+  sh('git', ['tag', `${pkg.name}@${pkg.version}`]);
+  count++;
+}
+console.log(dryRun ? 'dry run done' : `published ${count} package(s)`);

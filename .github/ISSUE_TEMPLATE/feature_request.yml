@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea for OpenBooking, a new connector, or protocol support
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem or use case, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: input
+    id: who
+    attributes:
+      label: Who are you building for?
+      description: Optional. For example a salon, a booking platform, an AI-built site.
