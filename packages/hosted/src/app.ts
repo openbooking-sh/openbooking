@@ -62,6 +62,8 @@ import {
 import { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
 import { ImportError, importFromWebsite, type ImportOptions } from './importer';
 import { setupHtml } from './setup';
+import { posthogSnippet, withHeadSnippet, type Analytics } from './analytics';
+import { slackEscape, type OpsNotifier } from './slack';
 import { signupHtml } from './signup';
 import { Tenant, type TenantDeps } from './tenant';
 
@@ -102,6 +104,17 @@ export interface HostedOptions {
    */
   importer?: Pick<ImportOptions, 'extractor' | 'fetch' | 'lookup'>;
   onEvent?: (businessId: string, event: BookingEvent) => void;
+  /** Product analytics (e.g. PostHogAnalytics). Events carry business ids only, never personal data. */
+  analytics?: Analytics;
+  /** PostHog browser snippet on owner pages (sign-up, setup, reset, Studio). Never on booking pages. */
+  pageAnalytics?: { posthogKey: string; posthogHost?: string };
+  /** Called with unexpected errors (e.g. Sentry.captureException). The request still gets a 500. */
+  onError?: (error: unknown) => void;
+  /**
+   * Operator notifications (e.g. SlackNotifier): sign-ups, email confirmations, bookings,
+   * cancellations, Google connections and server errors. Business names only, no customer data.
+   */
+  ops?: OpsNotifier;
   version?: string;
 }
 
@@ -180,7 +193,32 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
     allowedHosts,
     requireVerifiedEmail,
-    ...(options.onEvent ? { onEvent: options.onEvent } : {}),
+    ...(options.onEvent || options.analytics || options.ops
+      ? {
+          onEvent: (businessId: string, e: BookingEvent) => {
+            options.onEvent?.(businessId, e);
+            if (!e.ok || e.replayed) return;
+            const channel = e.actor?.agent ?? 'Direct API';
+            const event = BOOKING_EVENTS[e.operation];
+            if (event) {
+              options.analytics?.capture(event, businessId, {
+                channel,
+                protocol: e.actor?.protocol ?? 'api',
+              });
+            }
+            if (options.ops && (e.operation === 'confirm' || e.operation === 'cancel')) {
+              const name = slackEscape(
+                tenants.get(businessId)?.business.settings.profile.name ?? businessId,
+              );
+              options.ops.notify(
+                e.operation === 'confirm'
+                  ? `:calendar: *${name}* got a booking via ${slackEscape(channel)}`
+                  : `:x: A booking at *${name}* was cancelled (via ${slackEscape(channel)})`,
+              );
+            }
+          },
+        }
+      : {}),
   };
 
   // One runtime per business, created on first use. The stored record is re-read on every
@@ -248,6 +286,40 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     );
   };
 
+  // Work that outlives a response (account emails). idle() waits for it, so serverless hosts can
+  // keep the function alive until it is done (Vercel: waitUntil(hosted.idle())).
+  const background = new Set<Promise<unknown>>();
+  const later = (p: Promise<unknown>, what: string) => {
+    const tracked = p.catch((e: unknown) => console.error(`[openbooking] ${what} failed`, e));
+    background.add(tracked);
+    void tracked.finally(() => background.delete(tracked));
+  };
+  const track = (event: string, businessId: string, props?: Record<string, unknown>) =>
+    options.analytics?.capture(event, businessId, props);
+  const snippet = options.pageAnalytics
+    ? posthogSnippet(options.pageAnalytics.posthogKey, options.pageAnalytics.posthogHost)
+    : undefined;
+  const page = (html: string) => withHeadSnippet(html, snippet);
+
+  // Server errors go to Slack too, at most one message a minute so an outage can't flood it.
+  let lastErrorPing = 0;
+  const opsLink = (id: string, label: string) => `<${baseUrl}/b/${id}|${label}>`;
+  const businessName = (b: Business) => slackEscape(b.settings.profile.name);
+
+  app.onError((e, c) => {
+    console.error('[openbooking] request failed', e);
+    options.onError?.(e);
+    const now = clock.now().getTime();
+    if (options.ops && now - lastErrorPing > 60_000) {
+      lastErrorPing = now;
+      const msg = e instanceof Error ? e.message : String(e);
+      options.ops.notify(
+        `:warning: Server error on ${c.req.method} ${new URL(c.req.url).pathname}: ${slackEscape(msg.slice(0, 300))}`,
+      );
+    }
+    return c.json({ error: { code: 'internal_error', message: 'Something went wrong.' } }, 500);
+  });
+
   app.get('/healthz', (c) => c.json({ ok: true }));
 
   app.get('/', (c) => {
@@ -265,12 +337,14 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.get('/signup', (c) =>
     c.html(
-      signupHtml({
-        studioPath: STUDIO_PATH,
-        setupPath: '/setup',
-        signupApi: '/api/signup',
-        loginPath: STUDIO_PATH,
-      }),
+      page(
+        signupHtml({
+          studioPath: STUDIO_PATH,
+          setupPath: '/setup',
+          signupApi: '/api/signup',
+          loginPath: STUDIO_PATH,
+        }),
+      ),
     ),
   );
 
@@ -317,8 +391,10 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         }
         throw e;
       }
-      sendVerification(business).catch((e: unknown) =>
-        console.error('[openbooking] verification email failed', e),
+      later(sendVerification(business), 'verification email');
+      track('business_signed_up', id, { category: input.category, city: input.city ?? null });
+      options.ops?.notify(
+        `:tada: New business: *${businessName(business)}* (${input.category.replace(/_/g, ' ')}${input.city ? `, ${slackEscape(input.city)}` : ''}) · ${opsLink(id, 'booking page')}`,
       );
       return c.json({
         token: sessionToken(business),
@@ -353,11 +429,13 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.get('/reset', (c) =>
     c.html(
-      resetHtml({
-        forgotApi: '/api/password/forgot',
-        resetApi: '/api/password/reset',
-        studioPath: STUDIO_PATH,
-      }),
+      page(
+        resetHtml({
+          forgotApi: '/api/password/forgot',
+          resetApi: '/api/password/reset',
+          studioPath: STUDIO_PATH,
+        }),
+      ),
     ),
   );
 
@@ -433,6 +511,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     });
     if (!saved || used) return invalid();
     tenants.get(id)?.sync(saved);
+    track('password_reset', id);
     return c.json({ token: sessionToken(saved), business_id: id });
   });
 
@@ -449,15 +528,21 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     );
     if (saved) tenants.get(id)?.sync(saved);
     const verified = !!saved?.owner.email_verified_at && saved.owner.email.toLowerCase() === email;
+    if (verified) {
+      track('email_verified', id);
+      options.ops?.notify(
+        `:white_check_mark: *${businessName(saved!)}* confirmed their email and is now listed for AI assistants`,
+      );
+    }
     return c.redirect(`${STUDIO_PATH}?verified=${verified ? 'yes' : 'expired'}#settings`);
   });
 
   // ---------------------------------------------------------------- Studio
 
   app.get('/setup', (c) =>
-    c.html(setupHtml({ studioPath: STUDIO_PATH, api: `${STUDIO_PATH}/api` })),
+    c.html(page(setupHtml({ studioPath: STUDIO_PATH, api: `${STUDIO_PATH}/api` }))),
   );
-  app.get(STUDIO_PATH, (c) => c.html(STUDIO_HTML));
+  app.get(STUDIO_PATH, (c) => c.html(page(STUDIO_HTML)));
   app.get(`${STUDIO_PATH}/`, (c) => c.redirect(STUDIO_PATH));
 
   // Every Studio API call: the session token decides which business's Studio answers.
@@ -511,14 +596,22 @@ export function createHostedApp(options: HostedOptions): HostedApp {
       return err(c, new BookingError('validation_error', 'Enter your website address.'));
     }
     try {
-      return c.json(
-        await importFromWebsite(body.url, {
-          ...options.importer,
-          currency: t.business.settings.profile.currency,
-        }),
-      );
+      const proposal = await importFromWebsite(body.url, {
+        ...options.importer,
+        currency: t.business.settings.profile.currency,
+      });
+      track('website_imported', t.id, {
+        ok: true,
+        sources: proposal.sources,
+        services: proposal.services.length,
+        opening_hours: !!proposal.opening_hours,
+      });
+      return c.json(proposal);
     } catch (e) {
-      if (e instanceof ImportError) return err(c, new BookingError('validation_error', e.message));
+      if (e instanceof ImportError) {
+        track('website_imported', t.id, { ok: false });
+        return err(c, new BookingError('validation_error', e.message));
+      }
       throw e;
     }
   });
@@ -554,6 +647,11 @@ export function createHostedApp(options: HostedOptions): HostedApp {
       });
       const saved = await businesses.update(id, (b) => ({ ...b, google: { tokens } }));
       if (saved) tenants.get(id)?.sync(saved);
+      track('google_calendar_connected', id);
+      if (saved)
+        options.ops?.notify(
+          `:spiral_calendar_pad: *${businessName(saved)}* connected Google Calendar`,
+        );
       return back('connected');
     } catch (e) {
       if (!(e instanceof GoogleAuthError)) console.error('[openbooking] Google connect failed', e);
@@ -601,13 +699,25 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     app,
     tenant,
     businesses,
-    idle: async () => void (await Promise.all([...tenants.values()].map((t) => t.idle()))),
+    idle: async () => {
+      await Promise.all([...tenants.values()].map((t) => t.idle()));
+      await Promise.all([...background]);
+      await options.analytics?.flush();
+      await options.ops?.flush();
+    },
     close: async () => {
       await Promise.all([...tenants.values()].map((t) => t.close()));
       await directory.close();
     },
   };
 }
+
+/** Booking operations worth counting, by engine operation. */
+const BOOKING_EVENTS: Partial<Record<BookingEvent['operation'], string>> = {
+  hold: 'slot_held',
+  confirm: 'booking_confirmed',
+  cancel: 'booking_cancelled',
+};
 
 /** Hand a request to a sub-app with the mount prefix stripped. */
 async function forward(

@@ -8,7 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { ManualClock } from '@openbooking/core';
 import { MemoryMailer } from '@openbooking/notifications';
 import { createFakeGoogle } from '../../google-calendar/test/fake-google';
-import { createHostedApp } from '../src';
+import { PostHogAnalytics, SlackNotifier, createHostedApp } from '../src';
 
 const BASE = 'http://localhost:3000';
 // Tuesday 6 October 2026, 09:00 in Oslo.
@@ -528,5 +528,87 @@ describe('self-serve setup', () => {
     expect(status).toBe(200);
     expect(json.profile.address).toMatchObject({ street_address: 'Eksempelgata 12' });
     expect(json.opening_hours.sat).toEqual([{ open: '10:00', close: '15:00' }]);
+  });
+});
+
+describe('analytics and operator notifications', () => {
+  it('reports sign-ups and bookings by channel, without customer data', async () => {
+    const posted: Array<{ url: string; body: any }> = [];
+    const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+      posted.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return new Response('{}');
+    }) as typeof fetch;
+    const hosted = createHostedApp({
+      baseUrl: BASE,
+      sessionSecret: 'test-secret-0123456789',
+      clock: new ManualClock(NOW),
+      analytics: new PostHogAnalytics({ apiKey: 'phc_test', fetch: fakeFetch }),
+      ops: new SlackNotifier('https://hooks.slack.test/T/B/x', { fetch: fakeFetch }),
+      pageAnalytics: { posthogKey: 'phc_test' },
+    });
+    cleanups.push(hosted.close);
+    const call = async (path: string, body?: unknown, headers: Record<string, string> = {}) => {
+      const res = await hosted.app.request(`${BASE}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const text = await res.text();
+      return {
+        status: res.status,
+        text,
+        json: text.startsWith('{') ? JSON.parse(text) : undefined,
+      };
+    };
+
+    // Owner pages carry the PostHog snippet; customer booking pages don't.
+    expect((await call('/signup')).text).toContain('phc_test');
+    await call('/api/signup', {
+      business_name: 'Studio Nord',
+      your_name: 'Maria',
+      email: 'maria@example.com',
+      password: 'correct horse',
+      category: 'hair_salon',
+      city: 'Oslo',
+    });
+    expect((await call('/b/studio-nord', undefined, { accept: 'text/html' })).text).not.toContain(
+      'phc_test',
+    );
+
+    const api = '/b/studio-nord/book/api';
+    const { json: avail } = await call(`${api}/availability?date=${DAY}&service=haircut`);
+    const { json: hold } = await call(`${api}/hold`, {
+      slot_id: avail.slots[0].slot_id,
+      idempotency_key: 'hold-key-analytics',
+    });
+    const confirmed = await call(`${api}/confirm`, {
+      booking_id: hold.booking.booking_id,
+      idempotency_key: 'confirm-key-analytics',
+      customer: ada,
+      user_confirmed: true,
+    });
+    expect(confirmed.status).toBe(200);
+    await hosted.idle();
+
+    const events = posted.filter((p) => p.url.includes('posthog')).map((p) => p.body);
+    expect(events.map((e) => e.event)).toEqual([
+      'business_signed_up',
+      'slot_held',
+      'booking_confirmed',
+    ]);
+    expect(events[2]).toMatchObject({
+      distinct_id: 'business:studio-nord',
+      properties: { channel: 'Booking page', protocol: 'web', business_id: 'studio-nord' },
+    });
+
+    const slack = posted.filter((p) => p.url.includes('slack')).map((p) => p.body.text);
+    expect(slack[0]).toContain(':tada: New business: *Studio Nord* (hair salon, Oslo)');
+    expect(slack[1]).toBe(':calendar: *Studio Nord* got a booking via Booking page');
+
+    // Neither tool ever sees the owner's or customer's personal details.
+    const everything = JSON.stringify(posted);
+    for (const pii of ['maria@example.com', 'ada@example.com', 'Lovelace']) {
+      expect(everything).not.toContain(pii);
+    }
   });
 });
