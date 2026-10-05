@@ -1,4 +1,4 @@
-import { time, type Address, type Money } from '@openbooking/core';
+import { time, type Address, type Money } from '@openbooking-sh/core';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = [

@@ -1,8 +1,28 @@
 {
-  "name": "@openbooking/hosted",
+  "name": "@openbooking-sh/hosted",
   "version": "0.1.0",
   "description": "Hosted multi-business OpenBooking: sign-up, Studio settings, one MCP app across all businesses.",
   "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/hosted"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "saas",
+    "multi-tenant"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -27,14 +47,14 @@
   "dependencies": {
     "@modelcontextprotocol/hono": "^2.0.1",
     "@modelcontextprotocol/server": "^2.2.0",
-    "@openbooking/adapter-mcp": "workspace:^",
-    "@openbooking/booking-page": "workspace:^",
-    "@openbooking/core": "workspace:^",
-    "@openbooking/google-calendar": "workspace:^",
-    "@openbooking/notifications": "workspace:^",
-    "@openbooking/provider-memory": "workspace:^",
-    "@openbooking/server": "workspace:^",
-    "@openbooking/studio": "workspace:^",
+    "@openbooking-sh/adapter-mcp": "workspace:^",
+    "@openbooking-sh/booking-page": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/google-calendar": "workspace:^",
+    "@openbooking-sh/notifications": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/server": "workspace:^",
+    "@openbooking-sh/studio": "workspace:^",
     "hono": "^4.13.12",
     "zod": "^4.6.5"
   },

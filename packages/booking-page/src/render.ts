@@ -3,7 +3,7 @@
  * (business names and descriptions are user-entered); data for the client script is injected as
  * JSON with `<` escaped so it can never close the script element.
  */
-import type { Offering, Venue } from '@openbooking/core';
+import type { Offering, Venue } from '@openbooking-sh/core';
 import { MANAGE_SCRIPT, PAGE_SCRIPT } from './client';
 
 export interface PageProfile {

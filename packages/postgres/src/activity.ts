@@ -3,7 +3,7 @@ import {
   type ActivityEntry,
   type ActivityLog,
   type ActivityQuery,
-} from '@openbooking/studio';
+} from '@openbooking-sh/studio';
 import { json, type Db } from './db';
 
 /**

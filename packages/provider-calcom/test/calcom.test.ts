@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock, type BookingError } from '@openbooking/core';
+import { BookingService, ManualClock, type BookingError } from '@openbooking-sh/core';
 import { CalcomBookingProvider } from '../src';
 import { createFakeCal } from './fake-cal';
 

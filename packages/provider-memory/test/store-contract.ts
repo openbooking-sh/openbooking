@@ -1,8 +1,8 @@
 /**
  * Behaviour every BookingRecordStore must have. Run with `describeBookingStore(name, factory)`;
- * used for the memory store here and for the Postgres store in @openbooking/postgres.
+ * used for the memory store here and for the Postgres store in @openbooking-sh/postgres.
  */
-import { BookingError, type Booking } from '@openbooking/core';
+import { BookingError, type Booking } from '@openbooking-sh/core';
 import { describe, expect, it } from 'vitest';
 import type { BookingRecord, BookingRecordStore } from '../src/store';
 

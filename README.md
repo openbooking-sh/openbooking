@@ -17,6 +17,37 @@ safe:
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
 | **A2A** (Agent2Agent)                 | ⚪ Stub      | v1.0 Agent Card at `/.well-known/agent-card.json`; task endpoint not implemented yet                                                |
 
+## Install
+
+```sh
+npm install @openbooking-sh/server @openbooking-sh/core
+```
+
+```ts
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
+import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
+
+const { app } = createOpenBookingApp({
+  provider: createDemoSalonProvider(), // or your own BookingProvider
+  baseUrl: 'http://localhost:3000',
+});
+await listen(app, { port: 3000 });
+// MCP at /mcp · booking page at /book · Studio at /studio · UCP at /.well-known/ucp
+```
+
+| Package                                                                                                                             | What it is                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`@openbooking-sh/core`](packages/core)                                                                                             | The engine and the `BookingProvider` interface                           |
+| [`@openbooking-sh/server`](packages/server)                                                                                         | One app for MCP, UCP, A2A, booking page and Studio                       |
+| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                       | Configured provider (services, staff, hours, rules) on a pluggable store |
+| [`@openbooking-sh/postgres`](packages/postgres)                                                                                     | Postgres storage for everything                                          |
+| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                             | Booking page, embed snippet and WebMCP                                   |
+| [`@openbooking-sh/studio`](packages/studio)                                                                                         | Dashboard for the business                                               |
+| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
+| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                       | Cal.com connector (beta)                                                 |
+| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
+| [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
+
 ## 5-minute quickstart
 
 Requires Node 22.12+ and pnpm. The published packages run on Node 20+. Run `corepack enable` or `npm i -g pnpm`.
@@ -72,7 +103,7 @@ DATABASE_URL=postgres://user:pass@localhost:5432/openbooking pnpm dev
 On Vercel, add a Postgres database from the Marketplace (Neon, Supabase…) and use its pooled connection string. In code:
 
 ```ts
-import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
 
 const db = connectPostgres(process.env.DATABASE_URL!);
 await migrate(db);
@@ -140,7 +171,7 @@ CAL_API_KEY=cal_live_... VENUE_NAME="Studio Nord" VENUE_TIMEZONE=Europe/Oslo pnp
 Or in code:
 
 ```ts
-import { CalcomBookingProvider } from '@openbooking/provider-calcom';
+import { CalcomBookingProvider } from '@openbooking-sh/provider-calcom';
 
 const provider = new CalcomBookingProvider({
   apiKey: process.env.CAL_API_KEY!,
@@ -168,8 +199,8 @@ Limits in this beta:
 You own inventory and persistence. OpenBooking owns validation, idempotency, hold expiry, consent and cancellation rules.
 
 ```ts
-import { BookingError, type BookingProvider } from '@openbooking/core';
-import { createOpenBookingApp, listen } from '@openbooking/server';
+import { BookingError, type BookingProvider } from '@openbooking-sh/core';
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
 
 class MySalonProvider implements BookingProvider {
   info = { name: 'Studio Nord', description: 'Hair salon in Bergen' };

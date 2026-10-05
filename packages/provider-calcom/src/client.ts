@@ -3,7 +3,7 @@
  * own `cal-api-version`, as the docs require; without it Cal.com silently falls back to an older
  * version of the endpoint.
  */
-import { BookingError } from '@openbooking/core';
+import { BookingError } from '@openbooking-sh/core';
 
 export const CAL_API_VERSIONS = {
   slots: '2024-09-04',

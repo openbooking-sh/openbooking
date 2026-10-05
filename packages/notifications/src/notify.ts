@@ -3,7 +3,7 @@
  * customer, a heads-up to the business, and the same pair when a confirmed booking is cancelled.
  * Sending runs in the background and never affects the booking itself.
  */
-import type { Booking, BookingEvent, BookingService } from '@openbooking/core';
+import type { Booking, BookingEvent, BookingService } from '@openbooking-sh/core';
 import { buildIcs } from './ics';
 import {
   MemoryNotificationLog,

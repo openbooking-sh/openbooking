@@ -18,7 +18,7 @@ import {
   toErrorPayload,
   type Booking,
   type BookingService,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { OB } from './constants';

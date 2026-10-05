@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/adapter-a2a",
+  "name": "@openbooking-sh/adapter-a2a",
   "version": "0.1.0",
   "description": "A2A (Agent2Agent) Agent Card generation for OpenBooking. Stub: task handling is not implemented yet.",
   "license": "Apache-2.0",
@@ -12,6 +12,17 @@
   "bugs": {
     "url": "https://github.com/openbooking-sh/openbooking/issues"
   },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "a2a",
+    "agent2agent"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -34,7 +45,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@openbooking/core": "workspace:^"
+    "@openbooking-sh/core": "workspace:^"
   },
   "publishConfig": {
     "access": "public"

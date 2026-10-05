@@ -8,7 +8,7 @@ import {
   type BookingEvent,
   type Clock,
   type IdempotencyStore,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import {
   GoogleAuthError,
   MemoryCalendarLinkStore,
@@ -16,19 +16,19 @@ import {
   googleAuthUrl,
   type CalendarLinkStore,
   type GoogleCredentials,
-} from '@openbooking/google-calendar';
+} from '@openbooking-sh/google-calendar';
 import {
   MemoryNotificationLog,
   type Mailer,
   type NotificationLog,
-} from '@openbooking/notifications';
-import { MemoryBookingStore, type BookingRecordStore } from '@openbooking/provider-memory';
+} from '@openbooking-sh/notifications';
+import { MemoryBookingStore, type BookingRecordStore } from '@openbooking-sh/provider-memory';
 import {
   ActivityStore,
   STUDIO_HTML,
   actorFromRequest,
   type ActivityLog,
-} from '@openbooking/studio';
+} from '@openbooking-sh/studio';
 import { hostHeaderValidation, originValidation } from '@modelcontextprotocol/hono';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { Hono, type Context } from 'hono';

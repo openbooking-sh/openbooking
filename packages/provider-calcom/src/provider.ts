@@ -13,7 +13,7 @@ import {
   type Slot,
   type UpdateBookingRequest,
   type Venue,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import { CalApiError, CalClient, type CalClientOptions, type CalEventType } from './client';
 import { MemoryCalcomStore, type CalcomRecord, type CalcomStore } from './store';
 

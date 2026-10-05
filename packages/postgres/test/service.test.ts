@@ -3,8 +3,8 @@
  * attribution survive a "restart" (fresh provider + service on the same database).
  */
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock } from '@openbooking/core';
-import { createDemoSalonProvider } from '@openbooking/provider-memory';
+import { BookingService, ManualClock } from '@openbooking-sh/core';
+import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import { postgresStores, type Db } from '../src';
 import { freshDb, target } from './helpers';
 

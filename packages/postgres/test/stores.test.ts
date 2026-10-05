@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CalcomRecord } from '@openbooking/provider-calcom';
+import type { CalcomRecord } from '@openbooking-sh/provider-calcom';
 import { describeBookingStore, record } from '../../provider-memory/test/store-contract';
 import {
   MIGRATIONS,

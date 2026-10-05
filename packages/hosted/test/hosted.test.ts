@@ -5,8 +5,8 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { ManualClock } from '@openbooking/core';
-import { MemoryMailer } from '@openbooking/notifications';
+import { ManualClock } from '@openbooking-sh/core';
+import { MemoryMailer } from '@openbooking-sh/notifications';
 import { createFakeGoogle } from '../../google-calendar/test/fake-google';
 import { PostHogAnalytics, SlackNotifier, createHostedApp } from '../src';
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock, runAsActor } from '@openbooking/core';
-import { createDemoRestaurantProvider } from '@openbooking/provider-memory';
+import { BookingService, ManualClock, runAsActor } from '@openbooking-sh/core';
+import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
 import { Hono } from 'hono';
 import { actorFromRequest, agentName, createStudio } from '../src';
 
@@ -187,7 +187,7 @@ describe('agent identification', () => {
 
 describe('Studio as a booking system (salon)', () => {
   async function salon() {
-    const { createDemoSalonProvider } = await import('@openbooking/provider-memory');
+    const { createDemoSalonProvider } = await import('@openbooking-sh/provider-memory');
     const clock = new ManualClock('2026-10-01T06:00:00Z');
     const service = new BookingService({ provider: createDemoSalonProvider(), clock });
     const studio = createStudio({ service, token: 'secret-token' });
@@ -303,7 +303,7 @@ describe('Studio as a booking system (salon)', () => {
 
 describe('booking channels', () => {
   it('counts staff bookings made in Studio as a channel', async () => {
-    const { createDemoSalonProvider } = await import('@openbooking/provider-memory');
+    const { createDemoSalonProvider } = await import('@openbooking-sh/provider-memory');
     const service = new BookingService({
       provider: createDemoSalonProvider(),
       clock: new ManualClock('2026-10-01T06:00:00Z'),

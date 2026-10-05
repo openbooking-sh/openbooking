@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/bench",
+  "name": "@openbooking-sh/bench",
   "version": "0.0.0",
   "private": true,
   "description": "Agent-success benchmark for OpenBooking MCP endpoints.",
@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "@openbooking/core": "workspace:^",
-    "@openbooking/provider-memory": "workspace:^",
-    "@openbooking/server": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/server": "workspace:^",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
   }

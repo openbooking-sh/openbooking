@@ -1,4 +1,4 @@
-import type { Booking } from '@openbooking/core';
+import type { Booking } from '@openbooking-sh/core';
 import {
   applyExpiry,
   isBlocking,
@@ -6,7 +6,7 @@ import {
   type BookingListQuery,
   type BookingRecord,
   type BookingRecordStore,
-} from '@openbooking/provider-memory';
+} from '@openbooking-sh/provider-memory';
 import { LOCK_SQL, json, type Db, type Queryable } from './db';
 
 interface Row {

@@ -15,13 +15,13 @@
  *   CAL_API_KEY=cal_live_... VENUE_NAME="Studio Nord" VENUE_TIMEZONE=Europe/Oslo pnpm dev
  *   Optional: CAL_BASE_URL (Cal.diy), CAL_EVENT_TYPE_IDS="123,456", VENUE_CURRENCY=NOK
  */
-import { CalcomBookingProvider } from '@openbooking/provider-calcom';
+import { CalcomBookingProvider } from '@openbooking-sh/provider-calcom';
 import {
   createDemoRestaurantProvider,
   createDemoSalonProvider,
-} from '@openbooking/provider-memory';
-import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
-import { createOpenBookingApp, listen } from '@openbooking/server';
+} from '@openbooking-sh/provider-memory';
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
 
 const port = Number(process.env.PORT ?? 3000);
 const hostname = process.env.HOST ?? '127.0.0.1';

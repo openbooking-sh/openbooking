@@ -7,12 +7,12 @@
    └──────┬───────┴───────┬───────┴──────┬───────┘
           │ /mcp          │ /ucp/*       │ /a2a  (+ /.well-known/ucp, /.well-known/agent-card.json)
    ┌──────▼───────────────▼──────────────▼───────┐
-   │ @openbooking/server   (one Hono app)        │
+   │ @openbooking-sh/server   (one Hono app)        │
    │  adapter-mcp   adapter-ucp   adapter-a2a    │  ← thin protocol translation
    └──────────────────────┬──────────────────────┘
                           │
    ┌──────────────────────▼──────────────────────┐
-   │ @openbooking/core  BookingService           │  ← agent-safety lives here, once
+   │ @openbooking-sh/core  BookingService           │  ← agent-safety lives here, once
    │  validation · idempotency · hold TTL ·      │
    │  explicit consent · cancellation rules      │
    └──────────────────────┬──────────────────────┘
@@ -24,21 +24,21 @@
 
 ## Packages
 
-| Package                        | Responsibility                                                                                                      | Depends on                                                              |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `@openbooking/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
-| `@openbooking/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
-| `@openbooking/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
-| `@openbooking/adapter-mcp`     | Five MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
-| `@openbooking/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
-| `@openbooking/adapter-a2a`     | Agent Card builder plus a stub endpoint                                                                             | core                                                                    |
-| `@openbooking/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
-| `examples/demo`                | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
-| `@openbooking/booking-page`    | Public booking page and its JSON API, manage links, JSON-LD, WebMCP                                                 | core, `hono`                                                            |
-| `@openbooking/notifications`   | Booking emails with .ics invites (`Mailer`: Resend, console, memory)                                                | core                                                                    |
-| `@openbooking/google-calendar` | Google OAuth, busy-time source, bookings → events                                                                   | core, provider-memory                                                   |
-| `@openbooking/hosted`          | Many businesses: accounts, settings → catalog, per-business runtime, the OpenBooking MCP app (`find_business`)      | all of the above                                                        |
-| `bench`                        | Agent-success benchmark                                                                                             | server, provider-memory, MCP client                                     |
+| Package                           | Responsibility                                                                                                      | Depends on                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `@openbooking-sh/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
+| `@openbooking-sh/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
+| `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
+| `@openbooking-sh/adapter-mcp`     | Five MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
+| `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
+| `@openbooking-sh/adapter-a2a`     | Agent Card builder plus a stub endpoint                                                                             | core                                                                    |
+| `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
+| `examples/demo`                   | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
+| `@openbooking-sh/booking-page`    | Public booking page and its JSON API, manage links, JSON-LD, WebMCP                                                 | core, `hono`                                                            |
+| `@openbooking-sh/notifications`   | Booking emails with .ics invites (`Mailer`: Resend, console, memory)                                                | core                                                                    |
+| `@openbooking-sh/google-calendar` | Google OAuth, busy-time source, bookings → events                                                                   | core, provider-memory                                                   |
+| `@openbooking-sh/hosted`          | Many businesses: accounts, settings → catalog, per-business runtime, the OpenBooking MCP app (`find_business`)      | all of the above                                                        |
+| `bench`                           | Agent-success benchmark                                                                                             | server, provider-memory, MCP client                                     |
 
 ## Who owns what
 
@@ -109,7 +109,7 @@ The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mappin
 
 ## Scaling beyond the demo
 
-- **Postgres.** `@openbooking/postgres` makes everything durable and safe across instances. `PostgresBookingStore` reserves under a transaction-scoped advisory lock per venue resource (check overlap, then insert), so overlapping holds can never both commit. Updates take the same lock, and a confirm that turns blocking re-checks for overlaps: a late confirm whose hold lapsed and was re-booked fails with `hold_expired` instead of double-booking. Expiry is applied on read, so no sweeper job is needed. Run `migrate(db)` on start (idempotent, lock-serialised).
+- **Postgres.** `@openbooking-sh/postgres` makes everything durable and safe across instances. `PostgresBookingStore` reserves under a transaction-scoped advisory lock per venue resource (check overlap, then insert), so overlapping holds can never both commit. Updates take the same lock, and a confirm that turns blocking re-checks for overlaps: a late confirm whose hold lapsed and was re-booked fails with `hold_expired` instead of double-booking. Expiry is applied on read, so no sweeper job is needed. Run `migrate(db)` on start (idempotent, lock-serialised).
 - **Idempotency store.** `PostgresIdempotencyStore` (or your own `IdempotencyStore` on Redis/SQL) as `serviceOptions.idempotencyStore`. The in-flight dedupe is per process. Across instances, two simultaneous first calls with one key can both run; inventory stays safe through the atomic store, and the later record wins.
 - **Clock.** Inject a `Clock` for tests and simulations (`ManualClock`, the bench's `OffsetClock`).
 - **MCP.** `createMcpHandler` is stateless, so any instance can serve any request. Set `allowedHosts` to your public hostnames.

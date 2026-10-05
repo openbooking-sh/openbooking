@@ -12,12 +12,12 @@
  *
  * stdout carries the protocol; log to stderr only.
  */
-import { serveMcpStdio } from '@openbooking/adapter-mcp';
-import { BookingService } from '@openbooking/core';
+import { serveMcpStdio } from '@openbooking-sh/adapter-mcp';
+import { BookingService } from '@openbooking-sh/core';
 import {
   createDemoRestaurantProvider,
   createDemoSalonProvider,
-} from '@openbooking/provider-memory';
+} from '@openbooking-sh/provider-memory';
 
 const service = new BookingService({
   provider:

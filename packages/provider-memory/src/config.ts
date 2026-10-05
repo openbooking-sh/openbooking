@@ -1,4 +1,4 @@
-import type { Money, Offering, Resource, Venue } from '@openbooking/core';
+import type { Money, Offering, Resource, Venue } from '@openbooking-sh/core';
 
 /** Opening period in venue-local time. `close` may be `24:00`. */
 export interface OpeningPeriod {

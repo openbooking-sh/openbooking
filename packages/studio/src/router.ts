@@ -9,7 +9,7 @@ import {
   type Booking,
   type BookingService,
   type ErrorPayload,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ActivityStore, recordActivity, type ActivityLog } from './activity';

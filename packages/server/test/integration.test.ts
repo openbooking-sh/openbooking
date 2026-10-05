@@ -5,8 +5,8 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { ManualClock } from '@openbooking/core';
-import { createDemoRestaurantProvider } from '@openbooking/provider-memory';
+import { ManualClock } from '@openbooking-sh/core';
+import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
 import { createOpenBookingApp } from '../src';
 
 const BASE = 'http://localhost:3000';

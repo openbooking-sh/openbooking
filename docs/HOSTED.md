@@ -1,6 +1,6 @@
 # Hosted OpenBooking
 
-Many businesses on one deployment (`@openbooking/hosted`): sign-up and Studio settings, Google
+Many businesses on one deployment (`@openbooking-sh/hosted`): sign-up and Studio settings, Google
 Calendar sync, confirmation emails, one OpenBooking app across every business, and a public booking
 page per business.
 
@@ -47,7 +47,7 @@ The owner then lands on **`/setup`**, one short screen per step, each saved as t
 
 Everything stays editable in Studio **Settings**, which also has the checklist and links.
 
-Settings are in owner terms (`BusinessSettingsSchema` in `@openbooking/studio`): profile, opening
+Settings are in owner terms (`BusinessSettingsSchema` in `@openbooking-sh/studio`): profile, opening
 hours per weekday, closed dates, staff, services (duration, price, who does it), one cancellation
 rule as percentages of the price, booking rules, email preferences, and whether the business is
 listed in the OpenBooking app. `catalog.ts` turns them into the provider configuration.
@@ -116,7 +116,7 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 
 ## Storage
 
-Everything stateful sits behind an interface with an in-memory default, and `@openbooking/postgres`
+Everything stateful sits behind an interface with an in-memory default, and `@openbooking-sh/postgres`
 implements all of them. `postgresStores(db)` returns them ready to pass to `createHostedApp`:
 
 | Option            | Interface             | Postgres                    | Notes                                                  |

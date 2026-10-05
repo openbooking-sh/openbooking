@@ -8,7 +8,7 @@ import {
   type BookingService,
   type Slot,
   type Venue,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import {
   McpServer,
   createMcpHandler,

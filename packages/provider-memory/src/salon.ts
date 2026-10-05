@@ -1,4 +1,4 @@
-import type { Resource } from '@openbooking/core';
+import type { Resource } from '@openbooking-sh/core';
 import type { MemoryProviderConfig, VenueConfig } from './config';
 
 const VENUE_ID = 'studio-nord';

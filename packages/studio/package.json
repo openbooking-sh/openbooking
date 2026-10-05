@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/studio",
+  "name": "@openbooking-sh/studio",
   "version": "0.1.0",
   "description": "OpenBooking Studio: dashboard for bookings, AI-agent activity and availability.",
   "license": "Apache-2.0",
@@ -12,6 +12,17 @@
   "bugs": {
     "url": "https://github.com/openbooking-sh/openbooking/issues"
   },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "dashboard",
+    "studio"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -34,7 +45,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@openbooking/core": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
     "hono": "^4.13.12",
     "zod": "^4.6.5"
   },
@@ -42,6 +53,6 @@
     "access": "public"
   },
   "devDependencies": {
-    "@openbooking/provider-memory": "workspace:^"
+    "@openbooking-sh/provider-memory": "workspace:^"
   }
 }

@@ -1,5 +1,5 @@
-import type { GoogleTokens } from '@openbooking/google-calendar';
-import type { BusinessSettings } from '@openbooking/studio';
+import type { GoogleTokens } from '@openbooking-sh/google-calendar';
+import type { BusinessSettings } from '@openbooking-sh/studio';
 
 /** One business on hosted OpenBooking. */
 export interface Business {

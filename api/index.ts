@@ -16,16 +16,16 @@ import { waitUntil } from '@vercel/functions';
 import {
   createDemoRestaurantProvider,
   createDemoSalonProvider,
-} from '@openbooking/provider-memory';
-import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
+} from '@openbooking-sh/provider-memory';
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
 import {
   PostHogAnalytics,
   SlackNotifier,
   anthropicExtractor,
   createHostedApp,
-} from '@openbooking/hosted';
-import { ResendMailer } from '@openbooking/notifications';
-import { createOpenBookingApp } from '@openbooking/server';
+} from '@openbooking-sh/hosted';
+import { ResendMailer } from '@openbooking-sh/notifications';
+import { createOpenBookingApp } from '@openbooking-sh/server';
 
 const env = process.env;
 const production = env.VERCEL_ENV === 'production';

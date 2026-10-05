@@ -1,4 +1,4 @@
-import type { Booking, BookingService } from '@openbooking/core';
+import type { Booking, BookingService } from '@openbooking-sh/core';
 import { calendarFor, type CalendarSyncConfig } from './busy';
 import { BOOKING_ID_PROPERTY, type GoogleCalendarClient } from './client';
 import { GoogleAuthError } from './oauth';

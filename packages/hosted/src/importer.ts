@@ -11,7 +11,7 @@
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import type { WeekdayKey } from '@openbooking/studio';
+import type { WeekdayKey } from '@openbooking-sh/studio';
 
 export interface ImportedService {
   name: string;

@@ -1,4 +1,4 @@
-import { time } from '@openbooking/core';
+import { time } from '@openbooking-sh/core';
 import {
   GoogleApiError,
   GoogleAuthError,

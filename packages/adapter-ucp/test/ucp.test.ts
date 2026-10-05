@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock } from '@openbooking/core';
-import { createDemoRestaurantProvider } from '@openbooking/provider-memory';
+import { BookingService, ManualClock } from '@openbooking-sh/core';
+import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
 import { Hono } from 'hono';
 import { buildUcpProfile, createUcpRouter, UCP_VERSION } from '../src';
 

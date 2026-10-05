@@ -11,7 +11,7 @@ import {
   type ErrorPayload,
   type Slot,
   type Venue,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import { OB, OPENBOOKING_EXT_VERSION, UCP, UCP_VERSION } from './constants';
 
 export type UcpStatus =

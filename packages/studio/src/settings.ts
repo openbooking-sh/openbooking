@@ -4,7 +4,7 @@
  * cancellation rule for the whole business) so setup takes minutes. Hosted OpenBooking turns it
  * into a provider configuration.
  */
-import { AddressSchema, CurrencySchema, DateSchema } from '@openbooking/core';
+import { AddressSchema, CurrencySchema, DateSchema } from '@openbooking-sh/core';
 import * as z from 'zod';
 
 export const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;

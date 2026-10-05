@@ -10,7 +10,7 @@ import {
   type ErrorPayload,
   type Resource,
   type Slot,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { embedScript } from './embed';

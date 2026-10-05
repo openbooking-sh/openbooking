@@ -2,7 +2,7 @@
  * iCalendar (RFC 5545) invites, so a confirmed booking lands in the customer's calendar and a
  * cancellation removes it again (same UID, METHOD:CANCEL).
  */
-import type { Booking, Venue } from '@openbooking/core';
+import type { Booking, Venue } from '@openbooking-sh/core';
 import { formatAddress } from './format';
 
 export interface IcsOptions {
