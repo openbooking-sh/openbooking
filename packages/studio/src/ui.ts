@@ -625,7 +625,7 @@ export const STUDIO_HTML = `<!doctype html>
       if (/[?&]verified=expired/.test(location.search)) toast('That link expired. Send a new one from Settings.');
     });
   }
-  function slug(s) { return String(s).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item'; }
+  function slug(s) { return String(s).toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item'; }
   function uniqueId(name, taken) { var b = slug(name), id = b, n = 2; while (taken.indexOf(id) >= 0) id = b.slice(0, 36) + '-' + n++; return id; }
   function field(label, id, value, attrs) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" value="' + esc(value == null ? '' : value) + '" ' + (attrs || '') + ' /></div>'; }
   function check(id, on, label) { return '<label class="check"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + ' /> ' + label + '</label>'; }

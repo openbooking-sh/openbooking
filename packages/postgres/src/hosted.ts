@@ -3,14 +3,19 @@
  * and rate limits.
  */
 import type { CalendarLink, CalendarLinkStore } from '@openbooking-sh/google-calendar';
-import {
-  BusinessConflictError,
-  type Business,
-  type BusinessStore,
-  type RateLimiter,
-} from '@openbooking-sh/hosted';
+import type { Business, BusinessStore, RateLimiter } from '@openbooking-sh/hosted';
 import type { NotificationLog } from '@openbooking-sh/notifications';
 import { json, type Db, type Queryable } from './db';
+
+/**
+ * The hosted package's conflict error, loaded only when needed: `@openbooking-sh/hosted` is an
+ * optional peer, so importing it eagerly would break apps that use Postgres without hosting.
+ * Everyone who uses PostgresBusinessStore has hosted installed.
+ */
+async function conflict(field: 'id' | 'email'): Promise<Error> {
+  const { BusinessConflictError } = await import('@openbooking-sh/hosted');
+  return new BusinessConflictError(field);
+}
 
 /** One row per business: the record as JSON, plus unique id and (case-insensitive) owner email. */
 export class PostgresBusinessStore implements BusinessStore {
@@ -28,7 +33,7 @@ export class PostgresBusinessStore implements BusinessStore {
         [business.id, business.owner.email],
       );
       if (rows.length) {
-        throw new BusinessConflictError(rows.some((r) => r.id === business.id) ? 'id' : 'email');
+        throw await conflict(rows.some((r) => r.id === business.id) ? 'id' : 'email');
       }
       try {
         await tx.query(
@@ -38,7 +43,7 @@ export class PostgresBusinessStore implements BusinessStore {
         );
       } catch (e) {
         if ((e as { code?: string }).code === '23505') {
-          throw new BusinessConflictError(
+          throw await conflict(
             String((e as { constraint?: string }).constraint ?? '').includes('email')
               ? 'email'
               : 'id',
@@ -79,7 +84,7 @@ export class PostgresBusinessStore implements BusinessStore {
           [id, next.owner.email, json(next)],
         );
       } catch (e) {
-        if ((e as { code?: string }).code === '23505') throw new BusinessConflictError('email');
+        if ((e as { code?: string }).code === '23505') throw await conflict('email');
         throw e;
       }
       return next;

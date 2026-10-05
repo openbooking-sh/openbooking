@@ -5,7 +5,8 @@
 // "New tag: name@version" lines so changesets/action creates GitHub releases, and tags each
 // published version in git.
 //
-// Run: node scripts/publish.mjs [--dry-run]
+// Run: node scripts/publish.mjs [--dry-run] [--otp=123456]
+// Locally, npm asks for a 2FA code when it needs one (or pass --otp).
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -14,6 +15,7 @@ const root = resolve(new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-
 const out = join(root, '.release');
 const dryRun = process.argv.includes('--dry-run');
 const ci = !!process.env.GITHUB_ACTIONS;
+const otp = process.argv.find((a) => a.startsWith('--otp='));
 const sh = (cmd, args, cwd = root) =>
   execFileSync(cmd, args, {
     cwd,
@@ -52,12 +54,14 @@ for (const dir of readdirSync(join(root, 'packages'))) {
     '--access',
     'public',
     ...(ci ? ['--provenance'] : []),
+    ...(otp ? [otp] : []),
   ];
   if (dryRun) {
     console.log(`would run: npm ${args.join(' ')}`);
     continue;
   }
-  sh('npm', args);
+  // Inherit stdio so npm can prompt for a 2FA code.
+  execFileSync('npm', args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
   console.log(`New tag: ${pkg.name}@${pkg.version}`);
   sh('git', ['tag', `${pkg.name}@${pkg.version}`]);
   count++;

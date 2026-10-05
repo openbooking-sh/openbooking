@@ -86,7 +86,7 @@ export function setupHtml(opts: { studioPath: string; api: string }): string {
       return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || 'Something went wrong'); return j; });
     });
   }
-  function slug(s) { return String(s).toLowerCase().normalize('NFKD').replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item'; }
+  function slug(s) { return String(s).toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item'; }
   function uniq(name, taken) { var b = slug(name), id = b, n = 2; while (taken.indexOf(id) >= 0) id = b.slice(0, 36) + '-' + n++; taken.push(id); return id; }
   function copy(text, btn) {
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { var t = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = t; }, 1500); }, function () { prompt('Copy this', text); });
