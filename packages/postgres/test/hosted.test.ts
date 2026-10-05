@@ -3,9 +3,9 @@
  * between instances; plus the hosted stores on their own.
  */
 import { describe, expect, it } from 'vitest';
-import { ManualClock } from '@openbooking/core';
-import { BusinessConflictError, createHostedApp, type Business } from '@openbooking/hosted';
-import { MemoryMailer } from '@openbooking/notifications';
+import { ManualClock } from '@openbooking-sh/core';
+import { BusinessConflictError, createHostedApp, type Business } from '@openbooking-sh/hosted';
+import { MemoryMailer } from '@openbooking-sh/notifications';
 import {
   PostgresActivityLog,
   PostgresBusinessStore,

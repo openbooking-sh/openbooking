@@ -3,9 +3,9 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [["@openbooking/*"]],
+  "linked": [["@openbooking-sh/*"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@openbooking/example-demo", "@openbooking/bench"]
+  "ignore": ["@openbooking-sh/example-demo", "@openbooking-sh/bench"]
 }

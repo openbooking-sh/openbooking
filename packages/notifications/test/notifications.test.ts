@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BookingService, ManualClock, runAsActor, type Booking } from '@openbooking/core';
-import { createDemoSalonProvider } from '@openbooking/provider-memory';
+import { BookingService, ManualClock, runAsActor, type Booking } from '@openbooking-sh/core';
+import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import {
   MemoryMailer,
   ResendMailer,

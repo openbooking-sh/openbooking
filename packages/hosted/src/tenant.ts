@@ -17,7 +17,7 @@ import {
   type IdempotencyStore,
   type ProviderContext,
   type UpdateBookingRequest,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import {
   GoogleCalendarClient,
   attachCalendarSync,
@@ -26,27 +26,27 @@ import {
   type CalendarSync,
   type CalendarSyncConfig,
   type GoogleCredentials,
-} from '@openbooking/google-calendar';
+} from '@openbooking-sh/google-calendar';
 import {
   attachNotifications,
   type Mailer,
   type NotificationHandle,
   type NotificationLog,
-} from '@openbooking/notifications';
+} from '@openbooking-sh/notifications';
 import {
   MemoryBookingProvider,
   type BookingListQuery,
   type BookingRecordStore,
   type BusySource,
-} from '@openbooking/provider-memory';
-import { createOpenBookingApp, type OpenBookingApp } from '@openbooking/server';
+} from '@openbooking-sh/provider-memory';
+import { createOpenBookingApp, type OpenBookingApp } from '@openbooking-sh/server';
 import {
   createStudio,
   type ActivityLog,
   type BusinessSettings,
   type SettingsView,
   type Studio,
-} from '@openbooking/studio';
+} from '@openbooking-sh/studio';
 import type { Business, BusinessStore } from './business';
 import { providerConfig } from './catalog';
 

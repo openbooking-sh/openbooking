@@ -1,8 +1,28 @@
 {
-  "name": "@openbooking/google-calendar",
+  "name": "@openbooking-sh/google-calendar",
   "version": "0.1.0",
   "description": "Google Calendar sync for OpenBooking: busy times block availability, bookings appear as events.",
   "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/google-calendar"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "google-calendar",
+    "calendar-sync"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -25,8 +45,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@openbooking/core": "workspace:^",
-    "@openbooking/provider-memory": "workspace:^"
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^"
   },
   "publishConfig": {
     "access": "public"

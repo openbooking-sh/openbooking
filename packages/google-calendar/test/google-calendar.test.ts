@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BookingService, ManualClock, type BookingError } from '@openbooking/core';
-import { MemoryBookingProvider, demoSalonConfig } from '@openbooking/provider-memory';
+import { BookingService, ManualClock, type BookingError } from '@openbooking-sh/core';
+import { MemoryBookingProvider, demoSalonConfig } from '@openbooking-sh/provider-memory';
 import {
   GoogleApiError,
   GoogleAuthError,

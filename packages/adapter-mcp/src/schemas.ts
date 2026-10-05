@@ -12,7 +12,7 @@ import {
   LocalTimeSchema,
   MoneySchema,
   BookingStatusSchema,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import * as z from 'zod';
 
 const customer = CustomerSchema.describe(

@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/postgres",
+  "name": "@openbooking-sh/postgres",
   "version": "0.1.0",
   "description": "Postgres storage for OpenBooking: bookings and holds, idempotency, Studio activity and connector records.",
   "license": "Apache-2.0",
@@ -12,6 +12,17 @@
   "bugs": {
     "url": "https://github.com/openbooking-sh/openbooking/issues"
   },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "postgres",
+    "database"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -34,29 +45,29 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@openbooking/core": "workspace:^",
-    "@openbooking/provider-memory": "workspace:^",
-    "@openbooking/studio": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/studio": "workspace:^",
     "pg": "^8.23.1",
     "@types/pg": "^8.23.1"
   },
   "peerDependencies": {
-    "@openbooking/provider-calcom": "workspace:^",
-    "@openbooking/hosted": "workspace:^",
-    "@openbooking/google-calendar": "workspace:^",
-    "@openbooking/notifications": "workspace:^"
+    "@openbooking-sh/provider-calcom": "workspace:^",
+    "@openbooking-sh/hosted": "workspace:^",
+    "@openbooking-sh/google-calendar": "workspace:^",
+    "@openbooking-sh/notifications": "workspace:^"
   },
   "peerDependenciesMeta": {
-    "@openbooking/provider-calcom": {
+    "@openbooking-sh/provider-calcom": {
       "optional": true
     },
-    "@openbooking/hosted": {
+    "@openbooking-sh/hosted": {
       "optional": true
     },
-    "@openbooking/google-calendar": {
+    "@openbooking-sh/google-calendar": {
       "optional": true
     },
-    "@openbooking/notifications": {
+    "@openbooking-sh/notifications": {
       "optional": true
     }
   },
@@ -65,9 +76,9 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@openbooking/provider-calcom": "workspace:^",
-    "@openbooking/hosted": "workspace:^",
-    "@openbooking/google-calendar": "workspace:^",
-    "@openbooking/notifications": "workspace:^"
+    "@openbooking-sh/provider-calcom": "workspace:^",
+    "@openbooking-sh/hosted": "workspace:^",
+    "@openbooking-sh/google-calendar": "workspace:^",
+    "@openbooking-sh/notifications": "workspace:^"
   }
 }

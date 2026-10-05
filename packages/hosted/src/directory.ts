@@ -3,8 +3,8 @@
  * the five booking tools take a `business_id`. This is what goes into the ChatGPT and Claude
  * directories, so an assistant can book any OpenBooking business without per-business setup.
  */
-import { registerBookingTools } from '@openbooking/adapter-mcp';
-import { BookingError, toErrorPayload, type BookingService } from '@openbooking/core';
+import { registerBookingTools } from '@openbooking-sh/adapter-mcp';
+import { BookingError, toErrorPayload, type BookingService } from '@openbooking-sh/core';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod';
 import { isBookable, type Business } from './business';

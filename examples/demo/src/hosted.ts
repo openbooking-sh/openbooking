@@ -16,10 +16,10 @@ import {
   devSecret,
   hashPassword,
   starterSettings,
-} from '@openbooking/hosted';
-import { ConsoleMailer, ResendMailer } from '@openbooking/notifications';
-import { connectPostgres, migrate, postgresStores } from '@openbooking/postgres';
-import { listen } from '@openbooking/server';
+} from '@openbooking-sh/hosted';
+import { ConsoleMailer, ResendMailer } from '@openbooking-sh/notifications';
+import { connectPostgres, migrate, postgresStores } from '@openbooking-sh/postgres';
+import { listen } from '@openbooking-sh/server';
 
 const env = process.env;
 const port = Number(env.PORT ?? 3000);

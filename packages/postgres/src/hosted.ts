@@ -2,14 +2,14 @@
  * Stores for hosted OpenBooking: business accounts, Google Calendar links, the email dedupe log
  * and rate limits.
  */
-import type { CalendarLink, CalendarLinkStore } from '@openbooking/google-calendar';
+import type { CalendarLink, CalendarLinkStore } from '@openbooking-sh/google-calendar';
 import {
   BusinessConflictError,
   type Business,
   type BusinessStore,
   type RateLimiter,
-} from '@openbooking/hosted';
-import type { NotificationLog } from '@openbooking/notifications';
+} from '@openbooking-sh/hosted';
+import type { NotificationLog } from '@openbooking-sh/notifications';
 import { json, type Db, type Queryable } from './db';
 
 /** One row per business: the record as JSON, plus unique id and (case-insensitive) owner email. */

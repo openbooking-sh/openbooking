@@ -2,7 +2,7 @@
  * Email templates. Pure functions: booking + venue in, `{ subject, text, html }` out.
  * Customer names and notes come from AI agents, so every value is escaped in the HTML.
  */
-import type { Booking, Venue } from '@openbooking/core';
+import type { Booking, Venue } from '@openbooking-sh/core';
 import { escapeHtml, formatAddress, formatAmount, formatWhen, formatWhenShort } from './format';
 
 export interface RenderedEmail {

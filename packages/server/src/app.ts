@@ -3,21 +3,26 @@ import {
   createA2AStub,
   AGENT_CARD_PATH,
   type AgentProvider,
-} from '@openbooking/adapter-a2a';
-import { createMcpHttpHandler } from '@openbooking/adapter-mcp';
+} from '@openbooking-sh/adapter-a2a';
+import { createMcpHttpHandler } from '@openbooking-sh/adapter-mcp';
 import {
   createBookingPage,
   type BookingPage,
   type BookingPageOptions,
-} from '@openbooking/booking-page';
-import { buildUcpProfile, createUcpRouter } from '@openbooking/adapter-ucp';
+} from '@openbooking-sh/booking-page';
+import { buildUcpProfile, createUcpRouter } from '@openbooking-sh/adapter-ucp';
 import {
   BookingService,
   runAsActor,
   type BookingProvider,
   type BookingServiceOptions,
-} from '@openbooking/core';
-import { actorFromRequest, createStudio, type ActivityLog, type Studio } from '@openbooking/studio';
+} from '@openbooking-sh/core';
+import {
+  actorFromRequest,
+  createStudio,
+  type ActivityLog,
+  type Studio,
+} from '@openbooking-sh/studio';
 import { hostHeaderValidation, originValidation } from '@modelcontextprotocol/hono';
 import type { McpHttpHandler } from '@modelcontextprotocol/server';
 import { Hono } from 'hono';

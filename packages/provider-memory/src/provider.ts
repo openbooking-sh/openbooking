@@ -17,7 +17,7 @@ import {
   type Slot,
   type UpdateBookingRequest,
   type Venue,
-} from '@openbooking/core';
+} from '@openbooking-sh/core';
 import type { MemoryProviderConfig, OfferingConfig, VenueConfig } from './config';
 import {
   MemoryBookingStore,
@@ -64,7 +64,7 @@ interface SlotKey {
 /**
  * Reference BookingProvider driven by an in-code catalog (venues, services, staff, opening hours,
  * rules). Bookings go to a pluggable {@link BookingRecordStore}: memory by default, Postgres via
- * `@openbooking/postgres`. Atomic check-and-reserve is the store's job (`insertIfFree`), so two
+ * `@openbooking-sh/postgres`. Atomic check-and-reserve is the store's job (`insertIfFree`), so two
  * overlapping holds can never both succeed with either store.
  */
 export class MemoryBookingProvider implements BookingProvider {

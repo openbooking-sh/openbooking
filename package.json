@@ -9,9 +9,9 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "pnpm --filter @openbooking/example-demo dev",
-    "start": "pnpm --filter @openbooking/example-demo start",
-    "dev:hosted": "pnpm --filter @openbooking/example-demo dev:hosted",
+    "dev": "pnpm --filter @openbooking-sh/example-demo dev",
+    "start": "pnpm --filter @openbooking-sh/example-demo start",
+    "dev:hosted": "pnpm --filter @openbooking-sh/example-demo dev:hosted",
     "build": "pnpm -r --filter \"./packages/**\" build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
@@ -19,7 +19,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench": "pnpm --filter @openbooking/bench bench",
+    "bench": "pnpm --filter @openbooking-sh/bench bench",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"
@@ -37,11 +37,11 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
-    "@openbooking/hosted": "workspace:^",
-    "@openbooking/notifications": "workspace:^",
-    "@openbooking/postgres": "workspace:^",
-    "@openbooking/provider-memory": "workspace:^",
-    "@openbooking/server": "workspace:^",
+    "@openbooking-sh/hosted": "workspace:^",
+    "@openbooking-sh/notifications": "workspace:^",
+    "@openbooking-sh/postgres": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/server": "workspace:^",
     "@sentry/node": "^11.4.0",
     "@vercel/functions": "^3.9.11"
   }

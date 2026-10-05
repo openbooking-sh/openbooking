@@ -6,13 +6,13 @@ import type {
   MemoryProviderConfig,
   OfferingConfig,
   VenueConfig,
-} from '@openbooking/provider-memory';
+} from '@openbooking-sh/provider-memory';
 import {
   BusinessSettingsSchema,
   WEEKDAY_KEYS,
   type BusinessSettings,
   type BusinessSettingsInput,
-} from '@openbooking/studio';
+} from '@openbooking-sh/studio';
 import { slugify, type Business } from './business';
 
 export function venueConfig(business: Business, pageUrl?: string): VenueConfig {

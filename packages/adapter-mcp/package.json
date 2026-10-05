@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/adapter-mcp",
+  "name": "@openbooking-sh/adapter-mcp",
   "version": "0.1.0",
   "description": "Expose an OpenBooking BookingService as a small set of agent-friendly MCP tools.",
   "license": "Apache-2.0",
@@ -12,6 +12,18 @@
   "bugs": {
     "url": "https://github.com/openbooking-sh/openbooking/issues"
   },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "mcp-server",
+    "claude",
+    "chatgpt"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -35,7 +47,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.2.0",
-    "@openbooking/core": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
     "zod": "^4.6.5"
   },
   "publishConfig": {
@@ -43,6 +55,6 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "@openbooking/provider-memory": "workspace:^"
+    "@openbooking-sh/provider-memory": "workspace:^"
   }
 }

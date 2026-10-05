@@ -1,4 +1,4 @@
-import type { BookingEvent, BookingService } from '@openbooking/core';
+import type { BookingEvent, BookingService } from '@openbooking-sh/core';
 
 export interface ActivityEntry {
   id: number;
@@ -23,7 +23,7 @@ export interface ActivityQuery {
 
 /**
  * Where the Studio keeps booking activity (who did what, when) and the channel each booking came
- * through. Memory by default; `@openbooking/postgres` makes it durable.
+ * through. Memory by default; `@openbooking-sh/postgres` makes it durable.
  */
 export interface ActivityLog {
   /** Append an entry (the log assigns `id`) and update booked-via attribution. */

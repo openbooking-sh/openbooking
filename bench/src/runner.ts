@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { BookingService, time, type BookingEvent, type Clock } from '@openbooking/core';
+import { BookingService, time, type BookingEvent, type Clock } from '@openbooking-sh/core';
 import {
   createDemoRestaurantProvider,
   type MemoryBookingProvider,
-} from '@openbooking/provider-memory';
-import { createOpenBookingApp, listen } from '@openbooking/server';
+} from '@openbooking-sh/provider-memory';
+import { createOpenBookingApp, listen } from '@openbooking-sh/server';
 import type { AgentDriver, DriverSummary, Task, TaskRunResult } from './types';
 
 export const AGENT_SYSTEM_PROMPT = `You are a booking assistant with access to a restaurant booking system via tools.

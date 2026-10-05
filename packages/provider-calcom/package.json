@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/provider-calcom",
+  "name": "@openbooking-sh/provider-calcom",
   "version": "0.1.0",
   "description": "BookingProvider for Cal.com (hosted) and Cal.diy (self-hosted) via Cal.com API v2.",
   "license": "Apache-2.0",
@@ -12,6 +12,17 @@
   "bugs": {
     "url": "https://github.com/openbooking-sh/openbooking/issues"
   },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "cal.com",
+    "calcom"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -34,7 +45,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@openbooking/core": "workspace:^"
+    "@openbooking-sh/core": "workspace:^"
   },
   "publishConfig": {
     "access": "public"

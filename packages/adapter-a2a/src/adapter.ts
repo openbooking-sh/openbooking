@@ -1,4 +1,4 @@
-import type { BookingService } from '@openbooking/core';
+import type { BookingService } from '@openbooking-sh/core';
 import { A2A_PROTOCOL_VERSION } from './agent-card';
 
 /**

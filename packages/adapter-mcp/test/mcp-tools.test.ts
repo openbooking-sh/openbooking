@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { BookingService, ManualClock } from '@openbooking/core';
-import { createDemoRestaurantProvider } from '@openbooking/provider-memory';
+import { BookingService, ManualClock } from '@openbooking-sh/core';
+import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
 import { TOOL_NAMES, createMcpHttpHandler } from '../src';
 
 const cleanups: Array<() => Promise<void>> = [];

@@ -1,4 +1,4 @@
-import type { BusyInterval, BusySource } from '@openbooking/provider-memory';
+import type { BusyInterval, BusySource } from '@openbooking-sh/provider-memory';
 import type { GoogleCalendarClient } from './client';
 import { GoogleAuthError } from './oauth';
 

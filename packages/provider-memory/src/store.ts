@@ -1,4 +1,4 @@
-import { BookingError, type Booking } from '@openbooking/core';
+import { BookingError, type Booking } from '@openbooking-sh/core';
 
 /** A booking plus the inventory it occupies. */
 export interface BookingRecord {

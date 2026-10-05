@@ -166,19 +166,19 @@ importers:
 
   .:
     dependencies:
-      '@openbooking/hosted':
+      '@openbooking-sh/hosted':
         specifier: workspace:^
         version: link:packages/hosted
-      '@openbooking/notifications':
+      '@openbooking-sh/notifications':
         specifier: workspace:^
         version: link:packages/notifications
-      '@openbooking/postgres':
+      '@openbooking-sh/postgres':
         specifier: workspace:^
         version: link:packages/postgres
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:packages/provider-memory
-      '@openbooking/server':
+      '@openbooking-sh/server':
         specifier: workspace:^
         version: link:packages/server
       '@sentry/node':
@@ -224,13 +224,13 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.2.0
         version: 2.2.0
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../packages/core
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../packages/provider-memory
-      '@openbooking/server':
+      '@openbooking-sh/server':
         specifier: workspace:^
         version: link:../packages/server
       yaml:
@@ -242,34 +242,34 @@ importers:
 
   examples/demo:
     dependencies:
-      '@openbooking/adapter-mcp':
+      '@openbooking-sh/adapter-mcp':
         specifier: workspace:^
         version: link:../../packages/adapter-mcp
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../../packages/core
-      '@openbooking/hosted':
+      '@openbooking-sh/hosted':
         specifier: workspace:^
         version: link:../../packages/hosted
-      '@openbooking/notifications':
+      '@openbooking-sh/notifications':
         specifier: workspace:^
         version: link:../../packages/notifications
-      '@openbooking/postgres':
+      '@openbooking-sh/postgres':
         specifier: workspace:^
         version: link:../../packages/postgres
-      '@openbooking/provider-calcom':
+      '@openbooking-sh/provider-calcom':
         specifier: workspace:^
         version: link:../../packages/provider-calcom
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../../packages/provider-memory
-      '@openbooking/server':
+      '@openbooking-sh/server':
         specifier: workspace:^
         version: link:../../packages/server
 
   packages/adapter-a2a:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
 
@@ -278,7 +278,7 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.2.0
         version: 2.2.0
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
       zod:
@@ -288,13 +288,13 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.2.0
         version: 2.2.0
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 
   packages/adapter-ucp:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
       hono:
@@ -304,20 +304,20 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 
   packages/booking-page:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
       hono:
         specifier: ^4.13.12
         version: 4.13.12
     devDependencies:
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 
@@ -329,10 +329,10 @@ importers:
 
   packages/google-calendar:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 
@@ -344,28 +344,28 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.2.0
         version: 2.2.0
-      '@openbooking/adapter-mcp':
+      '@openbooking-sh/adapter-mcp':
         specifier: workspace:^
         version: link:../adapter-mcp
-      '@openbooking/booking-page':
+      '@openbooking-sh/booking-page':
         specifier: workspace:^
         version: link:../booking-page
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
-      '@openbooking/google-calendar':
+      '@openbooking-sh/google-calendar':
         specifier: workspace:^
         version: link:../google-calendar
-      '@openbooking/notifications':
+      '@openbooking-sh/notifications':
         specifier: workspace:^
         version: link:../notifications
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
-      '@openbooking/server':
+      '@openbooking-sh/server':
         specifier: workspace:^
         version: link:../server
-      '@openbooking/studio':
+      '@openbooking-sh/studio':
         specifier: workspace:^
         version: link:../studio
       hono:
@@ -381,23 +381,23 @@ importers:
 
   packages/notifications:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
     devDependencies:
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 
   packages/postgres:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
-      '@openbooking/studio':
+      '@openbooking-sh/studio':
         specifier: workspace:^
         version: link:../studio
       '@types/pg':
@@ -410,28 +410,28 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.8
         version: 0.5.8
-      '@openbooking/google-calendar':
+      '@openbooking-sh/google-calendar':
         specifier: workspace:^
         version: link:../google-calendar
-      '@openbooking/hosted':
+      '@openbooking-sh/hosted':
         specifier: workspace:^
         version: link:../hosted
-      '@openbooking/notifications':
+      '@openbooking-sh/notifications':
         specifier: workspace:^
         version: link:../notifications
-      '@openbooking/provider-calcom':
+      '@openbooking-sh/provider-calcom':
         specifier: workspace:^
         version: link:../provider-calcom
 
   packages/provider-calcom:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
 
   packages/provider-memory:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
 
@@ -446,22 +446,22 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.2.0
         version: 2.2.0
-      '@openbooking/adapter-a2a':
+      '@openbooking-sh/adapter-a2a':
         specifier: workspace:^
         version: link:../adapter-a2a
-      '@openbooking/adapter-mcp':
+      '@openbooking-sh/adapter-mcp':
         specifier: workspace:^
         version: link:../adapter-mcp
-      '@openbooking/adapter-ucp':
+      '@openbooking-sh/adapter-ucp':
         specifier: workspace:^
         version: link:../adapter-ucp
-      '@openbooking/booking-page':
+      '@openbooking-sh/booking-page':
         specifier: workspace:^
         version: link:../booking-page
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
-      '@openbooking/studio':
+      '@openbooking-sh/studio':
         specifier: workspace:^
         version: link:../studio
       hono:
@@ -471,13 +471,13 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.2.0
         version: 2.2.0
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 
   packages/studio:
     dependencies:
-      '@openbooking/core':
+      '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
       hono:
@@ -487,7 +487,7 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
-      '@openbooking/provider-memory':
+      '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
 

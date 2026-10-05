@@ -1,4 +1,4 @@
-import { time, type Booking } from '@openbooking/core';
+import { time, type Booking } from '@openbooking-sh/core';
 import type { ActivityEntry } from './activity';
 
 export interface AgentRow {

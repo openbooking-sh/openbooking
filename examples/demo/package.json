@@ -1,5 +1,5 @@
 {
-  "name": "@openbooking/example-demo",
+  "name": "@openbooking-sh/example-demo",
   "version": "0.0.0",
   "private": true,
   "description": "OpenBooking demo: a fictional hair salon (or restaurant) bookable by AI agents.",
@@ -14,13 +14,13 @@
     "start:hosted": "tsx --conditions=@openbooking/source src/hosted.ts"
   },
   "dependencies": {
-    "@openbooking/adapter-mcp": "workspace:^",
-    "@openbooking/core": "workspace:^",
-    "@openbooking/postgres": "workspace:^",
-    "@openbooking/provider-calcom": "workspace:^",
-    "@openbooking/provider-memory": "workspace:^",
-    "@openbooking/server": "workspace:^",
-    "@openbooking/hosted": "workspace:^",
-    "@openbooking/notifications": "workspace:^"
+    "@openbooking-sh/adapter-mcp": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/postgres": "workspace:^",
+    "@openbooking-sh/provider-calcom": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/server": "workspace:^",
+    "@openbooking-sh/hosted": "workspace:^",
+    "@openbooking-sh/notifications": "workspace:^"
   }
 }

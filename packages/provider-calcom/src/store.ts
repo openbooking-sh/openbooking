@@ -1,4 +1,4 @@
-import type { Booking } from '@openbooking/core';
+import type { Booking } from '@openbooking-sh/core';
 
 /** What the connector remembers per booking (Cal.com has no notion of holds or OpenBooking ids). */
 export interface CalcomRecord {

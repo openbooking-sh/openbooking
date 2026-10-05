@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock, type BookingEvent } from '@openbooking/core';
+import { BookingService, ManualClock, type BookingEvent } from '@openbooking-sh/core';
 import {
   MemoryBookingProvider,
   createDemoSalonProvider,
   demoSalonConfig,
-} from '@openbooking/provider-memory';
+} from '@openbooking-sh/provider-memory';
 import { createBookingPage } from '../src';
 
 const BASE = 'https://app.example.com/b/studio-nord';

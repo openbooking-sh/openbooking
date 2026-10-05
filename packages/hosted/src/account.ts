@@ -3,7 +3,7 @@
  * build step; the script avoids backticks and dollar-brace so it can live in a template literal.
  */
 import { createHash } from 'node:crypto';
-import type { EmailMessage } from '@openbooking/notifications';
+import type { EmailMessage } from '@openbooking-sh/notifications';
 
 export const RESET_TTL_MS = 60 * 60_000;
 export const VERIFY_TTL_MS = 7 * 24 * 3_600_000;

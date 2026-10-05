@@ -1,4 +1,4 @@
-import type { CalcomRecord, CalcomStore } from '@openbooking/provider-calcom';
+import type { CalcomRecord, CalcomStore } from '@openbooking-sh/provider-calcom';
 import { json, type Queryable } from './db';
 
 /** Cal.com connector records (holds, OpenBooking ↔ Cal.com ids) in Postgres. */

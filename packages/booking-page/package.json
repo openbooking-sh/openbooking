@@ -1,8 +1,29 @@
 {
-  "name": "@openbooking/booking-page",
+  "name": "@openbooking-sh/booking-page",
   "version": "0.1.0",
   "description": "Public booking page for an OpenBooking business: pre-filled links, structured data and WebMCP tools.",
   "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/booking-page"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "appointments",
+    "scheduling",
+    "booking-page",
+    "webmcp",
+    "embed"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -25,11 +46,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@openbooking/core": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
     "hono": "^4.13.12"
   },
   "devDependencies": {
-    "@openbooking/provider-memory": "workspace:^"
+    "@openbooking-sh/provider-memory": "workspace:^"
   },
   "publishConfig": {
     "access": "public"

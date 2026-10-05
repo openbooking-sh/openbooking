@@ -5,7 +5,7 @@
  *
  * This is self-reported and spoofable: fine for analytics, never for authorization.
  */
-import type { Actor } from '@openbooking/core';
+import type { Actor } from '@openbooking-sh/core';
 
 const KNOWN: Array<[RegExp, string]> = [
   [/claude|anthropic/i, 'Claude'],

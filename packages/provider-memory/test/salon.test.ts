@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock, type BookingError } from '@openbooking/core';
+import { BookingService, ManualClock, type BookingError } from '@openbooking-sh/core';
 import { createDemoSalonProvider } from '../src';
 
 // Thursday 2026-10-01 08:00 Oslo time.

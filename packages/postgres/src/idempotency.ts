@@ -1,4 +1,4 @@
-import type { IdempotencyRecord, IdempotencyStore } from '@openbooking/core';
+import type { IdempotencyRecord, IdempotencyStore } from '@openbooking-sh/core';
 import { json, type Queryable } from './db';
 
 export interface PostgresIdempotencyStoreOptions {
