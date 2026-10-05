@@ -18,4 +18,9 @@ export default tseslint.config(
     files: ['**/test/**/*.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
+  {
+    // Plain Node scripts (maintenance tools, not shipped).
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { console: 'readonly', process: 'readonly', URL: 'readonly' } },
+  },
 );
