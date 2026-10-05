@@ -47,8 +47,18 @@ export function connectPostgres(
   connectionString: string,
   options: Omit<pg.PoolConfig, 'connectionString'> = {},
 ): PostgresConnection {
-  const pool = new pg.Pool({ connectionString, max: 5, ...options });
+  const pool = new pg.Pool({ connectionString: strictSsl(connectionString), max: 5, ...options });
   return { ...fromPool(pool), pool, end: () => pool.end() };
+}
+
+/**
+ * Hosted Postgres URLs (Neon, Supabase) say `sslmode=require`, which `pg` already treats as
+ * `verify-full` but warns about on every start. Say `verify-full` explicitly: same security, no
+ * warning, and no silent downgrade when `pg` 9 switches to libpq semantics.
+ */
+export function strictSsl(connectionString: string): string {
+  if (/[?&]uselibpqcompat=/.test(connectionString)) return connectionString;
+  return connectionString.replace(/([?&]sslmode=)(prefer|require|verify-ca)\b/, '$1verify-full');
 }
 
 /** Serialise a value for a `$n::jsonb` parameter (drivers would turn arrays into PG arrays). */
