@@ -87,8 +87,13 @@ ${TRACKER_JS}
  * Nothing personal: no form values, no ids, no cookies. Plain ES5 so it runs anywhere.
  */
 export const TRACKER_JS = String.raw`(function () {
-  var ph = window.posthog;
-  if (!ph) return;
+  if (!window.posthog) return;
+  // Always the current window.posthog: the snippet's stub is replaced when the library loads, so
+  // holding on to the stub would send later events nowhere.
+  var ph = {
+    capture: function (n, p) { try { window.posthog.capture(n, p); } catch (e) {} },
+    register: function (p) { try { window.posthog.register(p); } catch (e) {} },
+  };
   try {
     var q = new URLSearchParams(location.search), p = { landing_path: location.pathname };
     ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'from', 'ref'].forEach(function (k) {
