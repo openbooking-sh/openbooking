@@ -564,6 +564,7 @@ describe('analytics and operator notifications', () => {
 
     // Owner pages carry the PostHog snippet; customer booking pages don't.
     expect((await call('/signup')).text).toContain('phc_test');
+    expect((await call('/signup')).text).toContain('cta_clicked');
     await call('/api/signup', {
       business_name: 'Studio Nord',
       your_name: 'Maria',
@@ -571,6 +572,7 @@ describe('analytics and operator notifications', () => {
       password: 'correct horse',
       category: 'hair_salon',
       city: 'Oslo',
+      source: 'hero',
     });
     expect((await call('/b/studio-nord', undefined, { accept: 'text/html' })).text).not.toContain(
       'phc_test',
@@ -603,7 +605,7 @@ describe('analytics and operator notifications', () => {
     });
 
     const slack = posted.filter((p) => p.url.includes('slack')).map((p) => p.body.text);
-    expect(slack[0]).toContain(':tada: New business: *Studio Nord* (hair salon, Oslo)');
+    expect(slack[0]).toContain(':tada: New business: *Studio Nord* (hair salon, Oslo) · via hero');
     expect(slack[1]).toBe(':calendar: *Studio Nord* got a booking via Booking page');
 
     // Neither tool ever sees the owner's or customer's personal details.

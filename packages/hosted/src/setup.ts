@@ -286,6 +286,8 @@ export function setupHtml(opts: { studioPath: string; api: string }): string {
   function render() {
     $('bar').innerHTML = STEPS.map(function (_, i) { return '<span class="' + (i <= step ? 'on' : '') + '"></span>'; }).join('');
     $('step').innerHTML = RENDER[STEPS[step]]();
+    // Funnel: which setup steps owners reach (no form values).
+    try { if (window.posthog) window.posthog.capture('setup_step_viewed', { step: STEPS[step], index: step + 1, imported: !!imported }); } catch (e) {}
     bind();
     window.scrollTo(0, 0);
     var first = document.querySelector('#step input'); if (first && step > 0) first.focus();

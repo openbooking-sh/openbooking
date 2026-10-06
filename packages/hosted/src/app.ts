@@ -136,6 +136,14 @@ const SignupInput = z.object({
   category: z.enum(CATEGORIES).default('other'),
   city: z.string().trim().max(100).optional(),
   timezone: z.string().max(60).optional(),
+  /** Where the sign-up came from, e.g. "hero" (website button), a utm_source or a referring site. */
+  source: z
+    .string()
+    .trim()
+    .max(80)
+    .regex(/^[\w.:/-]*$/)
+    .optional()
+    .catch(undefined),
 });
 
 const LoginInput = z.object({ email: z.string().max(200), password: z.string().max(200) });
@@ -434,9 +442,13 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         throw e;
       }
       later(sendVerification(business), 'verification email');
-      track('business_signed_up', id, { category: input.category, city: input.city ?? null });
+      track('business_signed_up', id, {
+        category: input.category,
+        city: input.city ?? null,
+        source: input.source ?? null,
+      });
       options.ops?.notify(
-        `:tada: New business: *${businessName(business)}* (${input.category.replace(/_/g, ' ')}${input.city ? `, ${slackEscape(input.city)}` : ''}) · ${opsLink(id, 'booking page')}`,
+        `:tada: New business: *${businessName(business)}* (${input.category.replace(/_/g, ' ')}${input.city ? `, ${slackEscape(input.city)}` : ''})${input.source ? ` · via ${slackEscape(input.source)}` : ''} · ${opsLink(id, 'booking page')}`,
       );
       return c.json({
         token: sessionToken(business),

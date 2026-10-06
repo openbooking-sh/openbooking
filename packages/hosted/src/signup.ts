@@ -81,6 +81,19 @@ export function signupHtml(opts: {
   var cfg = JSON.parse(document.getElementById('cfg').textContent);
   function $(id) { return document.getElementById(id); }
   $('login').href = cfg.loginPath;
+  // Where this sign-up came from: the website button (?from=hero), a campaign (utm_source) or a
+  // referring site. Sent with the sign-up so it shows in analytics and the team's Slack message.
+  function source() {
+    try {
+      var q = new URLSearchParams(location.search);
+      var s = q.get('from') || q.get('utm_source') || q.get('ref');
+      if (!s && document.referrer) {
+        var r = new URL(document.referrer);
+        if (r.hostname !== location.hostname) s = r.hostname.replace(/^www\\./, '');
+      }
+      return s ? s.slice(0, 80) : undefined;
+    } catch (e) { return undefined; }
+  }
   $('f').onsubmit = function (e) {
     e.preventDefault();
     $('err').textContent = '';
@@ -89,7 +102,8 @@ export function signupHtml(opts: {
     var body = {
       business_name: $('business').value.trim(), category: $('category').value, city: $('city').value.trim() || undefined,
       your_name: $('name').value.trim(), email: $('email').value.trim(), password: $('password').value,
-      timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || undefined
+      timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || undefined,
+      source: source()
     };
     fetch(cfg.signupApi, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || 'Sign-up failed'); return j; }); })
