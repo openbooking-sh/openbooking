@@ -66,6 +66,8 @@ try {
     env: { ...process.env, PORT: String(port) },
     shell: win,
     stdio: 'pipe',
+    // Own process group on Linux/macOS, so npx and the tsx server under it can be killed together.
+    detached: !win,
   });
   let log = '';
   server.stdout.on('data', (d) => (log += d));
@@ -118,12 +120,26 @@ try {
     `MCP initialize answered ${mcp.status}`,
   );
   console.log(`\n✓ create-openbooking works end to end (booked ${date}, MCP answers)`);
+} catch (e) {
+  console.error(`\n✗ ${e instanceof Error ? e.message : String(e)}`);
+  process.exitCode = 1;
 } finally {
-  if (server) {
-    if (win) spawn('taskkill', ['/F', '/T', '/PID', String(server.pid)], { stdio: 'ignore' });
-    else server.kill('SIGTERM');
+  // Kill the whole server tree, or its open pipes keep this script (and CI) running forever.
+  if (server?.pid) {
+    try {
+      if (win)
+        execFileSync('taskkill', ['/F', '/T', '/PID', String(server.pid)], { stdio: 'ignore' });
+      else process.kill(-server.pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
   }
-  setTimeout(() => rmSync(work, { recursive: true, force: true }), 500).unref();
+  try {
+    rmSync(work, { recursive: true, force: true });
+  } catch {
+    // Windows may still hold a file for a moment; the OS temp cleaner gets it
+  }
+  process.exit(process.exitCode ?? 0);
 }
 
 function safeList(dir) {

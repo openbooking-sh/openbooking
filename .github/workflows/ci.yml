@@ -54,6 +54,7 @@ jobs:
     # What a new user gets: create-openbooking with the packed (unreleased) packages, type-checked,
     # started and booked through.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
