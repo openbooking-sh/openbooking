@@ -124,7 +124,7 @@ Each offer reuses the `stay` shape (`id`, `stay_dates`, `accommodation_type`, `r
 
 ## 2. MCP
 
-- **Not the UCP MCP binding.** We expose five agent-optimised tools instead of UCP's session CRUD: `search_availability`, `hold_slot`, `confirm_booking`, `get_booking`, `cancel_booking`. A UCP-conformant MCP binding could be added later as a separate adapter.
+- **Not the UCP MCP binding.** We expose six agent-optimised tools instead of UCP's session CRUD: `get_business_info`, `search_availability`, `hold_slot`, `confirm_booking`, `get_booking`, `cancel_booking`. A UCP-conformant MCP binding could be added later as a separate adapter.
 - **Flatter inputs than core.** `party_size` is an integer and `preferences` maps to core `tags`.
 - **Input validation runs in the handler.**
   - Tool input schemas are advertised to clients as normal JSON Schema, but the SDK-side validator is a pass-through.

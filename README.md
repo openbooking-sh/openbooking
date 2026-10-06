@@ -17,10 +17,20 @@ safe:
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
 | **A2A** (Agent2Agent)                 | ⚪ Stub      | v1.0 Agent Card at `/.well-known/agent-card.json`; task endpoint not implemented yet                                                |
 
-## Install
+## Start in one command
 
 ```sh
-npm install @openbooking-sh/server @openbooking-sh/core
+npx create-openbooking my-salon
+cd my-salon && npm run dev
+```
+
+You get a booking backend with a booking page, a website snippet, Studio and an MCP endpoint.
+Edit `business.ts` for staff, services and opening hours.
+
+## Install into an existing app
+
+```sh
+npm install @openbooking-sh/server @openbooking-sh/provider-memory
 ```
 
 ```ts
@@ -149,7 +159,8 @@ emails. See [docs/HOSTED.md](docs/HOSTED.md).
 
 | Tool                  | Does                                                                                                                     |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `search_availability` | Slots for a date and party size, with price, deposit and cancellation policy. Nothing is reserved.                       |
+| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.  |
+| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved. |
 | `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                 |
 | `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.           |
 | `get_booking`         | Current status and details.                                                                                              |
@@ -158,8 +169,35 @@ emails. See [docs/HOSTED.md](docs/HOSTED.md).
 **Design rules:**
 
 - Every mutating tool takes an `idempotency_key`.
-- Every error is `{ code, message, suggested_next_action }`.
-- Every booking response includes `next_step`.
+- Every error is `{ code, message, suggested_next_action, retryable }`.
+- Every response includes `next_step`, the instruction for the agent.
+- New holds are limited per caller IP (default 20 per 10 minutes), so nobody can tie up the
+  calendar. Set `serviceOptions.holdLimit` to tune or disable it.
+
+### Field reference
+
+**`search_availability`**
+
+| Field                  | Type         | Notes                                                       |
+| ---------------------- | ------------ | ----------------------------------------------------------- |
+| `date`                 | `YYYY-MM-DD` | In the venue's time zone                                    |
+| `party_size`           | integer      | Default 1 (an appointment); guests for a table              |
+| `offering_id`          | string       | Service id from `get_business_info`, e.g. `haircut`         |
+| `staff`                | string       | A staff member by name or id, any capitalisation (`"Kari"`) |
+| `preferences`          | string[]     | Other required features, e.g. `["outdoor"]`                 |
+| `time_from`, `time_to` | `HH:MM`      | Venue local time, inclusive                                 |
+| `limit`                | integer      | Default 20, max 50                                          |
+
+**`customer`** (on `hold_slot` or `confirm_booking`): `first_name`, `last_name`, and at least
+one of `email` or `phone_number` (international format, e.g. `+4791234567`).
+
+**Slots and bookings:**
+
+- Times (`start`, `end`) are ISO 8601 with the venue's offset, e.g. `2026-10-13T10:00:00+02:00`.
+- `expires_at` is in UTC.
+- Prices are in minor units: `{ amount: 45000, currency: "NOK" }` is 450.00 NOK.
+- `resource` says who or what is booked; `also_available` lists other staff free at that time.
+- Booking `status` is `held`, `confirmed`, `cancelled` or `expired`.
 
 ## Connect Cal.com (beta)
 
@@ -262,6 +300,7 @@ packages/
   core/             Domain model, BookingProvider, BookingService (agent-safety rules)
   provider-memory/  Configured provider (catalog + slot rules) + demo salon and restaurant
   postgres/         Postgres storage: bookings, idempotency, Studio activity, Cal.com records
+  create-openbooking/  npx create-openbooking: a ready-to-run booking backend
   adapter-mcp/      MCP tools (Streamable HTTP + stdio)
   adapter-ucp/      UCP discovery + booking sessions (draft)
   adapter-a2a/      A2A Agent Card (stub)

@@ -5,7 +5,7 @@
  *
  * This is self-reported and spoofable: fine for analytics, never for authorization.
  */
-import type { Actor } from '@openbooking-sh/core';
+import { clientIpFromHeaders, type Actor } from '@openbooking-sh/core';
 
 const KNOWN: Array<[RegExp, string]> = [
   [/claude|anthropic/i, 'Claude'],
@@ -66,5 +66,11 @@ export async function actorFromRequest(req: Request, protocol: Actor['protocol']
   }
   if (protocol === 'ucp') client = ucpAgentHost(req.headers.get('ucp-agent'));
   const raw = client ?? ua;
-  return { protocol, agent: agentName(raw), ...(raw ? { client: raw } : {}) };
+  const ip = clientIpFromHeaders(req.headers);
+  return {
+    protocol,
+    agent: agentName(raw),
+    ...(raw ? { client: raw } : {}),
+    ...(ip ? { ip } : {}),
+  };
 }

@@ -206,12 +206,36 @@ export const SlotSchema = z.object({
       tags: z.array(z.string()).default([]),
     })
     .optional(),
+  /**
+   * Other resources (e.g. staff members) also free at this time, by label. The slot books
+   * `resource`; to book one of these instead, search again asking for it.
+   */
+  also_available: z.array(z.string()).optional(),
   /** Total price for the whole party, if known up front. null = priced at the venue. */
   price: MoneySchema.nullable(),
   deposit: DepositTermsSchema.nullable(),
   cancellation_policy: CancellationPolicySchema,
 });
 export type Slot = z.infer<typeof SlotSchema>;
+
+/** Opening periods in venue-local time, keyed mon … sun. An empty or missing day is closed. */
+export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
+/** What an agent needs to describe a venue before searching: hours and booking rules. */
+export const VenueInfoSchema = z.object({
+  opening_hours: z.record(
+    z.enum(WEEKDAYS),
+    z.array(z.object({ open: LocalTimeSchema, close: z.string() })),
+  ),
+  /** Dates (YYYY-MM-DD) the venue is closed, e.g. holidays. */
+  closed_dates: z.array(DateSchema).default([]),
+  /** Earliest bookable start, in minutes from now. */
+  min_lead_minutes: z.number().int().nullable().default(null),
+  /** How many days ahead bookings are accepted. */
+  max_days_ahead: z.number().int().nullable().default(null),
+});
+export type VenueInfo = z.infer<typeof VenueInfoSchema>;
 
 export const AvailabilityQuerySchema = z
   .object({
@@ -227,8 +251,10 @@ export const AvailabilityQuerySchema = z
     tags: z
       .array(z.string())
       .optional()
-      .describe('Preferences the resource must match, e.g. ["outdoor"]'),
-    limit: z.number().int().min(1).max(50).default(10),
+      .describe(
+        'What the resource must match, case-insensitive: a staff member by name or id (e.g. ["Kari"]), or a feature such as ["outdoor"]',
+      ),
+    limit: z.number().int().min(1).max(50).default(20),
   })
   .refine((q) => !q.time_from || !q.time_to || q.time_from <= q.time_to, {
     message: 'time_from must be <= time_to',

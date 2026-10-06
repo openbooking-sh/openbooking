@@ -17,6 +17,8 @@ export interface Actor {
   agent: string;
   /** Raw client identifier as reported (MCP clientInfo name, User-Agent, UCP-Agent profile). */
   client?: string;
+  /** Caller IP (from proxy headers), for rate limits. Never stored or sent to analytics. */
+  ip?: string;
 }
 
 const storage = new AsyncLocalStorage<Actor>();

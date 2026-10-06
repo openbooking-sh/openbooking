@@ -383,6 +383,10 @@ export class TenantProvider implements BookingProvider {
     return this.#inner.listOfferings(venueId);
   }
 
+  getVenueInfo(venueId: string) {
+    return this.#inner.getVenueInfo(venueId);
+  }
+
   listResources(venueId: string) {
     return this.#inner.listResources(venueId);
   }

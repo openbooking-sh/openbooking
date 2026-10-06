@@ -21,6 +21,7 @@ import {
   type IdempotencyStore,
 } from './idempotency';
 import type { BookingProvider, ProviderContext } from './provider';
+import { MemoryRateLimiter, type RateLimiter } from './rate-limit';
 import {
   AvailabilityQuerySchema,
   CancelInputSchema,
@@ -37,6 +38,7 @@ import {
   type Slot,
   type UpdateInput,
   type Venue,
+  type VenueInfo,
 } from './schemas';
 
 export type Operation = 'search' | 'hold' | 'confirm' | 'get' | 'update' | 'cancel' | 'list';
@@ -73,6 +75,13 @@ export interface BookingServiceOptions {
   idempotencyTtlMs?: number;
   /** How long a hold reserves inventory. Default 600s (10 minutes). */
   holdTtlSeconds?: number;
+  /**
+   * Limit new holds per caller IP, so nobody can tie up the calendar with holds they never
+   * confirm. Default 20 holds per 10 minutes per IP; callers without an IP (Studio, direct API
+   * use) are not limited. Retries with the same idempotency key don't count. `false` disables.
+   * AI platforms call from shared IPs, so keep the limit generous.
+   */
+  holdLimit?: { limit: number; windowMs: number; limiter?: RateLimiter } | false;
   onEvent?: (event: BookingEvent) => void;
 }
 
@@ -107,6 +116,24 @@ export class BookingService {
       now,
     );
     if (options.onEvent) this.#listeners.add(options.onEvent);
+    const limit = options.holdLimit ?? { limit: 20, windowMs: 10 * 60_000 };
+    this.#holdLimit = limit
+      ? { ...limit, limiter: limit.limiter ?? new MemoryRateLimiter(now) }
+      : undefined;
+  }
+
+  readonly #holdLimit: { limit: number; windowMs: number; limiter: RateLimiter } | undefined;
+
+  async #checkHoldLimit(): Promise<void> {
+    const ip = currentActor()?.ip;
+    if (!this.#holdLimit || !ip) return;
+    const { limit, windowMs, limiter } = this.#holdLimit;
+    if (!(await limiter.hit(`hold:${ip}`, limit, windowMs))) {
+      throw new BookingError(
+        'rate_limited',
+        'Too many holds from this connection. Try again in a few minutes.',
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -123,6 +150,12 @@ export class BookingService {
   async listResources(venueId?: string): Promise<Resource[]> {
     const venue = await this.resolveVenue(venueId);
     return (await this.provider.listResources?.(venue.id, this.#ctx())) ?? [];
+  }
+
+  /** Opening hours and booking rules of a venue, or null if the provider doesn't expose them. */
+  async getVenueInfo(venueId?: string): Promise<VenueInfo | null> {
+    const venue = await this.resolveVenue(venueId);
+    return (await this.provider.getVenueInfo?.(venue.id, this.#ctx())) ?? null;
   }
 
   async listVenues(): Promise<Venue[]> {
@@ -215,6 +248,7 @@ export class BookingService {
     return this.#track('hold', async (meta) => {
       const { idempotency_key, ...req } = parse(HoldInputSchema, input, 'hold_slot');
       return this.#idempotent(meta, idempotency_key, 'hold', req, async (ctx) => {
+        await this.#checkHoldLimit();
         const expires_at = new Date(ctx.now.getTime() + this.holdTtlSeconds * 1000);
         const booking = await this.provider.createHold(
           {

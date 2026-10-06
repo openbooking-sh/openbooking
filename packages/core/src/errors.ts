@@ -21,6 +21,7 @@ export const ErrorCodeSchema = z.enum([
   'idempotency_conflict',
   'operation_not_supported',
   'provider_error',
+  'rate_limited',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 
@@ -60,9 +61,11 @@ const DEFAULT_NEXT_ACTION: Record<ErrorCode, string> = {
     'This provider does not support the operation. Tell the user it must be done with the venue directly.',
   provider_error:
     'A temporary problem occurred at the booking system. Retry the same call with the same idempotency_key shortly.',
+  rate_limited:
+    'Too many holds were made from here in a short time. Wait a few minutes, or complete or release existing holds first.',
 };
 
-const RETRYABLE: ReadonlySet<ErrorCode> = new Set(['provider_error']);
+const RETRYABLE: ReadonlySet<ErrorCode> = new Set(['provider_error', 'rate_limited']);
 
 export interface BookingErrorOptions {
   suggested_next_action?: string;

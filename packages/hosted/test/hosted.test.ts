@@ -219,6 +219,7 @@ describe('the OpenBooking app (find_business)', () => {
         'confirm_booking',
         'find_business',
         'get_booking',
+        'get_business_info',
         'hold_slot',
         'search_availability',
       ].sort(),

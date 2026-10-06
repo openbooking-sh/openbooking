@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BookingError, BookingService, ManualClock, type BookingEvent } from '../src';
+import { BookingError, BookingService, ManualClock, runAsActor, type BookingEvent } from '../src';
 import { CUSTOMER, TinyProvider, slot } from './fixtures';
 
 function setup(opts: { holdTtlSeconds?: number; provider?: TinyProvider } = {}) {
@@ -311,5 +311,28 @@ describe('update', () => {
       customer: CUSTOMER,
     });
     expect(updated.customer?.email).toBe('ada@example.com');
+  });
+});
+
+describe('hold limit', () => {
+  it('counts new holds per caller IP and leaves callers without an IP alone', async () => {
+    const provider = new TinyProvider(['s1', 's2', 's3', 's4'].map((id) => slot({ slot_id: id })));
+    const service = new BookingService({ provider, holdLimit: { limit: 1, windowMs: 60_000 } });
+    const holdAs = (ip: string | undefined, slotId: string, key: string) => {
+      const run = () => service.hold({ slot_id: slotId, idempotency_key: key });
+      return ip ? runAsActor({ protocol: 'web', agent: 'Booking page', ip }, run) : run();
+    };
+
+    await holdAs('198.51.100.1', 's1', 'ip-key-1');
+    await expect(holdAs('198.51.100.1', 's2', 'ip-key-2')).rejects.toMatchObject({
+      code: 'rate_limited',
+      retryable: true,
+    });
+    expect(provider.calls.createHold).toBe(1);
+    // Retrying the first hold is a replay; another IP and Studio (no IP) aren't limited.
+    await holdAs('198.51.100.1', 's1', 'ip-key-1');
+    await holdAs('198.51.100.2', 's3', 'ip-key-3');
+    await holdAs(undefined, 's4', 'ip-key-4');
+    expect(provider.calls.createHold).toBe(3);
   });
 });

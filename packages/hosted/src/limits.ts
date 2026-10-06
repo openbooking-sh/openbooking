@@ -2,39 +2,9 @@
  * Rate limits for account endpoints (login, sign-up, password reset), so passwords can't be
  * guessed at speed and nobody can flood an inbox with reset emails.
  */
-export interface RateLimiter {
-  /** Count one attempt for `key`. False when more than `limit` attempts fall in the window. */
-  hit(key: string, limit: number, windowMs: number): Promise<boolean>;
-}
-
-/**
- * Fixed windows in a Map. Per process: fine for one server; with several instances use the
- * Postgres limiter so the count is shared.
- */
-export class MemoryRateLimiter implements RateLimiter {
-  readonly #windows = new Map<string, { start: number; count: number }>();
-  readonly #now: () => number;
-
-  constructor(now: () => number = Date.now) {
-    this.#now = now;
-  }
-
-  async hit(key: string, limit: number, windowMs: number): Promise<boolean> {
-    const now = this.#now();
-    const w = this.#windows.get(key);
-    if (!w || w.start + windowMs <= now) {
-      this.#windows.set(key, { start: now, count: 1 });
-      if (this.#windows.size > 10_000) this.#prune(now, windowMs);
-      return 1 <= limit;
-    }
-    w.count++;
-    return w.count <= limit;
-  }
-
-  #prune(now: number, windowMs: number): void {
-    for (const [k, w] of this.#windows) if (w.start + windowMs <= now) this.#windows.delete(k);
-  }
-}
+// The limiter itself lives in core (the engine limits holds with it too).
+export { MemoryRateLimiter, type RateLimiter } from '@openbooking-sh/core';
+import { clientIpFromHeaders } from '@openbooking-sh/core';
 
 const MIN = 60_000;
 
@@ -53,8 +23,5 @@ export const LIMITS = {
  * can't be spoofed there. When running without a proxy, pass `clientIp` to createHostedApp.
  */
 export function proxyClientIp(req: Request): string {
-  const real = req.headers.get('x-real-ip');
-  if (real) return real.trim();
-  const fwd = req.headers.get('x-forwarded-for');
-  return fwd?.split(',')[0]?.trim() || 'unknown';
+  return clientIpFromHeaders(req.headers) ?? 'unknown';
 }

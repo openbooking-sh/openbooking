@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import {
   BookingError,
+  clientIpFromHeaders,
   formatMoney,
   isBookingError,
   runAsActor,
@@ -109,7 +110,8 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
         ? 'Browser agent'
         : 'Booking page';
     try {
-      return c.json(await runAsActor({ protocol: 'web', agent }, fn));
+      const ip = clientIpFromHeaders(c.req.raw.headers);
+      return c.json(await runAsActor({ protocol: 'web', agent, ...(ip ? { ip } : {}) }, fn));
     } catch (e) {
       const error = toErrorPayload(e);
       return c.json({ error }, HTTP[error.code] ?? 422);

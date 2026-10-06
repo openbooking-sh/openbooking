@@ -48,7 +48,7 @@ await listen(app, { port: 3000 });
   'adapter-mcp': {
     title: 'MCP server for booking',
     intro:
-      'Five booking tools for any MCP client (Claude, ChatGPT, Cursor and more): `search_availability`, `hold_slot`, `confirm_booking`, `get_booking` and `cancel_booking`. Served over Streamable HTTP or stdio.',
+      'Six booking tools for any MCP client (Claude, ChatGPT, Cursor and more): `get_business_info`, `search_availability`, `hold_slot`, `confirm_booking`, `get_booking` and `cancel_booking`. Served over Streamable HTTP or stdio.',
     usage: `import { createMcpHttpHandler } from '${S}/adapter-mcp';
 
 const mcp = createMcpHttpHandler({ service }); // service: a BookingService from ${S}/core
