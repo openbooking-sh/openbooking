@@ -8,7 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { ManualClock } from '@openbooking-sh/core';
 import { MemoryMailer } from '@openbooking-sh/notifications';
 import { createFakeGoogle } from '../../google-calendar/test/fake-google';
-import { PostHogAnalytics, SlackNotifier, createHostedApp } from '../src';
+import { PostHogAnalytics, SlackNotifier, createHostedApp, slugify } from '../src';
 
 const BASE = 'http://localhost:3000';
 // Tuesday 6 October 2026, 09:00 in Oslo.
@@ -645,5 +645,13 @@ describe('visitor pings', () => {
     await visit('203.0.113.2', 'Googlebot/2.1');
     await hosted.idle();
     expect(posted).toEqual([':eyes: Visitor on /#pricing · Oslo, NO · via www.google.com']);
+  });
+});
+
+describe('business ids', () => {
+  it('turns Norwegian and accented names into clean ids', () => {
+    expect(slugify('Bjørn & Åse Frisør')).toBe('bjorn-ase-frisor');
+    expect(slugify('Café Blåbær')).toBe('cafe-blabaer');
+    expect(slugify('!!!')).toBe('business');
   });
 });

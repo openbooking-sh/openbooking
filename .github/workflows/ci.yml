@@ -24,6 +24,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: node scripts/check-deps.mjs
 
   postgres:
     # The Postgres stores against a real server (the main job uses embedded PGlite), so the

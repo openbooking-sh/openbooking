@@ -90,10 +90,12 @@ export function slugify(name: string): string {
   return (
     name
       .toLowerCase()
-      .normalize('NFKD')
+      // Norwegian letters before NFKD, which would split å into a + ring.
       .replace(/æ/g, 'ae')
       .replace(/ø/g, 'o')
       .replace(/å/g, 'a')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 40)
