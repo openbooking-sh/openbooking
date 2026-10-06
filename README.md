@@ -48,6 +48,8 @@ await listen(app, { port: 3000 });
 | [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
 | [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
 
+**More:** [recipes](docs/RECIPES.md) (Postgres, Vercel, website snippet, your own booking system) · [docs for AI coding tools](llms.txt) · [contributing](CONTRIBUTING.md)
+
 ## 5-minute quickstart
 
 Requires Node 22.12+ and pnpm. The published packages run on Node 20+. Run `corepack enable` or `npm i -g pnpm`.

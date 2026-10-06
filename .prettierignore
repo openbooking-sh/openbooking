@@ -4,3 +4,6 @@ pnpm-lock.yaml
 LICENSE
 .changeset/*.md
 bench/results
+.release
+llms.txt
+llms-full.txt

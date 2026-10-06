@@ -1,0 +1,36 @@
+# OpenBooking
+
+> OpenBooking is an open-source TypeScript SDK and booking backend that makes any website or booking platform bookable by AI assistants (Claude, ChatGPT, Gemini, AI browsers) through MCP, WebMCP and UCP. It enforces agent safety: holds that expire, idempotent retries that never double-book, explicit customer consent, and cancellation terms shown before booking. Packages are published on npm as @openbooking-sh/*.
+
+## Start here
+
+- [Recipes](https://github.com/openbooking-sh/openbooking/blob/main/docs/RECIPES.md): one-file backend, Postgres, Vercel, website snippet, custom booking systems, rules for AI coding tools
+- [README](https://github.com/openbooking-sh/openbooking/blob/main/README.md): install, packages, quickstart
+- [Full docs in one file](https://raw.githubusercontent.com/openbooking-sh/openbooking/main/llms-full.txt)
+
+## Packages
+
+- [@openbooking-sh/adapter-a2a](https://github.com/openbooking-sh/openbooking/blob/main/packages/adapter-a2a/README.md)
+- [@openbooking-sh/adapter-mcp](https://github.com/openbooking-sh/openbooking/blob/main/packages/adapter-mcp/README.md)
+- [@openbooking-sh/adapter-ucp](https://github.com/openbooking-sh/openbooking/blob/main/packages/adapter-ucp/README.md)
+- [@openbooking-sh/booking-page](https://github.com/openbooking-sh/openbooking/blob/main/packages/booking-page/README.md)
+- [@openbooking-sh/core](https://github.com/openbooking-sh/openbooking/blob/main/packages/core/README.md)
+- [@openbooking-sh/google-calendar](https://github.com/openbooking-sh/openbooking/blob/main/packages/google-calendar/README.md)
+- [@openbooking-sh/hosted](https://github.com/openbooking-sh/openbooking/blob/main/packages/hosted/README.md)
+- [@openbooking-sh/notifications](https://github.com/openbooking-sh/openbooking/blob/main/packages/notifications/README.md)
+- [@openbooking-sh/postgres](https://github.com/openbooking-sh/openbooking/blob/main/packages/postgres/README.md)
+- [@openbooking-sh/provider-calcom](https://github.com/openbooking-sh/openbooking/blob/main/packages/provider-calcom/README.md)
+- [@openbooking-sh/provider-memory](https://github.com/openbooking-sh/openbooking/blob/main/packages/provider-memory/README.md)
+- [@openbooking-sh/server](https://github.com/openbooking-sh/openbooking/blob/main/packages/server/README.md)
+- [@openbooking-sh/studio](https://github.com/openbooking-sh/openbooking/blob/main/packages/studio/README.md)
+
+## Reference
+
+- [Architecture](https://github.com/openbooking-sh/openbooking/blob/main/docs/ARCHITECTURE.md)
+- [Hosted OpenBooking](https://github.com/openbooking-sh/openbooking/blob/main/docs/HOSTED.md)
+- [Protocol notes (MCP, UCP, A2A)](https://github.com/openbooking-sh/openbooking/blob/main/docs/SPEC-NOTES.md)
+
+## Optional
+
+- [Hosted service](https://app.openbooking.sh/signup): businesses can sign up without code
+- [Website](https://openbooking.sh)

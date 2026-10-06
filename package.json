@@ -21,8 +21,9 @@
     "test:watch": "vitest",
     "bench": "pnpm --filter @openbooking-sh/bench bench",
     "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "release": "pnpm build && node scripts/publish.mjs",
+    "docs": "node scripts/package-readmes.mjs && node scripts/llms.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
