@@ -57,7 +57,8 @@ app.openbooking.sh.
 ## Releases
 
 Maintainers merge the "Release: version packages" PR that the Release workflow opens. The
-workflow then publishes to npm with trusted publishing and provenance. See
+workflow then stages the new versions on npm (trusted publishing, provenance), and a maintainer
+approves each one on npmjs.com under Staged Packages before it goes live. See
 [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## License

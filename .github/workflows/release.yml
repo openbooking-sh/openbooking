@@ -1,8 +1,9 @@
 name: Release
 
 # On every push to main, changesets either opens/updates a "Version packages" PR (when there are
-# changesets) or, once that PR is merged, publishes the new versions to npm with trusted publishing
-# (OIDC, no token) and provenance. Each package must list this workflow as a trusted publisher on
+# changesets) or, once that PR is merged, stages the new versions on npm with trusted publishing
+# (OIDC, no token) and provenance. A maintainer then approves each staged version on npmjs.com
+# (Staged Packages, with 2FA) before it goes live. Each package must list this workflow as a trusted publisher on
 # npmjs.com (Settings → Trusted publishing → GitHub Actions: openbooking-sh/openbooking, release.yml).
 
 on:
@@ -27,8 +28,8 @@ jobs:
           node-version: 24
           cache: pnpm
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or newer.
-      - run: npm install -g npm@^11.5.1
+      # Staged publishing with trusted publishing needs npm 11.15 or newer.
+      - run: npm install -g npm@^11.15.0
       - run: pnpm install --frozen-lockfile
       - uses: changesets/action@v1
         with:

@@ -1,7 +1,9 @@
 // Publishes every public package whose current version isn't on npm yet.
 //
-// pnpm pack turns `workspace:^` into real version ranges; npm publish then uploads the tarball. In
-// GitHub Actions, npm uses trusted publishing (OIDC, no token) and adds provenance. Prints
+// pnpm pack turns `workspace:^` into real version ranges; npm then uploads the tarball. In GitHub
+// Actions it runs `npm stage publish` with trusted publishing (OIDC, no token) and provenance: the
+// version waits on npmjs.com until a maintainer approves it with 2FA (Staged Packages). Brand-new
+// packages can't be staged, so their first version is published by hand. Prints
 // "New tag: name@version" lines so changesets/action creates GitHub releases, and tags each
 // published version in git.
 //
@@ -49,7 +51,7 @@ for (const dir of readdirSync(join(root, 'packages'))) {
   sh('pnpm', ['pack', '--pack-destination', out], pkgDir);
   const tarball = readdirSync(out).find((f) => !before.has(f));
   const args = [
-    'publish',
+    ...(ci ? ['stage', 'publish'] : ['publish']),
     join(out, tarball),
     '--access',
     'public',
@@ -62,6 +64,11 @@ for (const dir of readdirSync(join(root, 'packages'))) {
   }
   // Inherit stdio so npm can prompt for a 2FA code.
   execFileSync('npm', args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  console.log(
+    ci
+      ? `Staged ${pkg.name}@${pkg.version}: approve it on npmjs.com`
+      : `Published ${pkg.name}@${pkg.version}`,
+  );
   console.log(`New tag: ${pkg.name}@${pkg.version}`);
   sh('git', ['tag', `${pkg.name}@${pkg.version}`]);
   count++;
