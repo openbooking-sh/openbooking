@@ -9,7 +9,7 @@
 //
 // Run: node scripts/publish.mjs [--dry-run] [--otp=123456]
 // Locally, npm asks for a 2FA code when it needs one (or pass --otp).
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -62,8 +62,23 @@ for (const dir of readdirSync(join(root, 'packages'))) {
     console.log(`would run: npm ${args.join(' ')}`);
     continue;
   }
-  // Inherit stdio so npm can prompt for a 2FA code.
-  execFileSync('npm', args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  if (ci) {
+    // A staged version that hasn't been approved yet isn't on the registry, so the check above
+    // can't see it; npm refuses to stage it twice. Skip it and keep going.
+    const res = spawnSync('npm', args, { cwd: root, encoding: 'utf8' });
+    process.stdout.write(res.stdout);
+    process.stderr.write(res.stderr);
+    if (res.status !== 0) {
+      if (/E409|Cannot stage previously/.test(res.stderr)) {
+        console.log(`skip ${pkg.name}@${pkg.version} (already staged, waiting for approval)`);
+        continue;
+      }
+      process.exit(res.status ?? 1);
+    }
+  } else {
+    // Inherit stdio so npm can prompt for a 2FA code.
+    execFileSync('npm', args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  }
   console.log(
     ci
       ? `Staged ${pkg.name}@${pkg.version}: approve it on npmjs.com`
