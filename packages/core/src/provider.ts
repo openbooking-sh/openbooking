@@ -24,6 +24,7 @@ import type {
   Resource,
   Slot,
   Venue,
+  VenueInfo,
 } from './schemas';
 
 export interface ProviderContext {
@@ -96,6 +97,9 @@ export interface BookingProvider {
 
   /** Optional: services/offerings of a venue (Studio catalog, manual bookings). */
   listOfferings?(venueId: string, ctx: ProviderContext): Promise<Offering[]>;
+
+  /** Optional: opening hours and booking rules, so agents can describe the venue and tell "closed" from "full". */
+  getVenueInfo?(venueId: string, ctx: ProviderContext): Promise<VenueInfo>;
 
   /** Optional: bookable resources of a venue: staff, tables, rooms (Studio calendar columns). */
   listResources?(venueId: string, ctx: ProviderContext): Promise<Resource[]>;

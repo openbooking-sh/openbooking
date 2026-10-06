@@ -6,7 +6,10 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { ManualClock } from '@openbooking-sh/core';
-import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
+import {
+  createDemoRestaurantProvider,
+  createDemoSalonProvider,
+} from '@openbooking-sh/provider-memory';
 import { createOpenBookingApp } from '../src';
 
 const BASE = 'http://localhost:3000';
@@ -276,5 +279,110 @@ describe('booking page', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(((await res.json()) as any).booking_page).toBeUndefined();
     expect((await ob.app.request('/book')).status).toBe(404);
+  });
+});
+
+describe('MCP for a salon (staff, business info, closed days, hold limits)', () => {
+  async function salon(options: { holdLimit?: { limit: number; windowMs: number } } = {}) {
+    const clock = new ManualClock('2026-10-01T06:00:00Z'); // Thursday 08:00 in Oslo
+    const ob = createOpenBookingApp({
+      provider: createDemoSalonProvider(),
+      baseUrl: BASE,
+      serviceOptions: { clock, ...(options.holdLimit ? { holdLimit: options.holdLimit } : {}) },
+    });
+    cleanups.push(ob.close);
+    const transport = new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), {
+      fetch: async (url, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set('host', new URL(url).host);
+        headers.set('x-real-ip', '203.0.113.7');
+        return ob.app.fetch(new Request(url, { ...init, headers }));
+      },
+    });
+    const client = new Client(
+      { name: 'claude-ai', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } },
+    );
+    await client.connect(transport);
+    cleanups.push(() => client.close());
+    return async (name: string, args: Record<string, unknown>) => {
+      const res = await client.callTool({ name, arguments: args });
+      return { ok: !res.isError, data: res.structuredContent as Record<string, any> };
+    };
+  }
+
+  it('describes the business, tells closed from full, and books staff by name', async () => {
+    const call = await salon();
+
+    const info = (await call('get_business_info', {})).data;
+    expect(info.venue.name).toBe('Studio Nord');
+    expect(info.staff).toEqual(['Maria', 'Jonas', 'Aisha']);
+    expect(info.services.map((s: any) => s.id)).toContain('haircut');
+    expect(info.opening_hours).toMatchObject({
+      mon: 'closed',
+      tue: '09:00-18:00',
+      sat: '10:00-16:00',
+    });
+
+    const monday = (
+      await call('search_availability', { date: '2026-10-05', offering_id: 'haircut' })
+    ).data;
+    expect(monday.slots).toEqual([]);
+    expect(monday.next_step).toContain('closed on 2026-10-05');
+
+    // No party_size needed for an appointment; anyone free is listed alongside.
+    const anyone = (
+      await call('search_availability', {
+        date: '2026-10-02',
+        offering_id: 'haircut',
+        time_from: '15:00',
+        time_to: '15:00',
+      })
+    ).data;
+    expect(anyone.slots[0]).toMatchObject({
+      resource: 'Maria (color, senior)',
+      also_available: ['Jonas', 'Aisha'],
+    });
+
+    const jonas = (
+      await call('search_availability', {
+        date: '2026-10-02',
+        offering_id: 'haircut',
+        staff: 'JONAS',
+      })
+    ).data;
+    expect(new Set(jonas.slots.map((s: any) => s.resource))).toEqual(new Set(['Jonas (barber)']));
+
+    const bob = await call('search_availability', { date: '2026-10-02', staff: 'Bob' });
+    expect(bob.ok).toBe(false);
+    expect(bob.data.error.code).toBe('not_found');
+    expect(bob.data.error.suggested_next_action).toContain('Maria');
+
+    const hold = (
+      await call('hold_slot', { slot_id: jonas.slots[0].slot_id, idempotency_key: randomUUID() })
+    ).data;
+    expect(hold.resource).toBe('Jonas');
+    expect(hold.next_step).toContain('with Jonas');
+  });
+
+  it('limits holds per caller so nobody can tie up the calendar', async () => {
+    const call = await salon({ holdLimit: { limit: 2, windowMs: 600_000 } });
+    const { slots } = (
+      await call('search_availability', { date: '2026-10-02', offering_id: 'haircut' })
+    ).data;
+    const holds = [];
+    for (let i = 0; i < 3; i++) {
+      holds.push(
+        await call('hold_slot', { slot_id: slots[i].slot_id, idempotency_key: `limit-key-${i}` }),
+      );
+    }
+    expect(holds.map((h) => h.ok)).toEqual([true, true, false]);
+    expect(holds[2]!.data.error).toMatchObject({ code: 'rate_limited', retryable: true });
+    // A retry of an earlier hold (same key) is a replay, not a new hold.
+    const retry = await call('hold_slot', {
+      slot_id: slots[0].slot_id,
+      idempotency_key: 'limit-key-0',
+    });
+    expect(retry.ok).toBe(true);
   });
 });

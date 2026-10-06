@@ -22,7 +22,13 @@ export default tseslint.config(
     // Plain Node scripts (maintenance tools, not shipped).
     files: ['scripts/**/*.mjs'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly', fetch: 'readonly' },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
+      },
     },
   },
 );

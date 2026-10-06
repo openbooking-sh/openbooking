@@ -19,9 +19,19 @@ const customer = CustomerSchema.describe(
   'The person the booking is for. first_name, last_name and at least one of email or phone_number.',
 );
 
+export const GetBusinessInfoInput = z.object({
+  venue_id: z.string().optional().describe('Omit when the server serves a single venue'),
+});
+
 export const SearchAvailabilityInput = z.object({
   date: DateSchema,
-  party_size: z.number().int().min(1).max(50).describe('Number of guests, including the user'),
+  party_size: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(1)
+    .describe('Number of people. 1 for a normal appointment; the number of guests for a table'),
   time_from: LocalTimeSchema.optional().describe(
     'Earliest acceptable start time HH:MM (venue local time)',
   ),
@@ -29,14 +39,19 @@ export const SearchAvailabilityInput = z.object({
     'Latest acceptable start time HH:MM (venue local time)',
   ),
   venue_id: z.string().optional().describe('Omit when the server serves a single venue'),
-  offering_id: z.string().optional().describe('e.g. "dinner". Omit to see all offerings'),
+  offering_id: z
+    .string()
+    .optional()
+    .describe('Service id from get_business_info, e.g. "haircut". Omit to see all services'),
+  staff: z
+    .string()
+    .optional()
+    .describe('A specific staff member by name, e.g. "Kari" (any capitalisation). Omit for anyone'),
   preferences: z
     .array(z.string())
     .optional()
-    .describe(
-      'Required resource tags: a preferred staff member like ["maria"], or seating like ["outdoor"]. Omit if the user has none',
-    ),
-  limit: z.number().int().min(1).max(50).optional().describe('Max slots to return (default 10)'),
+    .describe('Other required features, e.g. ["outdoor"] for a table. Omit if the user has none'),
+  limit: z.number().int().min(1).max(50).optional().describe('Max slots to return (default 20)'),
 });
 
 export const HoldSlotInput = z.object({
@@ -47,7 +62,7 @@ export const HoldSlotInput = z.object({
     .string()
     .max(500)
     .optional()
-    .describe('Requests for the venue, e.g. allergies, high chair'),
+    .describe('Notes for the business, e.g. "short on the sides", allergies or a high chair'),
 });
 
 export const ConfirmBookingInput = z.object({
@@ -97,8 +112,12 @@ export const SlotView = z.object({
     .string()
     .optional()
     .describe(
-      'What is booked, e.g. "Table for up to 4, outdoor" or a staff member such as "Maria"',
+      'Who or what is booked: a staff member such as "Maria", or "Table for up to 4, outdoor"',
     ),
+  also_available: z
+    .array(z.string())
+    .optional()
+    .describe('Other staff free at this time. To book one of them, search again with staff'),
   price: MoneySchema.nullable(),
   deposit: DepositTermsSchema.nullable(),
   cancellation_policy: CancellationPolicySchema,
@@ -122,6 +141,7 @@ export const BookingView = z.object({
   local_time: z.string(),
   party_size: z.number(),
   offering: z.object({ id: z.string(), name: z.string() }),
+  resource: z.string().nullable().describe('Who or what is booked, e.g. the staff member'),
   customer: CustomerSchema.nullable(),
   notes: z.string().nullable(),
   price: MoneySchema.nullable(),
@@ -138,6 +158,37 @@ export const BookingView = z.object({
       fee: MoneySchema.nullable(),
       refund: MoneySchema.nullable(),
     })
+    .nullable(),
+  next_step: z.string(),
+});
+
+export const BusinessInfoOutput = z.object({
+  venue: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    address: z.string().nullable(),
+    phone_number: z.string().nullable(),
+    timezone: z.string(),
+    currency: z.string().nullable(),
+  }),
+  services: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().nullable(),
+      duration_minutes: z.number(),
+      price: MoneySchema.nullable(),
+    }),
+  ),
+  staff: z.array(z.string()).describe('Staff members customers can ask for by name'),
+  opening_hours: z
+    .record(z.string(), z.string())
+    .nullable()
+    .describe('Per weekday, e.g. { mon: "closed", tue: "10:00-19:00" }'),
+  closed_dates: z.array(z.string()),
+  booking_window: z
+    .object({ min_lead_minutes: z.number().nullable(), max_days_ahead: z.number().nullable() })
     .nullable(),
   next_step: z.string(),
 });

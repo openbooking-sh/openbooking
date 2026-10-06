@@ -17,6 +17,8 @@ import {
   type Slot,
   type UpdateBookingRequest,
   type Venue,
+  type VenueInfo,
+  WEEKDAYS,
 } from '@openbooking-sh/core';
 import type { MemoryProviderConfig, OfferingConfig, VenueConfig } from './config';
 import {
@@ -113,6 +115,21 @@ export class MemoryBookingProvider implements BookingProvider {
 
     const slots: Slot[] = [];
     const offerings = cfg.offerings.filter((o) => !query.offering_id || o.id === query.offering_id);
+    for (const tag of query.tags ?? []) {
+      if (!cfg.resources.some((x) => matchesTag(x, tag))) {
+        const people = cfg.resources.filter(isPerson).map((x) => x.name);
+        const features = [...new Set(cfg.resources.flatMap((x) => x.tags))].filter(
+          (t) => !people.some((n) => n.toLowerCase() === t.toLowerCase()),
+        );
+        throw new BookingError(
+          'not_found',
+          `${cfg.venue.name} has no staff member or option called "${tag}".`,
+          {
+            suggested_next_action: `Use one of: ${[...people, ...features].join(', ') || '(none)'}, or search without it.`,
+          },
+        );
+      }
+    }
     const starts = this.#candidateStarts(cfg, query.date, ctx.now);
     if (!starts.length) return slots;
     // One read for the whole day; the per-slot checks below run against this snapshot.
@@ -126,22 +143,30 @@ export class MemoryBookingProvider implements BookingProvider {
     const blocking: BusyInterval[] = [...booked, ...busy];
     for (const start of starts) {
       const local = time.localTime(start, cfg.venue.timezone);
+
       if (query.time_from && local < query.time_from) continue;
       if (query.time_to && local > query.time_to) continue;
       for (const offering of offerings) {
         if (!this.#offeringAllowed(cfg, offering, query.date, local)) continue;
-        const resource = this.#fittingResources(cfg, offering, party, query.tags ?? []).find((r) =>
+        const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter((r) =>
           isFree(blocking, r.id, start, endOf(cfg, offering, start)),
         );
+        const resource = free[0];
         if (!resource) continue;
+        const slot = this.#slot(cfg, offering, start, party, resource, {
+          v: cfg.venue.id,
+          o: offering.id,
+          s: start.toISOString(),
+          p: party,
+          ...(query.tags?.length ? { t: query.tags } : {}),
+        });
+        // Staff-style resources: say who else is free, so agents can offer a choice.
+        const others = free
+          .slice(1)
+          .filter(isPerson)
+          .map((x) => x.name);
         slots.push(
-          this.#slot(cfg, offering, start, party, resource, {
-            v: cfg.venue.id,
-            o: offering.id,
-            s: start.toISOString(),
-            p: party,
-            ...(query.tags?.length ? { t: query.tags } : {}),
-          }),
+          others.length && isPerson(resource) ? { ...slot, also_available: others } : slot,
         );
       }
     }
@@ -255,6 +280,19 @@ export class MemoryBookingProvider implements BookingProvider {
       duration_minutes: o.duration_minutes,
       price_per_person: o.price_per_person,
     }));
+  }
+
+  async getVenueInfo(venueId: string): Promise<VenueInfo> {
+    const cfg = this.#venue(venueId);
+    const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+    return {
+      opening_hours: Object.fromEntries(
+        WEEKDAYS.map((d) => [d, (cfg.opening_hours[days.indexOf(d)] ?? []).map((p) => ({ ...p }))]),
+      ) as VenueInfo['opening_hours'],
+      closed_dates: [...(cfg.closed_dates ?? [])],
+      min_lead_minutes: cfg.min_lead_minutes,
+      max_days_ahead: cfg.max_days_ahead,
+    };
   }
 
   async listResources(venueId: string): Promise<Resource[]> {
@@ -400,7 +438,7 @@ export class MemoryBookingProvider implements BookingProvider {
           (!o.resource_ids || o.resource_ids.includes(r.id)) &&
           r.capacity.min <= party &&
           party <= r.capacity.max &&
-          tags.every((t) => r.tags.includes(t)),
+          tags.every((t) => matchesTag(r, t)),
       )
       .sort((a, b) => a.capacity.max - b.capacity.max);
   }
@@ -443,6 +481,21 @@ export class MemoryBookingProvider implements BookingProvider {
 
 function endOf(cfg: VenueConfig, o: OfferingConfig, start: Date): number {
   return start.getTime() + (o.duration_minutes + cfg.buffer_minutes) * 60_000;
+}
+
+/** Case-insensitive match on a tag, the resource name or its id: "Kari", "kari", "outdoor". */
+function matchesTag(r: Resource, tag: string): boolean {
+  const t = tag.trim().toLowerCase();
+  return (
+    r.tags.some((x) => x.toLowerCase() === t) ||
+    r.name.toLowerCase() === t ||
+    r.id.toLowerCase() === t
+  );
+}
+
+/** One bookable person (or room) rather than a table that seats a group. */
+function isPerson(r: Resource): boolean {
+  return r.capacity.max === 1 && r.kind !== 'table';
 }
 
 function isFree(blocking: BusyInterval[], resourceId: string, start: Date, endMs: number): boolean {

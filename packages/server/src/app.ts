@@ -84,7 +84,7 @@ export interface OpenBookingApp {
  *
  *   GET  /                              index (links to everything below); the booking page for browsers
  *   *    /book/...                      public booking page, its JSON API and manage links
- *   ALL  /mcp                           MCP Streamable HTTP (5 booking tools)
+ *   ALL  /mcp                           MCP Streamable HTTP (6 booking tools)
  *   *    /ucp/...                       UCP lodging booking-session REST (+ availability extension)
  *   GET  /.well-known/ucp               UCP business profile
  *   GET  /.well-known/agent-card.json   A2A Agent Card
