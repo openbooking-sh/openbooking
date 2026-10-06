@@ -1,4 +1,4 @@
-# @openbooking-sh/postgres
+# @openbooking-sh/booking-page
 
 ## 0.2.0
 
@@ -16,18 +16,3 @@
 
 - Updated dependencies [4d9f0fc]
   - @openbooking-sh/core@0.2.0
-  - @openbooking-sh/provider-memory@0.2.0
-  - @openbooking-sh/studio@0.2.0
-  - @openbooking-sh/hosted@0.2.0
-  - @openbooking-sh/google-calendar@0.2.0
-  - @openbooking-sh/notifications@0.2.0
-  - @openbooking-sh/provider-calcom@0.2.0
-
-## 0.1.1
-
-### Patch Changes
-
-- 77a3ffa: Fix: loading `@openbooking-sh/postgres` no longer requires `@openbooking-sh/hosted`. Apps that use Postgres without hosted crashed at startup with `ERR_MODULE_NOT_FOUND`.
-- Updated dependencies [77a3ffa]
-  - @openbooking-sh/hosted@0.1.1
-  - @openbooking-sh/studio@0.1.1
