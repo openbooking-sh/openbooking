@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/postgres",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Postgres storage for OpenBooking: bookings and holds, idempotency, Studio activity and connector records.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",
