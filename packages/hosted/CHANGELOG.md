@@ -1,5 +1,11 @@
 # @openbooking-sh/hosted
 
+## 0.4.1
+
+### Patch Changes
+
+- 7d25791: Visitor messages treat the deployment's own domain as home instead of openbooking.sh, so self-hosted sites don't list themselves as the referrer.
+
 ## 0.4.0
 
 ### Minor Changes
