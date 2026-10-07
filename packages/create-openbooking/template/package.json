@@ -9,9 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@openbooking-sh/postgres": "^{{OPENBOOKING_VERSION}}",
-    "@openbooking-sh/provider-memory": "^{{OPENBOOKING_VERSION}}",
-    "@openbooking-sh/server": "^{{OPENBOOKING_VERSION}}"
+    "@openbooking-sh/postgres": "^{{VERSION_POSTGRES}}",
+    "@openbooking-sh/provider-memory": "^{{VERSION_PROVIDER_MEMORY}}",
+    "@openbooking-sh/server": "^{{VERSION_SERVER}}"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
