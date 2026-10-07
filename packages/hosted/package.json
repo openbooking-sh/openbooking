@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/hosted",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Hosted multi-business OpenBooking: sign-up, Studio settings, one MCP app across all businesses.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",
