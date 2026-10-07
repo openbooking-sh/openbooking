@@ -445,6 +445,8 @@ describe('owner accounts', () => {
       );
 
     expect(await listed()).toEqual([]);
+    // The sitemap lists the same businesses as the directory: none until the email is confirmed.
+    expect((await req('/sitemap.xml')).text).not.toContain('/b/studio-nord');
     const view = await req('/studio/api/settings', { token });
     expect(view.json.account).toMatchObject({ email_verified: false });
 
@@ -454,6 +456,10 @@ describe('owner accounts', () => {
 
     await confirmEmail('maria@example.com');
     expect(await listed()).toEqual(['studio-nord']);
+    const sitemap = await req('/sitemap.xml');
+    expect(sitemap.headers.get('content-type')).toContain('xml');
+    expect(sitemap.text).toContain(`<loc>${BASE}/b/studio-nord</loc>`);
+    expect((await req('/robots.txt')).text).toContain(`Sitemap: ${BASE}/sitemap.xml`);
 
     const forged = await req('/api/verify-email?token=not-a-token');
     expect(forged.headers.get('location')).toContain('verified=expired');

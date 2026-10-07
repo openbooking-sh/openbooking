@@ -134,7 +134,9 @@ describe('discovery documents', () => {
     expect(card.supportedInterfaces[0].url).toBe(`${BASE}/a2a`);
     expect(card.capabilities.extensions[0].params.url).toBe(`${BASE}/mcp`);
 
-    const index = (await (await app.request('/')).json()) as any;
+    const index = (await (
+      await app.request('/', { headers: { accept: 'application/json' } })
+    ).json()) as any;
     expect(index.protocols).toMatchObject({
       mcp: { status: 'supported' },
       ucp: { status: 'draft' },
@@ -262,6 +264,13 @@ describe('booking page', () => {
     ).json()) as any;
     expect(index.booking_page).toBe(`${BASE}/book`);
     expect(index.protocols.mcp.status).toBe('supported');
+
+    // Crawlers that don't ask for HTML (Accept: */* or none) still get the page, not the JSON.
+    for (const headers of [{ accept: '*/*' }, {}]) {
+      const res = await app.request('/', { headers });
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(res.headers.get('vary')).toBe('Accept');
+    }
 
     const info = (await (await app.request('/book/api/info')).json()) as any;
     expect(info.venue.name).toBe('Demo Bistro Oslo');
