@@ -330,89 +330,6 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
-  // "Someone is on your site": the marketing site sends a beacon when a visit starts and one when
-  // the visitor leaves a page (see the snippet in docs/HOSTED.md); the operator gets a Slack
-  // message for each. Page, referrer, campaign, approximate place (from the host's geo headers),
-  // and what they read and clicked only; the IP is used for rate limiting and never stored.
-  app.post('/api/visit', async (c) => {
-    c.header('Access-Control-Allow-Origin', '*');
-    if (!options.ops) return c.body(null, 204);
-    const ua = c.req.header('user-agent') ?? '';
-    if (BOT_UA.test(ua)) return c.body(null, 204);
-    // sendBeacon posts text/plain (no CORS preflight), so parse the body ourselves.
-    let body: Record<string, unknown> = {};
-    try {
-      body = JSON.parse(await c.req.text()) as typeof body;
-    } catch {
-      // ignore
-    }
-    const clean = (v: unknown, max: number) =>
-      typeof v === 'string'
-        ? slackEscape(
-            v
-              .replace(/[\r\n]/g, ' ')
-              .trim()
-              .slice(0, max),
-          )
-        : '';
-    const page = clean(body.page, 200) || '/';
-    const ip = clientIp(c.req.raw);
-
-    if (body.kind === 'left') {
-      const permitted = await allowed(
-        [`visit:left:${ip}`, { limit: 6, windowMs: 30 * 60_000 }],
-        ['visit:left:all', { limit: 60, windowMs: 3_600_000 }],
-      );
-      if (!permitted) return c.body(null, 204);
-      const list = (v: unknown, max: number) =>
-        (Array.isArray(v) ? v : [])
-          .slice(0, max)
-          .map((x) => clean(x, 60))
-          .filter(Boolean);
-      const seconds = Math.max(0, Math.min(Number(body.seconds) || 0, 6 * 3600));
-      const depth = Math.max(0, Math.min(Math.round(Number(body.depth) || 0), 100));
-      const sections = list(body.sections, 12);
-      const actions = list(body.actions, 10);
-      const parts = [`:wave: Left ${page} after ${duration(seconds)}`, `read ${depth}%`];
-      if (sections.length) parts.push(`saw ${sections.join(', ')}`);
-      parts.push(actions.length ? `clicked ${actions.join(', ')}` : 'no clicks');
-      options.ops.notify(parts.join(' · '));
-      return c.body(null, 204);
-    }
-
-    const permitted = await allowed(
-      [`visit:ip:${ip}`, { limit: 1, windowMs: 30 * 60_000 }],
-      ['visit:all', { limit: 60, windowMs: 3_600_000 }],
-    );
-    if (!permitted) return c.body(null, 204);
-    let from = '';
-    try {
-      const ref =
-        typeof body.referrer === 'string' && body.referrer ? new URL(body.referrer) : null;
-      // Our own site isn't a referrer: app.example.com treats example.com and its subdomains as home.
-      const home = new URL(baseUrl).hostname.split('.').slice(-2).join('.');
-      if (ref && ref.hostname !== home && !ref.hostname.endsWith(`.${home}`))
-        from = ` · via ${clean(ref.hostname, 80)}`;
-    } catch {
-      // not a URL
-    }
-    const city = decodeURIComponent(c.req.header('x-vercel-ip-city') ?? '');
-    const country = c.req.header('x-vercel-ip-country') ?? '';
-    const place = [city, country]
-      .filter(Boolean)
-      .map((x) => clean(x, 60))
-      .join(', ');
-    const tags = [
-      clean(body.source, 80) && `source ${clean(body.source, 80)}`,
-      clean(body.campaign, 80) && `campaign ${clean(body.campaign, 80)}`,
-    ]
-      .filter(Boolean)
-      .map((t) => ` · ${t}`)
-      .join('');
-    options.ops.notify(`:eyes: Visitor on ${page}${place ? ` · ${place}` : ''}${from}${tags}`);
-    return c.body(null, 204);
-  });
-
   app.get('/', (c) => {
     if ((c.req.header('accept') ?? '').includes('text/html')) return c.redirect('/signup');
     return c.json({
@@ -805,18 +722,6 @@ export function createHostedApp(options: HostedOptions): HostedApp {
       await directory.close();
     },
   };
-}
-
-/** Crawlers and headless browsers: no Slack message for them. */
-const BOT_UA =
-  /bot|crawl|spider|slurp|preview|headless|lighthouse|monitor|uptime|curl|wget|python|node-fetch/i;
-
-/** 8 -> "8s", 75 -> "1m 15s", 3700 -> "1h 1m". */
-function duration(seconds: number): string {
-  const s = Math.round(seconds);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
 /** Booking operations worth counting, by engine operation. */

@@ -40,7 +40,6 @@ export {
 } from './importer';
 export {
   PostHogAnalytics,
-  TRACKER_JS,
   posthogSnippet,
   withHeadSnippet,
   type Analytics,
