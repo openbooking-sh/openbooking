@@ -1,5 +1,11 @@
 # @openbooking-sh/hosted
 
+## 0.5.0
+
+### Minor Changes
+
+- b375ced: Removes the marketing-site visitor tools: the `/api/visit` Slack beacon and the `TRACKER_JS` click/scroll tracker (no longer exported). They were for watching openbooking.sh, not part of hosting. Owner pages keep the plain cookieless PostHog snippet, sign-up source and setup-step events.
+
 ## 0.4.1
 
 ### Patch Changes
