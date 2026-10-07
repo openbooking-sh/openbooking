@@ -264,26 +264,36 @@ export const PAGE_SCRIPT = String.raw`
   window.addEventListener('pagehide', function () { /* holds lapse on their own; nothing to do */ });
 
   // ------------------------------------------------------------------ WebMCP
-  // WebMCP (navigator.modelContext) is a draft from the W3C Web Machine Learning Community Group;
-  // the API shape may still change, so everything here is feature-detected and failure-tolerant.
+  // WebMCP is a draft from the W3C Web Machine Learning Community Group, so everything here is
+  // feature-detected and failure-tolerant. Current drafts put it on document.modelContext, with
+  // execute resolving to a value (we send a JSON string) and failures rejecting. Older builds used
+  // navigator.modelContext with MCP-style content arrays; they still get that shape.
   function registerWebMcp() {
-    var mc = navigator.modelContext;
+    var mc = document.modelContext || navigator.modelContext;
     if (!mc) return;
+    var legacy = !document.modelContext;
     function result(p) {
-      return p.then(function (r) { return { content: [{ type: 'text', text: JSON.stringify(r) }] }; })
-        .catch(function (e) { return { isError: true, content: [{ type: 'text', text: 'Error: ' + e.message + (e.payload ? ' ' + JSON.stringify(e.payload) : '') }] }; });
+      return p.then(function (r) {
+        return legacy ? { content: [{ type: 'text', text: JSON.stringify(r) }] } : JSON.stringify(r);
+      }, function (e) {
+        var text = 'Error: ' + e.message + (e.payload ? ' ' + JSON.stringify(e.payload) : '');
+        if (legacy) return { isError: true, content: [{ type: 'text', text: text }] };
+        throw new Error(text);
+      });
     }
     var tools = [
       {
         name: 'list_services',
         description: 'List the services of ' + D.venue.name + ' that can be booked, with duration, price and staff.',
         inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: true },
         execute: function () { return result(api('/info', null, 'webmcp')); }
       },
       {
         name: 'search_availability',
         description: 'Find free times at ' + D.venue.name + ' on a date (YYYY-MM-DD, venue local time). Returns slot_ids. Nothing is reserved.',
         inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, service_id: { type: 'string' }, staff_id: { type: 'string' }, party_size: { type: 'integer', minimum: 1 } }, required: ['date'] },
+        annotations: { readOnlyHint: true },
         execute: function (a) {
           a = a || {};
           var q = '?date=' + encodeURIComponent(a.date || '') + (a.service_id ? '&service=' + encodeURIComponent(a.service_id) : '') +
@@ -301,6 +311,7 @@ export const PAGE_SCRIPT = String.raw`
         name: 'confirm_booking',
         description: 'Confirm a held booking. Only set user_confirmed=true after the user has explicitly approved this exact booking (time, service, price, cancellation policy) in this conversation. Needs first and last name plus email or phone.',
         inputSchema: { type: 'object', properties: { booking_id: { type: 'string' }, first_name: { type: 'string' }, last_name: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' }, notes: { type: 'string' }, user_confirmed: { type: 'boolean' } }, required: ['booking_id', 'first_name', 'last_name', 'user_confirmed'] },
+        annotations: { consequentialHint: true },
         execute: function (a) {
           a = a || {};
           var c = { first_name: a.first_name, last_name: a.last_name };
@@ -313,7 +324,8 @@ export const PAGE_SCRIPT = String.raw`
       }
     ];
     if (typeof mc.registerTool === 'function') {
-      tools.forEach(function (t) { try { mc.registerTool(t); } catch (e) {} });
+      // registerTool returns a promise in current drafts; a rejected one must not surface as an error.
+      tools.forEach(function (t) { try { Promise.resolve(mc.registerTool(t)).catch(function () {}); } catch (e) {} });
     } else if (typeof mc.provideContext === 'function') {
       mc.provideContext({ tools: tools });
     }

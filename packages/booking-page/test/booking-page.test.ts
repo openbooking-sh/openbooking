@@ -256,7 +256,11 @@ describe('booking page HTML', () => {
 
 describe('embed.js (website snippet)', () => {
   /** Just enough DOM to run the snippet: records what it appends and the tools it registers. */
-  function fakeBrowser(t: ReturnType<typeof setup>, attrs: Record<string, string> = {}) {
+  function fakeBrowser(
+    t: ReturnType<typeof setup>,
+    attrs: Record<string, string> = {},
+    webmcp: 'document' | 'navigator' = 'navigator',
+  ) {
     const appended: any[] = [];
     const tools: any[] = [];
     const el = (tag: string): any => ({
@@ -289,16 +293,27 @@ describe('embed.js (website snippet)', () => {
       const path = new URL(url).pathname.replace('/b/studio-nord/book', '');
       return t.page.app.request(path + new URL(url).search, init);
     };
-    const navigator = { modelContext: { registerTool: (tool: any) => tools.push(tool) } };
+    // Current drafts: document.modelContext, registerTool returns a promise. Older: navigator.
+    const modelContext = {
+      registerTool: async (tool: any) => {
+        tools.push(tool);
+      },
+    };
+    if (webmcp === 'document') (document as any).modelContext = modelContext;
+    const navigator = webmcp === 'navigator' ? { modelContext } : {};
     return { document, fetch, navigator, appended, tools };
   }
 
-  async function run(t: ReturnType<typeof setup>, attrs: Record<string, string> = {}) {
+  async function run(
+    t: ReturnType<typeof setup>,
+    attrs: Record<string, string> = {},
+    webmcp: 'document' | 'navigator' = 'navigator',
+  ) {
     const res = await t.page.app.request('/embed.js');
     expect(res.headers.get('content-type')).toContain('javascript');
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     const code = await res.text();
-    const b = fakeBrowser(t, attrs);
+    const b = fakeBrowser(t, attrs, webmcp);
     const window: any = { matchMedia: () => ({ matches: false }) };
     new Function('window', 'document', 'navigator', 'location', 'fetch', 'crypto', code)(
       window,
@@ -360,6 +375,34 @@ describe('embed.js (website snippet)', () => {
     expect(t.events.find((e) => e.operation === 'confirm' && e.ok)?.actor?.agent).toBe(
       'Browser agent',
     );
+  });
+
+  it('uses document.modelContext from current WebMCP drafts: string results, rejected errors, hints', async () => {
+    const t = setup();
+    const { tools } = await run(t, {}, 'document');
+    const tool = (name: string) => tools.find((x) => x.name === name);
+    expect(tool('search_availability').annotations).toEqual({ readOnlyHint: true });
+    expect(tool('confirm_booking').annotations).toEqual({ consequentialHint: true });
+
+    const avail = JSON.parse(
+      await tool('search_availability').execute({ date: DATE, service_id: 'haircut' }),
+    );
+    const hold = JSON.parse(await tool('hold_slot').execute({ slot_id: avail.slots[0].slot_id }));
+    await expect(
+      tool('confirm_booking').execute({
+        booking_id: hold.booking.booking_id,
+        ...customer,
+        user_confirmed: false,
+      }),
+    ).rejects.toThrow(/user_confirmation_required/);
+    const done = JSON.parse(
+      await tool('confirm_booking').execute({
+        booking_id: hold.booking.booking_id,
+        ...customer,
+        user_confirmed: true,
+      }),
+    );
+    expect(done.booking.status).toBe('confirmed');
   });
 
   it('respects data-button="none" and data-structured-data="off", and answers CORS preflights', async () => {
