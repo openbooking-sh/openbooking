@@ -1,5 +1,12 @@
 # @openbooking-sh/postgres
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [899afde]
+  - @openbooking-sh/hosted@0.6.0
+
 ## 0.5.0
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @openbooking-sh/hosted
 
+## 0.6.0
+
+### Minor Changes
+
+- 899afde: Adds `/sitemap.xml` (every listed, bookable business's booking page) and `/robots.txt` pointing to it, with Studio, setup and the API excluded from indexing.
+
+### Patch Changes
+
+- Updated dependencies [899afde]
+  - @openbooking-sh/server@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

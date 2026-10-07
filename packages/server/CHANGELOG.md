@@ -1,5 +1,11 @@
 # @openbooking-sh/server
 
+## 0.6.0
+
+### Patch Changes
+
+- 899afde: The business root (`/`) serves the booking page unless the client asks for JSON, so AI crawlers that send `Accept: */*` see the business and its schema.org data. Adds `Vary: Accept`.
+
 ## 0.2.0
 
 ### Minor Changes
