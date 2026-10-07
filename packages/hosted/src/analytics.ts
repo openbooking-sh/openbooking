@@ -82,7 +82,9 @@ ${TRACKER_JS}
  * - `cta_clicked` (sign-up links, which also get `?from=<area>` so the sign-up records its source);
  * - `outbound_clicked` (GitHub, npm, ChatGPT…), `copied` (snippets, commands), `faq_opened`;
  * - `section_viewed` (each page section once), `scrolled` (25/50/75/100 %);
- * - any element with `data-ph="event_name"` sends that event.
+ * - any element with `data-ph="event_name"` sends that event;
+ * - `window.__obJourney` keeps this page's sections, scroll depth and clicks in memory, for the
+ *   leave beacon in docs/HOSTED.md.
  *
  * Nothing personal: no form values, no ids, no cookies. Plain ES5 so it runs anywhere.
  */
@@ -90,8 +92,16 @@ export const TRACKER_JS = String.raw`(function () {
   if (!window.posthog) return;
   // Always the current window.posthog: the snippet's stub is replaced when the library loads, so
   // holding on to the stub would send later events nowhere.
+  // This page's journey, in memory only: a leave beacon can report it (see docs/HOSTED.md).
+  var journey = (window.__obJourney = { start: Date.now(), depth: 0, sections: [], actions: [] });
+  function note(n, p) {
+    if (n === 'section_viewed') journey.sections.push(p.section);
+    else if (n === 'scrolled') journey.depth = Math.max(journey.depth, p.depth);
+    else if (n === 'faq_opened') journey.actions.push('FAQ "' + p.question + '"');
+    else if (journey.actions.length < 20) journey.actions.push((p.text || n) + (p.area ? ' (' + p.area + ')' : ''));
+  }
   var ph = {
-    capture: function (n, p) { try { window.posthog.capture(n, p); } catch (e) {} },
+    capture: function (n, p) { try { note(n, p); window.posthog.capture(n, p); } catch (e) {} },
     register: function (p) { try { window.posthog.register(p); } catch (e) {} },
   };
   try {
@@ -148,7 +158,8 @@ export const TRACKER_JS = String.raw`(function () {
   var marks = [25, 50, 75, 100], hit = {};
   addEventListener('scroll', function () {
     var h = document.documentElement;
-    var pct = Math.round(((h.scrollTop + innerHeight) / h.scrollHeight) * 100);
+    var pct = Math.min(100, Math.round(((h.scrollTop + innerHeight) / h.scrollHeight) * 100));
+    journey.depth = Math.max(journey.depth, pct);
     marks.forEach(function (m) { if (pct >= m && !hit[m]) { hit[m] = 1; ph.capture('scrolled', { depth: m }); } });
   }, { passive: true });
 })();`;

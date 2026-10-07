@@ -630,7 +630,7 @@ describe('visitor pings', () => {
       }),
     });
     cleanups.push(hosted.close);
-    const visit = (ip: string, ua = 'Mozilla/5.0 (Macintosh)') =>
+    const visit = (ip: string, ua = 'Mozilla/5.0 (Macintosh)', body?: object) =>
       hosted.app.request(`${BASE}/api/visit`, {
         method: 'POST',
         headers: {
@@ -640,14 +640,35 @@ describe('visitor pings', () => {
           'x-vercel-ip-city': 'Oslo',
           'x-vercel-ip-country': 'NO',
         },
-        body: JSON.stringify({ page: '/#pricing', referrer: 'https://www.google.com/search?q=x' }),
+        body: JSON.stringify(
+          body ?? {
+            page: '/#pricing',
+            referrer: 'https://www.google.com/search?q=x',
+            source: 'newsletter',
+            campaign: 'launch',
+          },
+        ),
       });
 
     expect((await visit('203.0.113.1')).status).toBe(204);
     await visit('203.0.113.1'); // same visitor again: no second message
     await visit('203.0.113.2', 'Googlebot/2.1');
+    // Leaving the page: what they read and clicked. Values are escaped and capped.
+    await visit('203.0.113.1', undefined, {
+      kind: 'left',
+      page: '/',
+      seconds: 135,
+      depth: 76.4,
+      sections: ['how', 'pricing'],
+      actions: ['Get started (hero)', '<b>x</b>'],
+    });
+    await visit('203.0.113.1', undefined, { kind: 'left', page: '/developers', seconds: 4 });
     await hosted.idle();
-    expect(posted).toEqual([':eyes: Visitor on /#pricing · Oslo, NO · via www.google.com']);
+    expect(posted).toEqual([
+      ':eyes: Visitor on /#pricing · Oslo, NO · via www.google.com · source newsletter · campaign launch',
+      ':wave: Left / after 2m 15s · read 76% · saw how, pricing · clicked Get started (hero), &lt;b&gt;x&lt;/b&gt;',
+      ':wave: Left /developers after 4s · read 0% · no clicks',
+    ]);
   });
 });
 
