@@ -1,0 +1,27 @@
+name: Daily digest
+
+# Posts npm downloads, GitHub stars and new outside issues/PRs to the team's Slack.
+# Needs the SLACK_WEBHOOK_URL repository secret; without it the job only prints the digest.
+on:
+  schedule:
+    - cron: '0 6 * * *' # 08:00 Oslo in summer, 07:00 in winter
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/digest.mjs
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

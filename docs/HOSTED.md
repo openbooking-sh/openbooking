@@ -146,6 +146,65 @@ All optional, set as environment variables on the Vercel project:
 No customer names, emails or phone numbers are sent to any of them. Background work (emails,
 calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
 
+### Visitor messages in Slack
+
+With `SLACK_WEBHOOK_URL` set, `POST /api/visit` turns beacons from your marketing site into Slack
+messages: ":eyes: Visitor on /#pricing · Oslo, NO · via google.com · campaign launch" when a visit
+starts, and ":wave: Left / after 2m 15s · read 76% · saw how, pricing · clicked Get started (hero)" when
+they leave a page. Place comes from Vercel's geo headers; the IP is only used for rate limiting.
+Put this after the PostHog snippet (`posthogSnippet()`), whose tracker records the journey:
+
+```html
+<script>
+  // Tells the OpenBooking team someone is visiting (page, referrer, campaign) and, when they leave a
+  // page, how long they stayed, how far they read and what they clicked. No cookies.
+  (function () {
+    if (navigator.webdriver) return;
+    var url = 'https://app.openbooking.sh/api/visit';
+    function send(data) {
+      try {
+        navigator.sendBeacon(url, JSON.stringify(data));
+      } catch (e) {}
+    }
+    try {
+      if (!sessionStorage.getItem('ob-visit')) {
+        sessionStorage.setItem('ob-visit', '1');
+        var q = new URLSearchParams(location.search);
+        send({
+          page: location.pathname + location.hash,
+          referrer: document.referrer,
+          source: q.get('from') || q.get('utm_source') || q.get('ref') || undefined,
+          campaign: q.get('utm_campaign') || undefined,
+        });
+      }
+    } catch (e) {}
+    // The journey comes from the PostHog tracker (window.__obJourney), one report per page.
+    var sent = false;
+    addEventListener('pagehide', function () {
+      var j = window.__obJourney;
+      if (sent || !j) return;
+      sent = true;
+      var h = document.documentElement;
+      send({
+        kind: 'left',
+        page: location.pathname,
+        seconds: Math.round((Date.now() - j.start) / 1000),
+        depth: Math.max(j.depth, Math.min(100, Math.round((innerHeight / h.scrollHeight) * 100))),
+        sections: j.sections,
+        actions: j.actions,
+      });
+    });
+    // Back/forward cache: a restored page is a new view.
+    addEventListener('pageshow', function (e) {
+      if (e.persisted && window.__obJourney) {
+        sent = false;
+        window.__obJourney.start = Date.now();
+      }
+    });
+  })();
+</script>
+```
+
 ## ChatGPT and Claude directory submissions
 
 The OpenBooking app (`/mcp`) is built for this: no login for customers, one server for every
