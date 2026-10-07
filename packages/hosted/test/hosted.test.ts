@@ -176,8 +176,9 @@ describe('Studio settings', () => {
     const saved = await req('/studio/api/settings', { method: 'PUT', body: settings, token });
     expect(saved.status, JSON.stringify(saved.json)).toBe(200);
 
-    const index = await req('/b/studio-nord');
+    const index = await req('/b/studio-nord', { accept: 'application/json' });
     expect(index.json.name).toBe('Studio Nord & Co');
+    expect((await req('/b/studio-nord')).text).toContain('Studio Nord &amp; Co');
     const avail = await req(`/b/studio-nord/ucp/availability?date=${DAY}&party_size=1`);
     expect(avail.json.offers.length).toBeGreaterThan(0);
     // Only Jonas does beard trims.
