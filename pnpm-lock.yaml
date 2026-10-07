@@ -272,6 +272,10 @@ importers:
       '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
+    devDependencies:
+      '@openbooking-sh/provider-memory':
+        specifier: workspace:^
+        version: link:../provider-memory
 
   packages/adapter-mcp:
     dependencies:
@@ -326,6 +330,8 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  packages/create-openbooking: {}
 
   packages/google-calendar:
     dependencies:

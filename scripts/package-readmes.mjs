@@ -68,7 +68,7 @@ app.get('/.well-known/ucp', (c) => c.json(buildUcpProfile({ baseUrl, ucpPath: '/
   'adapter-a2a': {
     title: 'A2A Agent Card',
     intro:
-      'Builds an Agent2Agent (A2A) Agent Card that points agents to your booking endpoints, plus a stub A2A endpoint. Most apps use it through `' +
+      'An Agent2Agent (A2A) Agent Card plus a `SendMessage` JSON-RPC endpoint that lets A2A agents search availability, hold, confirm and cancel bookings with the same safety guarantees as MCP. Most apps use it through `' +
       S +
       '/server`.',
     usage: `import { buildAgentCard, AGENT_CARD_PATH } from '${S}/adapter-a2a';`,

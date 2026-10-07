@@ -86,27 +86,51 @@ export interface AgentCardOptions {
 /** The booking capabilities expressed as A2A skills (one per agent-facing operation group). */
 export const DEFAULT_BOOKING_SKILLS: AgentSkill[] = [
   {
+    id: 'get_business_info',
+    name: 'Get business info',
+    description: 'Services, staff, opening hours and booking rules. Call this first.',
+    tags: ['booking', 'catalog'],
+    examples: ['{"skill":"get_business_info"}'],
+  },
+  {
     id: 'search_availability',
     name: 'Search availability',
     description:
       'Find bookable time slots for a date and party size, with price, deposit and cancellation policy.',
     tags: ['booking', 'availability', 'reservation'],
-    examples: ['Is there a table for 4 on Friday around 19:00?'],
+    examples: ['{"skill":"search_availability","date":"2026-10-09","party_size":2}'],
   },
   {
-    id: 'book',
-    name: 'Hold and confirm a booking',
+    id: 'hold_slot',
+    name: 'Hold a slot',
     description:
-      'Hold a slot (expires after a few minutes) and confirm it after explicit user approval. Idempotent with an idempotency key.',
-    tags: ['booking', 'reservation', 'hold', 'confirm'],
-    examples: ['Book the 19:30 table for 2 under Ada Lovelace, ada@example.com.'],
+      'Reserve a slot for a few minutes. Needs slot_id and an idempotency_key. Does not confirm.',
+    tags: ['booking', 'hold'],
+    examples: ['{"skill":"hold_slot","slot_id":"...","idempotency_key":"<uuid>"}'],
   },
   {
-    id: 'manage_booking',
-    name: 'Look up or cancel a booking',
-    description: 'Check booking status or cancel it, applying the cancellation policy.',
+    id: 'confirm_booking',
+    name: 'Confirm a booking',
+    description:
+      'Confirm a hold after the user explicitly approved (user_confirmed=true). Needs customer details.',
+    tags: ['booking', 'confirm'],
+    examples: [
+      '{"skill":"confirm_booking","booking_id":"...","user_confirmed":true,"idempotency_key":"<uuid>"}',
+    ],
+  },
+  {
+    id: 'get_booking',
+    name: 'Get booking',
+    description: 'Look up the status of a booking or hold.',
+    tags: ['booking', 'status'],
+    examples: ['{"skill":"get_booking","booking_id":"..."}'],
+  },
+  {
+    id: 'cancel_booking',
+    name: 'Cancel booking',
+    description: 'Release a hold or cancel a booking, applying the cancellation policy.',
     tags: ['booking', 'cancellation'],
-    examples: ['Cancel booking bk_123.'],
+    examples: ['{"skill":"cancel_booking","booking_id":"...","idempotency_key":"<uuid>"}'],
   },
 ];
 

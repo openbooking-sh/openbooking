@@ -5,13 +5,13 @@ implements. In code, the same spots are marked `// EXTENSION:` or `SPEC AMBIGUIT
 
 Specs as implemented (checked 2026-10-02):
 
-| Spec                                                          | Version / source                                                                                  | Status in OpenBooking               |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| UCP lodging booking `dev.ucp.lodging.booking`                 | UCP `main` @ `b0e81ade` (2026-09-30), **draft**, not in any release (latest release `2026-08-25`) | REST binding implemented (draft)    |
-| UCP cancellation policy `dev.ucp.lodging.policy.cancellation` | same                                                                                              | implemented, with an extension      |
-| UCP payment terms `dev.ucp.common.payment.terms`              | same                                                                                              | deposits only                       |
-| MCP                                                           | protocol `2026-07-28` and the 2025 legacy versions, via `@modelcontextprotocol/server` 2.2        | implemented                         |
-| A2A                                                           | v1.0 (protocol version `"1.0"`), `specification/a2a.proto`                                        | Agent Card only; endpoint is a stub |
+| Spec                                                          | Version / source                                                                                  | Status in OpenBooking                     |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| UCP lodging booking `dev.ucp.lodging.booking`                 | UCP `main` @ `b0e81ade` (2026-09-30), **draft**, not in any release (latest release `2026-08-25`) | REST binding implemented (draft)          |
+| UCP cancellation policy `dev.ucp.lodging.policy.cancellation` | same                                                                                              | implemented, with an extension            |
+| UCP payment terms `dev.ucp.common.payment.terms`              | same                                                                                              | deposits only                             |
+| MCP                                                           | protocol `2026-07-28` and the 2025 legacy versions, via `@modelcontextprotocol/server` 2.2        | implemented                               |
+| A2A                                                           | v1.0 (protocol version `"1.0"`), `specification/a2a.proto`                                        | Agent Card plus `SendMessage` (stateless) |
 
 ---
 
@@ -25,7 +25,7 @@ Specs as implemented (checked 2026-10-02):
 
 ### 1.2 Discovery (`/.well-known/ucp`)
 
-- **REST only.** Only the `rest` transport is advertised under `dev.ucp.lodging`. Our `/mcp` endpoint exposes agent-friendly tools (`search_availability`, …). It is **not** the UCP MCP binding (`create_booking_session`, …), so advertising it as UCP MCP would be wrong. A2A is a stub and is not advertised.
+- **REST only.** Only the `rest` transport is advertised under `dev.ucp.lodging`. Our `/mcp` endpoint exposes agent-friendly tools (`search_availability`, …). It is **not** the UCP MCP binding (`create_booking_session`, …), so advertising it as UCP MCP would be wrong. A2A is a separate binding and is not advertised under UCP.
 - **`payment_handlers` is `{}`.** It must be present even when empty. Deposits use a token extension instead (§1.8).
 - **No signing keys.** No `keys` (JWK set) are published, and request/response signatures (`Signature`, `Signature-Input`, `Content-Digest`) are not implemented.
 - **Extension capabilities.** We advertise `sh.openbooking.booking` (extends `dev.ucp.lodging.booking`) and `sh.openbooking.availability` (standalone). Their JSON Schemas are served by the deployment itself at `{endpoint}/schemas/<name>.json`, following the UCP extension pattern (`$defs["dev.ucp.lodging.booking"]` = `allOf` of the parent schema plus our fields).
@@ -139,7 +139,10 @@ Each offer reuses the `stay` shape (`id`, `stay_dates`, `accommodation_type`, `r
 ## 3. A2A
 
 - **Agent Card.** v1.0 card at `/.well-known/agent-card.json` with `supportedInterfaces[0] = { url: <base>/a2a, protocolBinding: "JSONRPC", protocolVersion: "1.0" }`. The v0.3 fields (`url`, `preferredTransport`, …) are not emitted. The legacy `/.well-known/agent.json` is not served.
-- **Stub endpoint.** `POST /a2a` returns HTTP 501 with JSON-RPC error `-32601`. No task handling is implemented yet.
+- **Endpoint.** `POST /a2a` (JSON-RPC) implements `SendMessage`. It is stateless: every call is answered with a `Message` (`ROLE_AGENT`) holding a `DataPart` result plus a `TextPart` summary, never a `Task`. The operation is chosen by a DataPart `{ "skill": "search_availability" | "hold_slot" | ..., ...args }`, the same six operations as MCP, routed to the same `BookingService` (idempotency, hold expiry and `user_confirmed` apply unchanged). Business failures come back as a structured `error` in the message, not a JSON-RPC error.
+- **Errors and unsupported methods.** `GetTask`/`CancelTask` answer TaskNotFound (-32001), streaming and push answer UnsupportedOperation (-32004), unknown methods -32601. The v0.3 names `message/send` and `tasks/*` are accepted as aliases.
+- **Unverified against the proto.** Part shape (`{ data, mediaType }`), `ROLE_AGENT` and the error codes follow our reading of v1.0; re-check against `a2a.proto` and a real A2A client before calling this stable.
+- **Free text is not understood.** A message without a DataPart skill gets a usage hint. There is no natural-language layer.
 - **EXTENSION: MCP pointer.** `capabilities.extensions[]` includes `https://openbooking.sh/a2a/extensions/mcp-endpoint/v1` (`required: false`, `params.url` = the MCP endpoint). This is an informational pointer we defined.
 - **No security schemes.** `securitySchemes` and `securityRequirements` are omitted because the demo has no auth.
 

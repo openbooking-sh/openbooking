@@ -1,6 +1,6 @@
 # @openbooking-sh/adapter-a2a
 
-**A2A Agent Card.** Builds an Agent2Agent (A2A) Agent Card that points agents to your booking endpoints, plus a stub A2A endpoint. Most apps use it through `@openbooking-sh/server`.
+**A2A Agent Card.** An Agent2Agent (A2A) Agent Card plus a `SendMessage` JSON-RPC endpoint that lets A2A agents search availability, hold, confirm and cancel bookings with the same safety guarantees as MCP. Most apps use it through `@openbooking-sh/server`.
 
 Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
 
