@@ -653,6 +653,11 @@ describe('visitor pings', () => {
     expect((await visit('203.0.113.1')).status).toBe(204);
     await visit('203.0.113.1'); // same visitor again: no second message
     await visit('203.0.113.2', 'Googlebot/2.1');
+    // Coming from our own site (the deployment's domain) isn't an outside referrer.
+    await visit('203.0.113.3', undefined, {
+      page: '/',
+      referrer: 'http://localhost:3000/developers',
+    });
     // Leaving the page: what they read and clicked. Values are escaped and capped.
     await visit('203.0.113.1', undefined, {
       kind: 'left',
@@ -666,6 +671,7 @@ describe('visitor pings', () => {
     await hosted.idle();
     expect(posted).toEqual([
       ':eyes: Visitor on /#pricing · Oslo, NO · via www.google.com · source newsletter · campaign launch',
+      ':eyes: Visitor on / · Oslo, NO',
       ':wave: Left / after 2m 15s · read 76% · saw how, pricing · clicked Get started (hero), &lt;b&gt;x&lt;/b&gt;',
       ':wave: Left /developers after 4s · read 0% · no clicks',
     ]);

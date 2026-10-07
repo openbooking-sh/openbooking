@@ -152,7 +152,7 @@ With `SLACK_WEBHOOK_URL` set, `POST /api/visit` turns beacons from your marketin
 messages: ":eyes: Visitor on /#pricing · Oslo, NO · via google.com · campaign launch" when a visit
 starts, and ":wave: Left / after 2m 15s · read 76% · saw how, pricing · clicked Get started (hero)" when
 they leave a page. Place comes from Vercel's geo headers; the IP is only used for rate limiting.
-Put this after the PostHog snippet (`posthogSnippet()`), whose tracker records the journey:
+Put this on your marketing site, after the PostHog snippet (`posthogSnippet()`), whose tracker records the journey:
 
 ```html
 <script>
@@ -160,7 +160,7 @@ Put this after the PostHog snippet (`posthogSnippet()`), whose tracker records t
   // page, how long they stayed, how far they read and what they clicked. No cookies.
   (function () {
     if (navigator.webdriver) return;
-    var url = 'https://app.openbooking.sh/api/visit';
+    var url = 'https://YOUR-HOSTED-DOMAIN/api/visit'; // e.g. https://app.openbooking.sh/api/visit
     function send(data) {
       try {
         navigator.sendBeacon(url, JSON.stringify(data));
@@ -204,21 +204,6 @@ Put this after the PostHog snippet (`posthogSnippet()`), whose tracker records t
   })();
 </script>
 ```
-
-## ChatGPT and Claude directory submissions
-
-The OpenBooking app (`/mcp`) is built for this: no login for customers, one server for every
-business, read-only tools annotated, and consent enforced by the engine (`user_confirmed`). Still to
-do by hand before submitting:
-
-- [ ] Deploy hosted with durable storage on a stable domain (e.g. `app.openbooking.sh/mcp`).
-- [ ] Publish a privacy policy and terms (we process customer names, emails and phone numbers on
-      behalf of businesses) and a support contact.
-- [ ] App name, icon, short and long description, example prompts ("Book a haircut in Oslo on
-      Friday afternoon").
-- [ ] Test the full flow in ChatGPT developer mode and as a Claude custom connector.
-- [ ] Submit to the ChatGPT app directory and the Claude connectors directory, and check each
-      program's current requirements at submission time.
 
 ## Not done yet
 

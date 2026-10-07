@@ -389,7 +389,9 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     try {
       const ref =
         typeof body.referrer === 'string' && body.referrer ? new URL(body.referrer) : null;
-      if (ref && !ref.hostname.endsWith('openbooking.sh'))
+      // Our own site isn't a referrer: app.example.com treats example.com and its subdomains as home.
+      const home = new URL(baseUrl).hostname.split('.').slice(-2).join('.');
+      if (ref && ref.hostname !== home && !ref.hostname.endsWith(`.${home}`))
         from = ` · via ${clean(ref.hostname, 80)}`;
     } catch {
       // not a URL
