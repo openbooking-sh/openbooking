@@ -1,5 +1,11 @@
 # @openbooking-sh/hosted
 
+## 0.4.0
+
+### Minor Changes
+
+- 6e7ca09: Visitor messages in Slack now include the source and campaign, and a second message when the visitor leaves a page: time on page, how far they read, sections seen and what they clicked. The tracker keeps that journey in memory (`window.__obJourney`); the beacon snippet is in docs/HOSTED.md.
+
 ## 0.3.0
 
 ### Minor Changes
