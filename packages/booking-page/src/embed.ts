@@ -143,7 +143,7 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
   function uuid() {
     return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
-  var mc = navigator.modelContext;
+  var mc = document.modelContext || navigator.modelContext;
   if (mc && opt('agents', 'on') !== 'off') {
     var tools = [
       { name: 'list_services', description: 'List the services of ' + C.name + ' that can be booked, with duration, price and staff.',

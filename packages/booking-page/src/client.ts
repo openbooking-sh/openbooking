@@ -264,10 +264,11 @@ export const PAGE_SCRIPT = String.raw`
   window.addEventListener('pagehide', function () { /* holds lapse on their own; nothing to do */ });
 
   // ------------------------------------------------------------------ WebMCP
-  // WebMCP (navigator.modelContext) is a draft from the W3C Web Machine Learning Community Group;
-  // the API shape may still change, so everything here is feature-detected and failure-tolerant.
+  // WebMCP is a draft from the W3C Web Machine Learning Community Group. The API moved from
+  // navigator.modelContext to document.modelContext, so prefer the new location and fall back to
+  // the old one. Everything here is feature-detected and failure-tolerant.
   function registerWebMcp() {
-    var mc = navigator.modelContext;
+    var mc = document.modelContext || navigator.modelContext;
     if (!mc) return;
     function result(p) {
       return p.then(function (r) { return { content: [{ type: 'text', text: JSON.stringify(r) }] }; })

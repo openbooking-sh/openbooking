@@ -256,7 +256,11 @@ describe('booking page HTML', () => {
 
 describe('embed.js (website snippet)', () => {
   /** Just enough DOM to run the snippet: records what it appends and the tools it registers. */
-  function fakeBrowser(t: ReturnType<typeof setup>, attrs: Record<string, string> = {}) {
+  function fakeBrowser(
+    t: ReturnType<typeof setup>,
+    attrs: Record<string, string> = {},
+    modelContextOn: 'navigator' | 'document' = 'navigator',
+  ) {
     const appended: any[] = [];
     const tools: any[] = [];
     const el = (tag: string): any => ({
@@ -289,16 +293,23 @@ describe('embed.js (website snippet)', () => {
       const path = new URL(url).pathname.replace('/b/studio-nord/book', '');
       return t.page.app.request(path + new URL(url).search, init);
     };
-    const navigator = { modelContext: { registerTool: (tool: any) => tools.push(tool) } };
+    const modelContext = { registerTool: (tool: any) => tools.push(tool) };
+    // WebMCP moved from navigator.modelContext to document.modelContext.
+    if (modelContextOn === 'document') (document as any).modelContext = modelContext;
+    const navigator = modelContextOn === 'navigator' ? { modelContext } : {};
     return { document, fetch, navigator, appended, tools };
   }
 
-  async function run(t: ReturnType<typeof setup>, attrs: Record<string, string> = {}) {
+  async function run(
+    t: ReturnType<typeof setup>,
+    attrs: Record<string, string> = {},
+    modelContextOn: 'navigator' | 'document' = 'navigator',
+  ) {
     const res = await t.page.app.request('/embed.js');
     expect(res.headers.get('content-type')).toContain('javascript');
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     const code = await res.text();
-    const b = fakeBrowser(t, attrs);
+    const b = fakeBrowser(t, attrs, modelContextOn);
     const window: any = { matchMedia: () => ({ matches: false }) };
     new Function('window', 'document', 'navigator', 'location', 'fetch', 'crypto', code)(
       window,
@@ -332,6 +343,14 @@ describe('embed.js (website snippet)', () => {
       'confirm_booking',
     ]);
   });
+
+  it.each(['document', 'navigator'] as const)(
+    'registers the WebMCP tools on %s.modelContext',
+    async (where) => {
+      const { tools } = await run(setup(), {}, where);
+      expect(tools.map((x) => x.name)).toContain('confirm_booking');
+    },
+  );
 
   it('books end to end through the WebMCP tools, credited to "Browser agent"', async () => {
     const t = setup();
