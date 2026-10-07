@@ -63,6 +63,12 @@ export interface CancelBookingRequest {
   refund: Money | null;
 }
 
+export interface RescheduleBookingRequest {
+  booking_id: string;
+  /** Same venue, service and party size as the booking; the engine has checked policy and consent. */
+  slot_id: string;
+}
+
 export interface ProviderInfo {
   /** Human/agent readable name of the booking system or business. */
   name: string;
@@ -91,6 +97,13 @@ export interface BookingProvider {
 
   /** Optional: update customer details/notes on a held or confirmed booking. */
   updateBooking?(req: UpdateBookingRequest, ctx: ProviderContext): Promise<Booking>;
+
+  /**
+   * Optional: move a confirmed booking to another slot, atomically. Keeps the booking id and
+   * confirmation code; throws `slot_unavailable` if the new slot is taken, leaving the booking
+   * where it was.
+   */
+  rescheduleBooking?(req: RescheduleBookingRequest, ctx: ProviderContext): Promise<Booking>;
 
   /** Release a hold, or cancel a confirmed booking applying the given fee/refund. */
   cancelBooking(req: CancelBookingRequest, ctx: ProviderContext): Promise<Booking>;

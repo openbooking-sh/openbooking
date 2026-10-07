@@ -98,6 +98,19 @@ export const CancelBookingInput = z.object({
   reason: z.string().max(500).optional(),
 });
 
+export const RescheduleBookingInput = z.object({
+  booking_id: z.string().min(1),
+  slot_id: z
+    .string()
+    .min(1)
+    .describe('A new slot from search_availability, for the same service and party size'),
+  idempotency_key: IdempotencyKeySchema,
+  user_confirmed: z
+    .boolean()
+    .optional()
+    .describe('Required (true): the user approved the new time, price and cancellation terms.'),
+});
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------

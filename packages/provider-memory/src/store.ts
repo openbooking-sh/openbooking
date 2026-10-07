@@ -51,6 +51,14 @@ export interface BookingRecordStore {
     fn: (booking: Booking) => Booking,
   ): Promise<Booking | undefined>;
 
+  /**
+   * Move a booking to another resource and time (rescheduling), atomically: `check` runs on the
+   * current booking (expiry applied) and throws to abort; then, atomically with `insertIfFree`,
+   * the new interval must not overlap another blocking record. Resolves false when it does
+   * (nothing changes). `record.booking.booking_id` and the venue stay the same.
+   */
+  move(record: BookingRecord, now: Date, check: (current: Booking) => void): Promise<boolean>;
+
   /** Newest first (by `created_at`), filtered by start time. */
   list(query: BookingListQuery, now: Date): Promise<BookingRecord[]>;
 }
@@ -127,6 +135,16 @@ export class MemoryBookingStore implements BookingRecordStore {
     if (isBlocking(next, now) && this.#overlaps(r, now)) throw lostSlot();
     r.booking = structuredClone(next);
     return structuredClone(next);
+  }
+
+  async move(record: BookingRecord, now: Date, check: (current: Booking) => void) {
+    const id = record.booking.booking_id;
+    const r = this.#records.get(id);
+    if (!r) throw new BookingError('not_found', `No booking with id "${id}".`);
+    check(applyExpiry(structuredClone(r.booking), now));
+    if (this.#overlaps(record, now)) return false;
+    this.#records.set(id, structuredClone(record));
+    return true;
   }
 
   /** Another blocking record on the same resource overlaps `record`. */

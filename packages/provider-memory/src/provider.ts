@@ -6,6 +6,7 @@ import {
   type Booking,
   type BookingProvider,
   type CancelBookingRequest,
+  type RescheduleBookingRequest,
   type CancellationPolicy,
   type ConfirmHoldRequest,
   type CreateHoldRequest,
@@ -327,6 +328,80 @@ export class MemoryBookingProvider implements BookingProvider {
       ...(req.notes !== undefined ? { notes: req.notes } : {}),
       updated_at: ctx.now.toISOString(),
     }));
+  }
+
+  async rescheduleBooking(req: RescheduleBookingRequest, ctx: ProviderContext): Promise<Booking> {
+    const key = decodeSlotId(req.slot_id);
+    const cfg = this.#venue(key.v);
+    const offering = cfg.offerings.find((o) => o.id === key.o);
+    const start = new Date(key.s);
+    if (!offering || Number.isNaN(start.getTime())) throw invalidSlot();
+    const date = time.localDate(start, cfg.venue.timezone);
+    const local = time.localTime(start, cfg.venue.timezone);
+    const end = endOf(cfg, offering, start);
+
+    // A booking changed by someone else between our read and the store's lock is re-read, so the
+    // move never overwrites a newer version.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const current = (await this.#store.get(req.booking_id, ctx.now))?.booking;
+      if (!current) throw new BookingError('not_found', `No booking with id "${req.booking_id}".`);
+      if (
+        key.v !== current.venue_id ||
+        key.o !== current.slot.offering.id ||
+        key.p !== current.slot.party_size.total
+      ) {
+        throw new BookingError(
+          'validation_error',
+          'The new time must be for the same venue, service and party size.',
+          {
+            suggested_next_action:
+              'Search availability with the same service and party size. To change the service, cancel and book again.',
+          },
+        );
+      }
+      const bookable =
+        this.#candidateStarts(cfg, date, ctx.now).some((s) => s.getTime() === start.getTime()) &&
+        this.#offeringAllowed(cfg, offering, date, local);
+      if (!bookable) {
+        throw new BookingError(
+          'slot_unavailable',
+          'That time is not bookable (in the past or outside opening hours).',
+        );
+      }
+      const busy = [
+        ...(await this.#busyIn(cfg, start.getTime(), end, ctx.now)),
+        ...timeOff(cfg, start.getTime(), end),
+      ];
+      let changed = false;
+      for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
+        if (!worksAt(cfg, resource.id, date, local, offering.duration_minutes)) continue;
+        if (!isFree(busy, resource.id, start, end)) continue;
+        const booking: Booking = {
+          ...current,
+          slot: this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id),
+          updated_at: ctx.now.toISOString(),
+        };
+        try {
+          const moved = await this.#store.move(
+            { booking, resource_id: resource.id, start_ms: start.getTime(), end_ms: end },
+            ctx.now,
+            (b) => {
+              if (b.status !== 'confirmed') {
+                throw new BookingError('invalid_state', `Booking is ${b.status}, not confirmed.`);
+              }
+              if (b.updated_at !== current.updated_at) throw STALE;
+            },
+          );
+          if (moved) return booking;
+        } catch (e) {
+          if (e !== STALE) throw e;
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) break;
+    }
+    throw new BookingError('slot_unavailable', `The ${local} slot on ${date} was just taken.`);
   }
 
   async cancelBooking(req: CancelBookingRequest, ctx: ProviderContext): Promise<Booking> {
@@ -660,6 +735,9 @@ function decodeSlotId(slotId: string): SlotKey {
     throw invalidSlot();
   }
 }
+
+/** Thrown inside a store move when the booking changed since it was read; the move is retried. */
+const STALE = new Error('booking changed since it was read');
 
 function invalidSlot(): BookingError {
   return new BookingError('validation_error', 'slot_id is not valid.', {

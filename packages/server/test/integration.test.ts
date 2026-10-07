@@ -372,6 +372,54 @@ describe('MCP for a salon (staff, business info, closed days, hold limits)', () 
     };
   }
 
+  it('reschedules a booking over MCP, asking for consent first and keeping the code', async () => {
+    const call = await salon();
+    const date = '2026-10-06'; // Tuesday
+    const search = async (at: string) =>
+      (
+        await call('search_availability', {
+          date,
+          offering_id: 'haircut',
+          staff: 'Maria',
+          time_from: at,
+          time_to: at,
+        })
+      ).data.slots[0];
+    const hold = await call('hold_slot', {
+      slot_id: (await search('10:00')).slot_id,
+      idempotency_key: randomUUID(),
+      customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+    });
+    const booked = await call('confirm_booking', {
+      booking_id: hold.data.booking_id,
+      user_confirmed: true,
+      idempotency_key: randomUUID(),
+    });
+    const target = await search('15:00');
+
+    const asked = await call('reschedule_booking', {
+      booking_id: booked.data.booking_id,
+      slot_id: target.slot_id,
+      idempotency_key: randomUUID(),
+    });
+    expect(asked.ok).toBe(false);
+    expect(asked.data.error.code).toBe('user_confirmation_required');
+
+    const moved = await call('reschedule_booking', {
+      booking_id: booked.data.booking_id,
+      slot_id: target.slot_id,
+      idempotency_key: randomUUID(),
+      user_confirmed: true,
+    });
+    expect(moved.ok).toBe(true);
+    expect(moved.data).toMatchObject({
+      booking_id: booked.data.booking_id,
+      status: 'confirmed',
+      confirmation_code: booked.data.confirmation_code,
+    });
+    expect(moved.data.start).toContain('T15:00');
+  });
+
   it("tells agents each stylist's working hours and never offers them outside those", async () => {
     const call = await salon({
       schedules: {

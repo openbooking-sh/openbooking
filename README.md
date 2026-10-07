@@ -157,14 +157,15 @@ emails. See [docs/HOSTED.md](docs/HOSTED.md).
 
 ## The MCP tools
 
-| Tool                  | Does                                                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.  |
-| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved. |
-| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                 |
-| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.           |
-| `get_booking`         | Current status and details.                                                                                              |
-| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy. |
+| Tool                  | Does                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.                                |
+| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved.                               |
+| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                                               |
+| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.                                         |
+| `get_booking`         | Current status and details.                                                                                                                            |
+| `reschedule_booking`  | Moves a confirmed booking to a new time for the same service, keeping its id and code. Needs `user_confirmed`; allowed while cancelling is still free. |
+| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy.                               |
 
 **Design rules:**
 

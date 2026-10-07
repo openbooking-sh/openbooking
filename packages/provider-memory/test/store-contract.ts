@@ -170,6 +170,66 @@ export function describeBookingStore(
       expect(cancelled?.status).toBe('cancelled');
     });
 
+    it('moves a booking to a free time or resource, keeping its id, and refuses a taken one', async () => {
+      const store = await factory();
+      await store.insertIfFree(record({ id: 'm', status: 'confirmed', expires: null }), NOW);
+      await store.insertIfFree(
+        record({ id: 'busy', status: 'confirmed', expires: null, start: T0 + 120 * MIN }),
+        NOW,
+      );
+      const moved = (start: number, resource = 'r1') => ({
+        ...record({ id: 'm', status: 'confirmed', expires: null, start, resource }),
+      });
+      // Overlaps 'busy' on r1: refused, nothing changes.
+      expect(await store.move(moved(T0 + 110 * MIN), NOW, () => {})).toBe(false);
+      expect((await store.get('m', NOW))?.start_ms).toBe(T0);
+      // Overlapping only itself is fine (moving 15 minutes later).
+      expect(await store.move(moved(T0 + 15 * MIN), NOW, () => {})).toBe(true);
+      // Same time as 'busy' but on another resource is fine too.
+      expect(await store.move(moved(T0 + 120 * MIN, 'r2'), NOW, () => {})).toBe(true);
+      const now = await store.get('m', NOW);
+      expect(now).toMatchObject({ resource_id: 'r2', start_ms: T0 + 120 * MIN });
+      expect(now?.booking.booking_id).toBe('m');
+      // The old time on r1 is free again; the new one on r2 is taken.
+      expect(await store.insertIfFree(record({ id: 'x1' }), NOW)).toBe(true);
+      expect(
+        await store.insertIfFree(record({ id: 'x2', resource: 'r2', start: T0 + 120 * MIN }), NOW),
+      ).toBe(false);
+      // check() can abort; a missing booking is not_found.
+      await expect(
+        store.move(moved(T0 + 240 * MIN), NOW, () => {
+          throw new BookingError('invalid_state', 'nope');
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_state' });
+      expect((await store.get('m', NOW))?.start_ms).toBe(T0 + 120 * MIN);
+      await expect(
+        store.move(record({ id: 'ghost', status: 'confirmed' }), NOW, () => {}),
+      ).rejects.toMatchObject({ code: 'not_found' });
+    });
+
+    it('lets exactly one of two concurrent moves into the same time win', async () => {
+      const store = await factory();
+      await store.insertIfFree(record({ id: 'p', status: 'confirmed', expires: null }), NOW);
+      await store.insertIfFree(
+        record({ id: 'q', status: 'confirmed', expires: null, resource: 'r2' }),
+        NOW,
+      );
+      const target = T0 + 300 * MIN;
+      const results = await Promise.all([
+        store.move(
+          record({ id: 'p', status: 'confirmed', expires: null, start: target, resource: 'r3' }),
+          NOW,
+          () => {},
+        ),
+        store.move(
+          record({ id: 'q', status: 'confirmed', expires: null, start: target, resource: 'r3' }),
+          NOW,
+          () => {},
+        ),
+      ]);
+      expect(results.filter(Boolean)).toHaveLength(1);
+    });
+
     it('lists newest first with start-time filters and limit', async () => {
       const store = await factory();
       await store.insertIfFree(record({ id: 'l1', created: T0 - 50 * MIN }), NOW);

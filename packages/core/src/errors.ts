@@ -18,6 +18,7 @@ export const ErrorCodeSchema = z.enum([
   'payment_required',
   'payment_failed',
   'cancellation_not_allowed',
+  'reschedule_not_allowed',
   'idempotency_conflict',
   'operation_not_supported',
   'provider_error',
@@ -55,6 +56,8 @@ const DEFAULT_NEXT_ACTION: Record<ErrorCode, string> = {
   payment_failed: 'The payment was declined. Ask the user for another payment method.',
   cancellation_not_allowed:
     'The booking can no longer be cancelled online. Tell the user to contact the venue directly.',
+  reschedule_not_allowed:
+    'The booking can no longer be moved online. Tell the user; they can cancel under the stated terms and book again, or contact the venue.',
   idempotency_conflict:
     'This idempotency_key was already used for a different request. Generate a new key for a new action; reuse a key only for exact retries.',
   operation_not_supported:

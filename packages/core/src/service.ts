@@ -25,12 +25,14 @@ import { MemoryRateLimiter, type RateLimiter } from './rate-limit';
 import {
   AvailabilityQuerySchema,
   CancelInputSchema,
+  RescheduleInputSchema,
   ConfirmInputSchema,
   HoldInputSchema,
   UpdateInputSchema,
   type AvailabilityQueryInput,
   type Booking,
   type CancelInput,
+  type RescheduleInput,
   type ConfirmInput,
   type HoldInput,
   type Offering,
@@ -41,7 +43,8 @@ import {
   type VenueInfo,
 } from './schemas';
 
-export type Operation = 'search' | 'hold' | 'confirm' | 'get' | 'update' | 'cancel' | 'list';
+export type Operation =
+  'search' | 'hold' | 'confirm' | 'get' | 'update' | 'reschedule' | 'cancel' | 'list';
 
 /** Emitted after every operation; used for logging, metrics and the agent benchmark. */
 export interface BookingEvent {
@@ -352,6 +355,77 @@ export class BookingService {
             ctx,
           );
           return this.#normalize(updated);
+        });
+      },
+      bookingIdOf(input),
+    );
+  }
+
+  /**
+   * Move a confirmed booking to another time (same service and party size), keeping its id and
+   * confirmation code. Allowed while cancellation would still be free, so moving can't dodge late
+   * terms. Requires `user_confirmed: true` for the new time, price and terms.
+   */
+  async reschedule(input: RescheduleInput): Promise<Booking> {
+    return this.#track(
+      'reschedule',
+      async (meta) => {
+        const { idempotency_key, ...req } = parse(
+          RescheduleInputSchema,
+          input,
+          'reschedule_booking',
+        );
+        return this.#idempotent(meta, idempotency_key, 'reschedule', req, async (ctx) => {
+          if (!this.provider.rescheduleBooking) {
+            throw new BookingError(
+              'operation_not_supported',
+              'This booking system does not support rescheduling.',
+              { suggested_next_action: 'Cancel the booking and book the new time instead.' },
+            );
+          }
+          const booking = await this.#load(req.booking_id);
+          if (booking.status === 'held') {
+            throw new BookingError('invalid_state', 'This is a hold, not a confirmed booking.', {
+              suggested_next_action:
+                'Hold the new slot instead; this hold lapses on its own (or cancel it).',
+            });
+          }
+          if (booking.status !== 'confirmed') {
+            throw new BookingError(
+              'invalid_state',
+              `Booking ${booking.booking_id} is ${booking.status} and can't be moved.`,
+            );
+          }
+          const outcome = evaluateBookingCancellation(booking, ctx.now);
+          if (!outcome.allowed || !outcome.free) {
+            throw new BookingError(
+              'reschedule_not_allowed',
+              outcome.allowed
+                ? 'The free change window has passed, so this booking can no longer be moved online.'
+                : 'The booking has already started and can no longer be moved.',
+              {
+                suggested_next_action: outcome.allowed
+                  ? 'Tell the user. They can cancel under the late terms and book again, or contact the business.'
+                  : 'Tell the user to contact the business.',
+                details: { cancellation_policy: booking.slot.cancellation_policy },
+              },
+            );
+          }
+          if (req.user_confirmed !== true) {
+            throw new BookingError(
+              'user_confirmation_required',
+              'Moving a booking requires explicit user approval (user_confirmed=true).',
+              {
+                suggested_next_action:
+                  'Show the user the new time, price and cancellation terms from search_availability, ask for approval, then call again with user_confirmed=true.',
+              },
+            );
+          }
+          const moved = await this.provider.rescheduleBooking(
+            { booking_id: booking.booking_id, slot_id: req.slot_id },
+            ctx,
+          );
+          return this.#normalize(moved);
         });
       },
       bookingIdOf(input),

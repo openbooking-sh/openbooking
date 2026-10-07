@@ -23,6 +23,7 @@ import {
   BusinessInfoOutput,
   GetBusinessInfoInput,
   CancelBookingInput,
+  RescheduleBookingInput,
   ConfirmBookingInput,
   GetBookingInput,
   HoldSlotInput,
@@ -45,6 +46,7 @@ export const TOOL_NAMES = [
   'hold_slot',
   'confirm_booking',
   'get_booking',
+  'reschedule_booking',
   'cancel_booking',
 ] as const;
 
@@ -56,6 +58,7 @@ Rules:
 - Always show the user the price, deposit and cancellation_policy before confirming.
 - Set user_confirmed=true only after the user explicitly approves. Never confirm on your own.
 - Every mutating call needs an idempotency_key (UUID). Reuse the same key when retrying the same call; use a new key for a new action.
+- To move a confirmed booking, search_availability for the same service, then reschedule_booking (it keeps the booking and its confirmation code). Don't cancel and rebook.
 - Errors include suggested_next_action. Follow it.`;
 
 /**
@@ -335,6 +338,29 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
     tool(get, async ({ business_id, ...a }) => {
       const service = await resolve(business_id);
       return view(service, await service.getBooking(a.booking_id));
+    }),
+  );
+
+  const reschedule = scope(RescheduleBookingInput);
+  server.registerTool(
+    'reschedule_booking',
+    {
+      title: 'Reschedule booking',
+      description:
+        'Move a confirmed booking to a new time (a slot_id from search_availability for the same service and party size). Keeps the booking id and confirmation code. Allowed while cancellation is still free. Show the user the new time, price and cancellation terms and pass user_confirmed=true after they approve.' +
+        forBusiness,
+      inputSchema: advertised(reschedule),
+      outputSchema: BookingView,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    tool(reschedule, async ({ business_id, ...a }) => {
+      const service = await resolve(business_id);
+      return view(service, await service.reschedule(a));
     }),
   );
 
