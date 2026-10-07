@@ -182,6 +182,11 @@ export const BusinessInfoOutput = z.object({
     }),
   ),
   staff: z.array(z.string()).describe('Staff members customers can ask for by name'),
+  staff_hours: z
+    .record(z.string(), z.record(z.string(), z.string()))
+    .describe(
+      'Working hours of staff who have their own, by name and weekday, e.g. { Maria: { fri: "12:00-18:00", sat: "off" } }. Staff not listed work whenever the business is open.',
+    ),
   opening_hours: z
     .record(z.string(), z.string())
     .nullable()

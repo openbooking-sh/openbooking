@@ -221,6 +221,12 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
         staff: resources
           .filter((r) => r.capacity.max === 1 && r.kind !== 'table')
           .map((r) => r.name),
+        staff_hours: Object.fromEntries(
+          Object.entries(hours?.staff_hours ?? {}).flatMap(([id, week]) => {
+            const person = resources.find((r) => r.id === id);
+            return person ? [[person.name, periodsText(week, 'off')]] : [];
+          }),
+        ),
         opening_hours: hours ? hoursText(hours) : null,
         closed_dates: hours?.closed_dates ?? [],
         booking_window: hours
@@ -375,10 +381,14 @@ const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 /** { mon: "closed", tue: "10:00-19:00", … } */
 function hoursText(info: VenueInfo): Record<string, string> {
+  return periodsText(info.opening_hours, 'closed');
+}
+
+function periodsText(week: VenueInfo['opening_hours'], none: string): Record<string, string> {
   return Object.fromEntries(
     WEEKDAYS.map((d) => {
-      const periods = info.opening_hours[d] ?? [];
-      return [d, periods.length ? periods.map((p) => `${p.open}-${p.close}`).join(', ') : 'closed'];
+      const periods = week[d] ?? [];
+      return [d, periods.length ? periods.map((p) => `${p.open}-${p.close}`).join(', ') : none];
     }),
   );
 }

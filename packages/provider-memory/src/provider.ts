@@ -83,6 +83,7 @@ export class MemoryBookingProvider implements BookingProvider {
       ...(config.description ? { description: config.description } : {}),
     };
     this.#venues = new Map(config.venues.map((v) => [v.venue.id, v]));
+    for (const v of config.venues) validateSchedules(v);
   }
 
   async listVenues(): Promise<Venue[]> {
@@ -140,7 +141,7 @@ export class MemoryBookingProvider implements BookingProvider {
       this.#store.listBlocking(cfg.venue.id, fromMs, toMs, ctx.now),
       this.#busyIn(cfg, fromMs, toMs, ctx.now),
     ]);
-    const blocking: BusyInterval[] = [...booked, ...busy];
+    const blocking: BusyInterval[] = [...booked, ...busy, ...timeOff(cfg, fromMs, toMs)];
     for (const start of starts) {
       const local = time.localTime(start, cfg.venue.timezone);
 
@@ -148,8 +149,10 @@ export class MemoryBookingProvider implements BookingProvider {
       if (query.time_to && local > query.time_to) continue;
       for (const offering of offerings) {
         if (!this.#offeringAllowed(cfg, offering, query.date, local)) continue;
-        const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter((r) =>
-          isFree(blocking, r.id, start, endOf(cfg, offering, start)),
+        const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter(
+          (r) =>
+            worksAt(cfg, r.id, query.date, local, offering.duration_minutes) &&
+            isFree(blocking, r.id, start, endOf(cfg, offering, start)),
         );
         const resource = free[0];
         if (!resource) continue;
@@ -194,9 +197,13 @@ export class MemoryBookingProvider implements BookingProvider {
 
     const now = ctx.now.toISOString();
     const bookingId = `bk_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-    const busy = await this.#busyIn(cfg, start.getTime(), endOf(cfg, offering, start), ctx.now);
+    const busy = [
+      ...(await this.#busyIn(cfg, start.getTime(), endOf(cfg, offering, start), ctx.now)),
+      ...timeOff(cfg, start.getTime(), endOf(cfg, offering, start)),
+    ];
     // Best fit first; the store's atomic insert decides, so a lost race moves on to the next one.
     for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
+      if (!worksAt(cfg, resource.id, date, local, offering.duration_minutes)) continue;
       if (!isFree(busy, resource.id, start, endOf(cfg, offering, start))) continue;
       const slot = this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id);
       const booking: Booking = {
@@ -290,6 +297,16 @@ export class MemoryBookingProvider implements BookingProvider {
         WEEKDAYS.map((d) => [d, (cfg.opening_hours[days.indexOf(d)] ?? []).map((p) => ({ ...p }))]),
       ) as VenueInfo['opening_hours'],
       closed_dates: [...(cfg.closed_dates ?? [])],
+      staff_hours: Object.fromEntries(
+        Object.entries(cfg.schedules ?? {})
+          .filter(([, s]) => s.hours)
+          .map(([id, s]) => [
+            id,
+            Object.fromEntries(
+              WEEKDAYS.map((d) => [d, (s.hours![days.indexOf(d)] ?? []).map((p) => ({ ...p }))]),
+            ) as VenueInfo['opening_hours'],
+          ]),
+      ),
       min_lead_minutes: cfg.min_lead_minutes,
       max_days_ahead: cfg.max_days_ahead,
     };
@@ -496,6 +513,65 @@ function matchesTag(r: Resource, tag: string): boolean {
 /** One bookable person (or room) rather than a table that seats a group. */
 function isPerson(r: Resource): boolean {
   return r.capacity.max === 1 && r.kind !== 'table';
+}
+
+/** Whether the resource works the whole of [local, local + minutes) on `date` (venue-local). */
+function worksAt(
+  cfg: VenueConfig,
+  resourceId: string,
+  date: string,
+  local: string,
+  minutes: number,
+): boolean {
+  const hours = cfg.schedules?.[resourceId]?.hours;
+  if (!hours) return true;
+  const startMin = time.minutesOfDay(local);
+  return (hours[time.weekdayOfDate(date)] ?? []).some((p) => {
+    const close = p.close === '24:00' ? 1440 : time.minutesOfDay(p.close);
+    return startMin >= time.minutesOfDay(p.open) && startMin + minutes <= close;
+  });
+}
+
+const LOCAL_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/** A time-off bound as an instant: whole dates start at 00:00, and an end date is included. */
+function timeOffBound(value: string, timeZone: string, end: boolean): number {
+  if (LOCAL_DATE.test(value)) {
+    return time.zonedToInstant(end ? time.addDays(value, 1) : value, '00:00', timeZone).getTime();
+  }
+  if (LOCAL_DATETIME.test(value)) {
+    return time.zonedToInstant(value.slice(0, 10), value.slice(11), timeZone).getTime();
+  }
+  throw new Error(`Invalid time off "${value}": use YYYY-MM-DD or YYYY-MM-DDTHH:mm`);
+}
+
+/** Time off within [fromMs, toMs) as busy intervals, so it blocks exactly like a booking. */
+function timeOff(cfg: VenueConfig, fromMs: number, toMs: number): BusyInterval[] {
+  const out: BusyInterval[] = [];
+  for (const [resource_id, schedule] of Object.entries(cfg.schedules ?? {})) {
+    for (const off of schedule.time_off ?? []) {
+      const start_ms = timeOffBound(off.start, cfg.venue.timezone, false);
+      const end_ms = timeOffBound(off.end, cfg.venue.timezone, true);
+      if (start_ms < toMs && fromMs < end_ms) out.push({ resource_id, start_ms, end_ms });
+    }
+  }
+  return out;
+}
+
+/** Catch config mistakes at startup rather than as odd availability later. */
+function validateSchedules(cfg: VenueConfig): void {
+  for (const [id, schedule] of Object.entries(cfg.schedules ?? {})) {
+    if (!cfg.resources.some((r) => r.id === id)) {
+      throw new Error(`Schedule for unknown resource "${id}" at ${cfg.venue.id}`);
+    }
+    for (const off of schedule.time_off ?? []) {
+      const start = timeOffBound(off.start, cfg.venue.timezone, false);
+      if (timeOffBound(off.end, cfg.venue.timezone, true) <= start) {
+        throw new Error(`Time off for "${id}" ends before it starts: ${off.start} → ${off.end}`);
+      }
+    }
+  }
 }
 
 function isFree(blocking: BusyInterval[], resourceId: string, start: Date, endMs: number): boolean {

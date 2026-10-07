@@ -234,6 +234,16 @@ export const VenueInfoSchema = z.object({
   min_lead_minutes: z.number().int().nullable().default(null),
   /** How many days ahead bookings are accepted. */
   max_days_ahead: z.number().int().nullable().default(null),
+  /**
+   * Weekly working hours of resources that have their own (resource id → weekday → periods).
+   * Resources not listed work whenever the venue is open. Time off is never exposed.
+   */
+  staff_hours: z
+    .record(
+      z.string(),
+      z.record(z.enum(WEEKDAYS), z.array(z.object({ open: LocalTimeSchema, close: z.string() }))),
+    )
+    .default({}),
 });
 export type VenueInfo = z.infer<typeof VenueInfoSchema>;
 
