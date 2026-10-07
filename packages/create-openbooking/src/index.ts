@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { scaffold, slug } from './scaffold';
 
-declare const __OPENBOOKING_VERSION__: string;
+declare const __OPENBOOKING_VERSIONS__: Record<string, string>;
 
 const HELP = `
   create-openbooking: a booking backend that AI assistants can book, in one command.
@@ -44,7 +44,7 @@ async function main() {
 
   const target = resolve(dir);
   const templateDir = fileURLToPath(new URL('../template', import.meta.url));
-  scaffold({ dir: target, businessName: name, version: __OPENBOOKING_VERSION__, templateDir });
+  scaffold({ dir: target, businessName: name, versions: __OPENBOOKING_VERSIONS__, templateDir });
   console.log(`\n  Created ${name} in ${target}\n`);
 
   // Install with whatever the user ran us with (npm, pnpm, yarn or bun).

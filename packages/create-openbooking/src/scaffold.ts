@@ -14,8 +14,11 @@ export interface ScaffoldOptions {
   dir: string;
   /** Shown in the booking page, emails and Studio, e.g. "Studio Nord". */
   businessName: string;
-  /** Version range of the @openbooking-sh packages to depend on, e.g. "0.1.0". */
-  version: string;
+  /**
+   * Version of each @openbooking-sh package to depend on, by package folder name, e.g.
+   * `{ server: '0.2.0', postgres: '0.3.0' }`. Packages are versioned separately.
+   */
+  versions: Record<string, string>;
   /** Template directory (defaults to the one shipped with the package). */
   templateDir: string;
 }
@@ -67,8 +70,10 @@ export function scaffold(options: ScaffoldOptions): string[] {
   const values: Record<string, string> = {
     PROJECT_NAME: projectName,
     BUSINESS_NAME: options.businessName.replace(/["'`\\$]/g, ''),
-    OPENBOOKING_VERSION: options.version,
   };
+  for (const [name, version] of Object.entries(options.versions)) {
+    values[`VERSION_${name.toUpperCase().replace(/-/g, '_')}`] = version;
+  }
 
   const written: string[] = [];
   const walk = (current: string) => {
