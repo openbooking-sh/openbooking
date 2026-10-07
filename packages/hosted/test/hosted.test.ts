@@ -176,8 +176,9 @@ describe('Studio settings', () => {
     const saved = await req('/studio/api/settings', { method: 'PUT', body: settings, token });
     expect(saved.status, JSON.stringify(saved.json)).toBe(200);
 
-    const index = await req('/b/studio-nord');
+    const index = await req('/b/studio-nord', { accept: 'application/json' });
     expect(index.json.name).toBe('Studio Nord & Co');
+    expect((await req('/b/studio-nord')).text).toContain('Studio Nord &amp; Co');
     const avail = await req(`/b/studio-nord/ucp/availability?date=${DAY}&party_size=1`);
     expect(avail.json.offers.length).toBeGreaterThan(0);
     // Only Jonas does beard trims.
@@ -445,6 +446,8 @@ describe('owner accounts', () => {
       );
 
     expect(await listed()).toEqual([]);
+    // The sitemap lists the same businesses as the directory: none until the email is confirmed.
+    expect((await req('/sitemap.xml')).text).not.toContain('/b/studio-nord');
     const view = await req('/studio/api/settings', { token });
     expect(view.json.account).toMatchObject({ email_verified: false });
 
@@ -454,6 +457,10 @@ describe('owner accounts', () => {
 
     await confirmEmail('maria@example.com');
     expect(await listed()).toEqual(['studio-nord']);
+    const sitemap = await req('/sitemap.xml');
+    expect(sitemap.headers.get('content-type')).toContain('xml');
+    expect(sitemap.text).toContain(`<loc>${BASE}/b/studio-nord</loc>`);
+    expect((await req('/robots.txt')).text).toContain(`Sitemap: ${BASE}/sitemap.xml`);
 
     const forged = await req('/api/verify-email?token=not-a-token');
     expect(forged.headers.get('location')).toContain('verified=expired');

@@ -330,6 +330,33 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
+  // Search engines and AI crawlers find each listed business's booking page through the sitemap;
+  // owner pages (Studio, setup, the API) aren't for indexing.
+  app.get('/robots.txt', (c) =>
+    c.text(
+      [
+        'User-agent: *',
+        'Allow: /',
+        `Disallow: ${STUDIO_PATH}`,
+        'Disallow: /setup',
+        'Disallow: /api/',
+        `Sitemap: ${baseUrl}/sitemap.xml`,
+        '',
+      ].join('\n'),
+    ),
+  );
+  app.get('/sitemap.xml', async (c) => {
+    const listed = (await businesses.list()).filter((b) => isListable(b, requireVerifiedEmail));
+    const urls = listed.map(
+      (b) =>
+        `  <url><loc>${baseUrl}/b/${encodeURIComponent(b.id)}</loc><lastmod>${b.updated_at.slice(0, 10)}</lastmod></url>`,
+    );
+    c.header('content-type', 'application/xml; charset=utf-8');
+    return c.body(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`,
+    );
+  });
+
   app.get('/', (c) => {
     if ((c.req.header('accept') ?? '').includes('text/html')) return c.redirect('/signup');
     return c.json({

@@ -127,7 +127,12 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
     : undefined;
 
   app.get('/', async (c) => {
-    if (page && (c.req.header('accept') ?? '').includes('text/html')) {
+    // The page for anyone who doesn't ask for JSON: several AI crawlers send `Accept: */*` or none,
+    // and should see the business, its services and schema.org data rather than the discovery JSON.
+    c.header('Vary', 'Accept');
+    const accept = c.req.header('accept') ?? '';
+    const wantsJson = accept.includes('application/json') && !accept.includes('text/html');
+    if (page && !wantsJson) {
       return c.html(await page.html(c.req.query()));
     }
     return c.json({
