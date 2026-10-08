@@ -5,14 +5,14 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { ManualClock } from '@openbooking-sh/core';
+import { ManualClock, verifyWebhook, type WebhookEvent } from '@openbooking-sh/core';
 import {
   createDemoRestaurantProvider,
   demoSalonConfig,
   MemoryBookingProvider,
   type VenueConfig,
 } from '@openbooking-sh/provider-memory';
-import { createOpenBookingApp } from '../src';
+import { createOpenBookingApp, type OpenBookingServerOptions } from '../src';
 
 const BASE = 'http://localhost:3000';
 const cleanups: Array<() => Promise<void>> = [];
@@ -20,13 +20,14 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-function makeApp() {
+function makeApp(extra: Partial<OpenBookingServerOptions> = {}) {
   const clock = new ManualClock('2026-10-01T08:00:00Z');
   const provider = createDemoRestaurantProvider();
   const ob = createOpenBookingApp({
     provider,
     baseUrl: BASE,
     serviceOptions: { clock, holdTtlSeconds: 300 },
+    ...extra,
   });
   cleanups.push(ob.close);
   return { ...ob, clock, provider };
@@ -121,6 +122,48 @@ describe.each(['legacy', 'auto'] as const)('MCP end-to-end (%s era)', (mode) => 
     const bookings = await provider.inspectBookings(clock.now());
     expect(bookings).toHaveLength(1);
     expect(await provider.findOverlaps(clock.now())).toEqual([]);
+  });
+});
+
+describe('webhooks', () => {
+  it('posts signed events for a booking made by an agent over MCP', async () => {
+    const SECRET = 'whsec_integration_0123';
+    const received: Array<{ event: WebhookEvent; valid: boolean }> = [];
+    const { app, webhooks } = makeApp({
+      webhooks: {
+        endpoints: [{ url: 'https://crm.example/hooks', secret: SECRET }],
+        fetch: (async (_url: string, init: RequestInit) => {
+          const body = String(init.body);
+          const signature = (init.headers as Record<string, string>)['openbooking-signature'];
+          received.push({
+            event: JSON.parse(body),
+            valid: await verifyWebhook(body, signature, SECRET),
+          });
+          return new Response(null, { status: 204 });
+        }) as unknown as typeof fetch,
+      },
+    });
+    const call = await mcpClient(app, 'auto');
+    const { slots } = await call('search_availability', { date: '2026-10-02', party_size: 2 });
+    const hold = await call('hold_slot', {
+      slot_id: slots[0].slot_id,
+      idempotency_key: randomUUID(),
+      customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+    });
+    await call('confirm_booking', {
+      booking_id: hold.booking_id,
+      user_confirmed: true,
+      idempotency_key: randomUUID(),
+    });
+    await webhooks!.idle();
+
+    expect(received.map((r) => r.event.type)).toEqual(['booking.held', 'booking.confirmed']);
+    expect(received.every((r) => r.valid)).toBe(true);
+    expect(received[1]!.event.data.booking).toMatchObject({
+      booking_id: hold.booking_id,
+      status: 'confirmed',
+    });
+    expect(received[1]!.event.data.actor).toMatchObject({ protocol: 'mcp' });
   });
 });
 
