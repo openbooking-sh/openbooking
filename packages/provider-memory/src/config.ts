@@ -38,6 +38,23 @@ export interface OfferingConfig extends Offering {
   deposit: DepositRule | null;
 }
 
+/**
+ * A staff member's (or any resource's) own schedule, within the venue's opening hours. A resource
+ * without a schedule works whenever the venue is open.
+ */
+export interface ResourceSchedule {
+  /**
+   * Weekly working hours in venue-local time, keyed by weekday 0 (Sunday) … 6 (Saturday). When
+   * set, days that are missing or empty are days off. Only times inside opening hours count.
+   */
+  hours?: Partial<Record<number, OpeningPeriod[]>>;
+  /**
+   * Time off in venue-local time. `YYYY-MM-DD` is a whole day (an end date is included);
+   * `YYYY-MM-DDTHH:mm` is an exact time (the end is excluded).
+   */
+  time_off?: Array<{ start: string; end: string; reason?: string }>;
+}
+
 export interface VenueConfig {
   venue: Venue;
   currency: string;
@@ -47,6 +64,8 @@ export interface VenueConfig {
   opening_hours: Partial<Record<number, OpeningPeriod[]>>;
   /** Dates (`YYYY-MM-DD`) the venue is closed. */
   closed_dates?: string[];
+  /** Working hours and time off per resource id (e.g. each stylist). */
+  schedules?: Record<string, ResourceSchedule>;
   slot_interval_minutes: number;
   /** Cleaning/turnover time between bookings on the same resource. */
   buffer_minutes: number;

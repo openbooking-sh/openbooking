@@ -8,7 +8,9 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { ManualClock, verifyWebhook, type WebhookEvent } from '@openbooking-sh/core';
 import {
   createDemoRestaurantProvider,
-  createDemoSalonProvider,
+  demoSalonConfig,
+  MemoryBookingProvider,
+  type VenueConfig,
 } from '@openbooking-sh/provider-memory';
 import { createOpenBookingApp, type OpenBookingServerOptions } from '../src';
 
@@ -335,10 +337,17 @@ describe('booking page', () => {
 });
 
 describe('MCP for a salon (staff, business info, closed days, hold limits)', () => {
-  async function salon(options: { holdLimit?: { limit: number; windowMs: number } } = {}) {
+  async function salon(
+    options: {
+      holdLimit?: { limit: number; windowMs: number };
+      schedules?: VenueConfig['schedules'];
+    } = {},
+  ) {
     const clock = new ManualClock('2026-10-01T06:00:00Z'); // Thursday 08:00 in Oslo
+    const config = demoSalonConfig();
+    if (options.schedules) config.venues[0]!.schedules = options.schedules;
     const ob = createOpenBookingApp({
-      provider: createDemoSalonProvider(),
+      provider: new MemoryBookingProvider(config),
       baseUrl: BASE,
       serviceOptions: { clock, ...(options.holdLimit ? { holdLimit: options.holdLimit } : {}) },
     });
@@ -362,6 +371,92 @@ describe('MCP for a salon (staff, business info, closed days, hold limits)', () 
       return { ok: !res.isError, data: res.structuredContent as Record<string, any> };
     };
   }
+
+  it('reschedules a booking over MCP, asking for consent first and keeping the code', async () => {
+    const call = await salon();
+    const date = '2026-10-06'; // Tuesday
+    const search = async (at: string) =>
+      (
+        await call('search_availability', {
+          date,
+          offering_id: 'haircut',
+          staff: 'Maria',
+          time_from: at,
+          time_to: at,
+        })
+      ).data.slots[0];
+    const hold = await call('hold_slot', {
+      slot_id: (await search('10:00')).slot_id,
+      idempotency_key: randomUUID(),
+      customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+    });
+    const booked = await call('confirm_booking', {
+      booking_id: hold.data.booking_id,
+      user_confirmed: true,
+      idempotency_key: randomUUID(),
+    });
+    const target = await search('15:00');
+
+    const asked = await call('reschedule_booking', {
+      booking_id: booked.data.booking_id,
+      slot_id: target.slot_id,
+      idempotency_key: randomUUID(),
+    });
+    expect(asked.ok).toBe(false);
+    expect(asked.data.error.code).toBe('user_confirmation_required');
+
+    const moved = await call('reschedule_booking', {
+      booking_id: booked.data.booking_id,
+      slot_id: target.slot_id,
+      idempotency_key: randomUUID(),
+      user_confirmed: true,
+    });
+    expect(moved.ok).toBe(true);
+    expect(moved.data).toMatchObject({
+      booking_id: booked.data.booking_id,
+      status: 'confirmed',
+      confirmation_code: booked.data.confirmation_code,
+    });
+    expect(moved.data.start).toContain('T15:00');
+  });
+
+  it("tells agents each stylist's working hours and never offers them outside those", async () => {
+    const call = await salon({
+      schedules: {
+        maria: { hours: { 5: [{ open: '12:00', close: '18:00' }] }, time_off: [] },
+        jonas: { time_off: [{ start: '2026-10-02', end: '2026-10-02', reason: 'Dentist' }] },
+      },
+    });
+    const info = await call('get_business_info', {});
+    expect(info.data.staff_hours).toEqual({
+      Maria: {
+        mon: 'off',
+        tue: 'off',
+        wed: 'off',
+        thu: 'off',
+        fri: '12:00-18:00',
+        sat: 'off',
+        sun: 'off',
+      },
+    });
+    // Time off is private: no reason or dates leak to agents.
+    expect(JSON.stringify(info.data)).not.toContain('Dentist');
+
+    const morning = await call('search_availability', {
+      date: '2026-10-02',
+      offering_id: 'haircut',
+      staff: 'Maria',
+      time_from: '10:00',
+      time_to: '11:00',
+    });
+    expect(morning.data.slots).toEqual([]);
+    const jonas = await call('search_availability', {
+      date: '2026-10-02',
+      offering_id: 'haircut',
+      staff: 'Jonas',
+    });
+    expect(jonas.data.slots).toEqual([]);
+  });
 
   it('describes the business, tells closed from full, and books staff by name', async () => {
     const call = await salon();

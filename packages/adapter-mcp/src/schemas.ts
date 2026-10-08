@@ -98,6 +98,19 @@ export const CancelBookingInput = z.object({
   reason: z.string().max(500).optional(),
 });
 
+export const RescheduleBookingInput = z.object({
+  booking_id: z.string().min(1),
+  slot_id: z
+    .string()
+    .min(1)
+    .describe('A new slot from search_availability, for the same service and party size'),
+  idempotency_key: IdempotencyKeySchema,
+  user_confirmed: z
+    .boolean()
+    .optional()
+    .describe('Required (true): the user approved the new time, price and cancellation terms.'),
+});
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
@@ -182,6 +195,11 @@ export const BusinessInfoOutput = z.object({
     }),
   ),
   staff: z.array(z.string()).describe('Staff members customers can ask for by name'),
+  staff_hours: z
+    .record(z.string(), z.record(z.string(), z.string()))
+    .describe(
+      'Working hours of staff who have their own, by name and weekday, e.g. { Maria: { fri: "12:00-18:00", sat: "off" } }. Staff not listed work whenever the business is open.',
+    ),
   opening_hours: z
     .record(z.string(), z.string())
     .nullable()

@@ -1,4 +1,4 @@
-import type { Booking } from '@openbooking-sh/core';
+import { BookingError, type Booking } from '@openbooking-sh/core';
 import {
   applyExpiry,
   isBlocking,
@@ -103,6 +103,48 @@ export class PostgresBookingStore implements BookingRecordStore {
         [bookingId, next.status, next.expires_at, json(next)],
       );
       return next;
+    });
+  }
+
+  async move(record: BookingRecord, now: Date, check: (current: Booking) => void) {
+    const b = record.booking;
+    return this.#db.transaction(async (tx) => {
+      const { rows: keys } = await tx.query<{ venue_id: string; resource_id: string }>(
+        'select venue_id, resource_id from ob_bookings where booking_id = $1',
+        [b.booking_id],
+      );
+      const key = keys[0];
+      if (!key) throw new BookingError('not_found', `No booking with id "${b.booking_id}".`);
+      // Lock the old and the new resource in a fixed order, so two moves in opposite directions
+      // can't deadlock; inserts on either resource wait for us.
+      const locks = [
+        ...new Set([
+          lockKey(key.venue_id, key.resource_id),
+          lockKey(b.venue_id, record.resource_id),
+        ]),
+      ].sort();
+      for (const lock of locks) await tx.query(LOCK_SQL, [lock]);
+      const { rows } = await tx.query<Row>(
+        `select ${COLUMNS} from ob_bookings where booking_id = $1 for update`,
+        [b.booking_id],
+      );
+      check(toRecord(rows[0]!, now).booking);
+      if (await overlapExists(tx, record, now)) return false;
+      await tx.query(
+        `update ob_bookings set resource_id = $2, start_at = $3::timestamptz, end_at = $4::timestamptz,
+            status = $5, expires_at = $6::timestamptz, data = $7::jsonb
+          where booking_id = $1`,
+        [
+          b.booking_id,
+          record.resource_id,
+          iso(record.start_ms),
+          iso(record.end_ms),
+          b.status,
+          b.expires_at,
+          json(b),
+        ],
+      );
+      return true;
     });
   }
 
