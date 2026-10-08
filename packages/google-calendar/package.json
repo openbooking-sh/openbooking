@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/google-calendar",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "description": "Google Calendar sync for OpenBooking: busy times block availability, bookings appear as events.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",

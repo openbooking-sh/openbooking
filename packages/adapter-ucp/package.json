@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/adapter-ucp",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "description": "Universal Commerce Protocol (UCP) discovery profile and booking-session REST endpoints for OpenBooking.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",

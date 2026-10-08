@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/provider-memory",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "description": "In-memory reference BookingProvider for OpenBooking, with a demo restaurant seed.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",

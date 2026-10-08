@@ -1,5 +1,24 @@
 # @openbooking-sh/postgres
 
+## 0.7.0
+
+### Minor Changes
+
+- 7c9ad2d: Rescheduling. `service.reschedule()` and the `reschedule_booking` MCP tool move a confirmed booking to another time for the same service and party size, keeping its id and confirmation code. Allowed while cancellation is still free (`reschedule_not_allowed` after that), with explicit consent. Providers implement the optional `rescheduleBooking`; `BookingRecordStore.move` does it atomically in the memory and Postgres stores (both resources locked in a fixed order).
+
+### Patch Changes
+
+- Updated dependencies [7c9ad2d]
+- Updated dependencies [e4b56d6]
+- Updated dependencies [783a56e]
+  - @openbooking-sh/core@0.7.0
+  - @openbooking-sh/provider-memory@0.7.0
+  - @openbooking-sh/hosted@0.7.0
+  - @openbooking-sh/google-calendar@0.7.0
+  - @openbooking-sh/notifications@0.7.0
+  - @openbooking-sh/provider-calcom@0.7.0
+  - @openbooking-sh/studio@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

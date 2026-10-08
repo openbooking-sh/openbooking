@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/adapter-mcp",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "description": "Expose an OpenBooking BookingService as a small set of agent-friendly MCP tools.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",

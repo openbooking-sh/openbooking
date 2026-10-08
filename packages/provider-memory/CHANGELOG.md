@@ -1,5 +1,19 @@
 # @openbooking-sh/provider-memory
 
+## 0.7.0
+
+### Minor Changes
+
+- 7c9ad2d: Rescheduling. `service.reschedule()` and the `reschedule_booking` MCP tool move a confirmed booking to another time for the same service and party size, keeping its id and confirmation code. Allowed while cancellation is still free (`reschedule_not_allowed` after that), with explicit consent. Providers implement the optional `rescheduleBooking`; `BookingRecordStore.move` does it atomically in the memory and Postgres stores (both resources locked in a fixed order).
+- e4b56d6: Staff working hours and time off. `VenueConfig.schedules` gives any resource weekly hours (within opening hours) and time off (whole days or exact times, venue-local, DST-safe); availability and holds respect both. `VenueInfo.staff_hours` and the MCP `get_business_info` tool tell agents who works when; time off stays private.
+
+### Patch Changes
+
+- Updated dependencies [7c9ad2d]
+- Updated dependencies [e4b56d6]
+- Updated dependencies [783a56e]
+  - @openbooking-sh/core@0.7.0
+
 ## 0.2.0
 
 ### Minor Changes
