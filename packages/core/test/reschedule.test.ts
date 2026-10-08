@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { BookingError, BookingService, ManualClock, type BookingEvent } from '../src';
+import {
+  BookingError,
+  BookingService,
+  ManualClock,
+  createWebhooks,
+  type BookingEvent,
+  type WebhookEvent,
+} from '../src';
 import { CUSTOMER, TinyProvider, slot } from './fixtures';
 
 const SLOT_2 = slot({
@@ -214,5 +221,35 @@ describe('reschedule', () => {
     expect(seen).toContain(`confirm:${booking.booking_id}:confirmed`);
     expect(seen).toContain(`cancel:${old.booking_id}:cancelled`);
     expect(seen).toContain(`reschedule:${booking.booking_id}:confirmed`);
+  });
+  it('sends one booking.rescheduled webhook, not a confirmed and a cancelled', async () => {
+    const sent: WebhookEvent[] = [];
+    const webhooks = createWebhooks({
+      endpoints: [{ url: 'https://crm.example/hooks', secret: 'whsec_test_0123456789' }],
+      fetch: (async (_url: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)));
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    const { service } = setup();
+    service.on(webhooks.listener);
+    const old = await booked(service);
+    const { booking } = await service.reschedule({
+      booking_id: old.booking_id,
+      new_slot_id: 'slot-2',
+      idempotency_key: 'resched-wh1',
+      user_confirmed: true,
+    });
+    await webhooks.idle();
+
+    expect(sent.map((e) => e.type)).toEqual([
+      'booking.held',
+      'booking.confirmed',
+      'booking.rescheduled',
+    ]);
+    const moved = sent[2]!;
+    expect(moved.data.booking.booking_id).toBe(booking.booking_id);
+    expect(moved.data.previous_booking?.booking_id).toBe(old.booking_id);
+    expect(moved.data.previous_booking?.status).toBe('cancelled');
   });
 });

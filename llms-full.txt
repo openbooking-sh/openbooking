@@ -209,6 +209,42 @@ The contract:
 
 `@openbooking-sh/provider-memory` and `@openbooking-sh/provider-calcom` are complete examples.
 
+## 6. Get webhooks when bookings change
+
+Send `booking.held`, `booking.confirmed`, `booking.updated`, `booking.cancelled` and `booking.rescheduled` to your CRM,
+SMS sender or own database. A reschedule sends one `booking.rescheduled` (the new booking in `data.booking`, the
+moved one in `data.previous_booking`), not a confirmed plus a cancelled:
+
+```ts
+const { app, webhooks } = createOpenBookingApp({
+  provider,
+  baseUrl: process.env.BASE_URL!,
+  webhooks: {
+    endpoints: [{ url: 'https://crm.example.com/hooks', secret: process.env.WEBHOOK_SECRET! }],
+  },
+});
+// On Vercel and other serverless hosts, let retries finish after the response:
+// waitUntil(webhooks!.idle());
+```
+
+Each delivery is a JSON POST with an `openbooking-signature` header (`t=…,v1=…`, HMAC-SHA256)
+and an `openbooking-event-id` header. Verify it on the receiving side with the raw body:
+
+```ts
+import { verifyWebhook } from '@openbooking-sh/core';
+
+const body = await request.text();
+if (!(await verifyWebhook(body, request.headers.get('openbooking-signature'), secret))) {
+  return new Response('bad signature', { status: 401 });
+}
+const event = JSON.parse(body); // { id, type, created_at, data: { booking, actor } }
+```
+
+Failed deliveries are retried after 2 s, 15 s and 60 s. Delivery is at least once, so dedupe on
+`event.id`. Retries (same idempotency key) and no-op cancels don't send events. Payloads include
+customer details, so never point a webhook at an analytics or logging service. Without the server,
+`createWebhooks()` returns a listener for `service.on()`.
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:

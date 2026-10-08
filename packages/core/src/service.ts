@@ -62,6 +62,14 @@ export interface BookingEvent {
   actor?: Actor;
   /** The booking as the operation left it (successful single-booking operations only). */
   booking?: Booking;
+  /** For `reschedule`: the booking that was moved, now cancelled. */
+  previous?: Booking;
+  /**
+   * Set on the `confirm` and `cancel` events a reschedule emits so calendar sync and emails
+   * keep working. Consumers that report business changes (webhooks) should use the single
+   * `reschedule` event instead.
+   */
+  part_of?: 'reschedule';
 }
 
 export interface ListBookingsQuery {
@@ -572,6 +580,7 @@ export class BookingService {
               booking_id: booking.booking_id,
               status: booking.status,
               booking,
+              part_of: 'reschedule',
             });
           }
           return { booking: moved, previous };
@@ -644,6 +653,9 @@ export class BookingService {
         at: this.clock.now().toISOString(),
         ...(booking ? { booking_id: booking.booking_id, status: booking.status, booking } : hint),
         ...(meta.replayed ? { replayed: true } : {}),
+        ...((result as Partial<RescheduleResult> | undefined)?.previous
+          ? { previous: (result as RescheduleResult).previous }
+          : {}),
         ...((result as Partial<CancelResult> | undefined)?.already_inactive
           ? { unchanged: true }
           : {}),

@@ -204,8 +204,9 @@ The contract:
 
 ## 6. Get webhooks when bookings change
 
-Send `booking.held`, `booking.confirmed`, `booking.updated` and `booking.cancelled` to your CRM,
-SMS sender or own database:
+Send `booking.held`, `booking.confirmed`, `booking.updated`, `booking.cancelled` and `booking.rescheduled` to your CRM,
+SMS sender or own database. A reschedule sends one `booking.rescheduled` (the new booking in `data.booking`, the
+moved one in `data.previous_booking`), not a confirmed plus a cancelled:
 
 ```ts
 const { app, webhooks } = createOpenBookingApp({

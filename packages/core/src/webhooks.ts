@@ -23,6 +23,7 @@ export const WEBHOOK_EVENT_TYPES = [
   'booking.confirmed',
   'booking.updated',
   'booking.cancelled',
+  'booking.rescheduled',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -33,7 +34,10 @@ export interface WebhookEvent {
   /** ISO 8601. */
   created_at: string;
   data: {
+    /** The booking as it is now. For `booking.rescheduled`: the new booking. */
     booking: Booking;
+    /** Only `booking.rescheduled`: the booking that was moved, now cancelled. */
+    previous_booking?: Booking;
     /** Who made the change, e.g. `{ agent: 'Claude' }` or Studio. */
     actor?: Actor;
   };
@@ -63,7 +67,7 @@ export const WEBHOOK_ID_HEADER = 'openbooking-event-id';
 
 /** Which successful, non-replayed engine operations become webhook events. */
 function eventType(e: BookingEvent): WebhookEventType | undefined {
-  if (!e.ok || e.replayed || e.unchanged || !e.booking) return undefined;
+  if (!e.ok || e.replayed || e.unchanged || e.part_of || !e.booking) return undefined;
   switch (e.operation) {
     case 'hold':
       return 'booking.held';
@@ -73,6 +77,8 @@ function eventType(e: BookingEvent): WebhookEventType | undefined {
       return 'booking.updated';
     case 'cancel':
       return 'booking.cancelled';
+    case 'reschedule':
+      return 'booking.rescheduled';
     default:
       return undefined;
   }
@@ -197,7 +203,11 @@ export function createWebhooks(options: WebhookOptions): Webhooks {
         id: `evt_${crypto.randomUUID()}`,
         type,
         created_at: e.at,
-        data: { booking: e.booking, ...(e.actor ? { actor: e.actor } : {}) },
+        data: {
+          booking: e.booking,
+          ...(e.previous ? { previous_booking: e.previous } : {}),
+          ...(e.actor ? { actor: e.actor } : {}),
+        },
       };
       for (const endpoint of options.endpoints) {
         if (endpoint.events && !endpoint.events.includes(type)) continue;
