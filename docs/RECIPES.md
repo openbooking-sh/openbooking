@@ -202,6 +202,22 @@ The contract:
 
 `@openbooking-sh/provider-memory` and `@openbooking-sh/provider-calcom` are complete examples.
 
+Test it with `@openbooking-sh/conformance` (`npm install -D @openbooking-sh/conformance vitest`):
+
+```ts
+import { describeProviderConformance } from '@openbooking-sh/conformance/vitest';
+
+describeProviderConformance('MySystemProvider', {
+  create: () => new MySystemProvider(testConfig), // a fresh, empty provider per test
+  now: new Date('2030-06-03T08:00:00Z'), // before the date you search
+  query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
+});
+```
+
+The suite never assumes one place per slot: it books a slot until the provider answers
+`slot_unavailable`, then checks that parallel holds cannot go past that point. `query` must return
+an open slot, and another slot at a different time once the first is full.
+
 ## 6. Get webhooks when bookings change
 
 Send `booking.held`, `booking.confirmed`, `booking.updated` and `booking.cancelled` to your CRM,
