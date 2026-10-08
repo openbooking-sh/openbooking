@@ -353,3 +353,12 @@ export const CancelInputSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type CancelInput = z.input<typeof CancelInputSchema>;
+
+export const RescheduleInputSchema = z.object({
+  booking_id: z.string().min(1).describe('The confirmed booking to move'),
+  new_slot_id: z.string().min(1),
+  idempotency_key: IdempotencyKeySchema,
+  // EXTENSION: explicit user consent flag. Moving a booking can cost a late-cancellation fee.
+  user_confirmed: z.boolean(),
+});
+export type RescheduleInput = z.input<typeof RescheduleInputSchema>;

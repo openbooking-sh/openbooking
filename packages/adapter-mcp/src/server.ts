@@ -26,6 +26,8 @@ import {
   ConfirmBookingInput,
   GetBookingInput,
   HoldSlotInput,
+  RescheduleBookingInput,
+  RescheduleOutput,
   SearchAvailabilityInput,
   SearchAvailabilityOutput,
 } from './schemas';
@@ -46,6 +48,7 @@ export const TOOL_NAMES = [
   'confirm_booking',
   'get_booking',
   'cancel_booking',
+  'reschedule_booking',
 ] as const;
 
 export const BASE_INSTRUCTIONS = `Book appointments (or tables) with this business.
@@ -55,6 +58,7 @@ Rules:
 - A hold reserves the slot only until expires_at. Confirm before then, or search again.
 - Always show the user the price, deposit and cancellation_policy before confirming.
 - Set user_confirmed=true only after the user explicitly approves. Never confirm on your own.
+- To move a confirmed booking use reschedule_booking (search_availability for the new time first); never cancel and rebook, which can lose the slot or cost a fee.
 - Every mutating call needs an idempotency_key (UUID). Reuse the same key when retrying the same call; use a new key for a new action.
 - Errors include suggested_next_action. Follow it.`;
 
@@ -352,6 +356,38 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
     tool(cancel, async ({ business_id, ...a }) => {
       const service = await resolve(business_id);
       return view(service, (await service.cancel(a)).booking);
+    }),
+  );
+  const reschedule = scope(RescheduleBookingInput);
+  server.registerTool(
+    'reschedule_booking',
+    {
+      title: 'Reschedule booking',
+      description:
+        'Move a CONFIRMED booking to another slot of the same business (search_availability first, then pass the new slot_id). The new slot is secured before the old booking is released, so the customer is never left without one. The original cancellation terms apply: if a late fee would be charged, the first call without user_confirmed returns it so you can ask the user, then call again with user_confirmed=true. Returns the NEW booking (new booking_id). Bookings with a paid deposit cannot be moved online.' +
+        forBusiness,
+      inputSchema: advertised(reschedule),
+      outputSchema: RescheduleOutput,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    tool(reschedule, async ({ business_id, ...a }) => {
+      const service = await resolve(business_id);
+      const { booking, previous } = await service.reschedule(a);
+      const fee = previous.cancellation?.fee;
+      return {
+        ...(await view(service, booking)),
+        previous: {
+          booking_id: previous.booking_id,
+          status: previous.status,
+          cancellation: previous.cancellation,
+        },
+        next_step: `Booking moved. Give the user the new confirmation code ${booking.confirmation_code} (new booking_id ${booking.booking_id}; the old one is cancelled).${fee ? ` A fee of ${formatMoney(fee)} applies under the original terms.` : ''}`,
+      };
     }),
   );
 }

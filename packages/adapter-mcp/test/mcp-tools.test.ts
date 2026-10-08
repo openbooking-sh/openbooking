@@ -35,7 +35,7 @@ async function connect(holdTtlSeconds = 300) {
 }
 
 describe('MCP adapter', () => {
-  it('exposes exactly the five agent tools with schemas and annotations', async () => {
+  it('exposes exactly the agent tools with schemas and annotations', async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
@@ -79,6 +79,51 @@ describe('MCP adapter', () => {
     });
     expect(res.isError).toBe(true);
     expect(res.data.error.code).toBe('user_confirmation_required');
+  });
+
+  it('reschedules a confirmed booking through MCP, with consent and a new booking_id', async () => {
+    const { call } = await connect();
+    const customer = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
+    const slots = async (time_from: string) =>
+      (await call('search_availability', { date: '2026-10-02', party_size: 2, time_from })).data
+        .slots;
+    const hold = await call('hold_slot', {
+      slot_id: (await slots('19:00'))[0].slot_id,
+      idempotency_key: randomUUID(),
+      customer,
+    });
+    const booked = await call('confirm_booking', {
+      booking_id: hold.data.booking_id,
+      user_confirmed: true,
+      idempotency_key: randomUUID(),
+    });
+    expect(booked.data.status).toBe('confirmed');
+
+    const target = (await slots('20:30')).find((s: any) => s.local_time >= '20:30');
+    const args = { booking_id: booked.data.booking_id, new_slot_id: target.slot_id };
+    const refused = await call('reschedule_booking', {
+      ...args,
+      user_confirmed: false,
+      idempotency_key: randomUUID(),
+    });
+    expect(refused.data.error.code).toBe('user_confirmation_required');
+
+    const moved = await call('reschedule_booking', {
+      ...args,
+      user_confirmed: true,
+      idempotency_key: randomUUID(),
+    });
+    expect(moved.isError).toBe(false);
+    expect(moved.data.status).toBe('confirmed');
+    expect(moved.data.booking_id).not.toBe(booked.data.booking_id);
+    expect(moved.data.local_time).toBe(target.local_time);
+    expect(moved.data.previous).toMatchObject({
+      booking_id: booked.data.booking_id,
+      status: 'cancelled',
+    });
+    expect((await call('get_booking', { booking_id: booked.data.booking_id })).data.status).toBe(
+      'cancelled',
+    );
   });
 
   it('reports hold_expired with a recovery path', async () => {

@@ -98,6 +98,17 @@ export const CancelBookingInput = z.object({
   reason: z.string().max(500).optional(),
 });
 
+export const RescheduleBookingInput = z.object({
+  booking_id: z.string().min(1).describe('booking_id of the CONFIRMED booking to move'),
+  new_slot_id: z.string().min(1).describe('slot_id exactly as returned by search_availability'),
+  idempotency_key: IdempotencyKeySchema,
+  user_confirmed: z
+    .boolean()
+    .describe(
+      'Set true ONLY after the user explicitly approved moving to the new time, including any fee. Without it the call returns the fee so you can ask.',
+    ),
+});
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
@@ -194,3 +205,11 @@ export const BusinessInfoOutput = z.object({
 });
 
 export const ToolErrorOutput = z.object({ error: ErrorPayloadSchema });
+
+export const RescheduleOutput = BookingView.extend({
+  previous: z.object({
+    booking_id: z.string(),
+    status: BookingStatusSchema,
+    cancellation: BookingView.shape.cancellation,
+  }),
+});

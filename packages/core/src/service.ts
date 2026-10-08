@@ -27,6 +27,7 @@ import {
   CancelInputSchema,
   ConfirmInputSchema,
   HoldInputSchema,
+  RescheduleInputSchema,
   UpdateInputSchema,
   type AvailabilityQueryInput,
   type Booking,
@@ -36,12 +37,14 @@ import {
   type Offering,
   type Resource,
   type Slot,
+  type RescheduleInput,
   type UpdateInput,
   type Venue,
   type VenueInfo,
 } from './schemas';
 
-export type Operation = 'search' | 'hold' | 'confirm' | 'get' | 'update' | 'cancel' | 'list';
+export type Operation =
+  'search' | 'hold' | 'confirm' | 'get' | 'update' | 'cancel' | 'reschedule' | 'list';
 
 /** Emitted after every operation; used for logging, metrics and the agent benchmark. */
 export interface BookingEvent {
@@ -94,6 +97,13 @@ export interface CancelResult {
   booking: Booking;
   /** True when the booking was already cancelled/expired and nothing changed. */
   already_inactive: boolean;
+}
+
+export interface RescheduleResult {
+  /** The new, confirmed booking. */
+  booking: Booking;
+  /** The booking that was moved; now cancelled. */
+  previous: Booking;
 }
 
 export const DEFAULT_HOLD_TTL_SECONDS = 600;
@@ -422,6 +432,153 @@ export class BookingService {
     );
   }
 
+  /**
+   * Move a confirmed booking to another slot of the same venue, under the original cancellation
+   * terms. Requires `user_confirmed: true`; without it the error shows the fee, if any.
+   *
+   * The new slot is held first, so if it is gone nothing changes. The new booking gets a new id
+   * and the old one is cancelled with reason "rescheduled". If a later step fails the new booking
+   * is released again, so the customer is never left with two bookings. Not supported yet:
+   * bookings with a paid deposit, or a new slot with a deposit due at confirmation (there is no
+   * payment provider to move money); the error says to cancel and rebook. A new slot that overlaps
+   * the old one for the same staff member or table counts as taken.
+   */
+  async reschedule(input: RescheduleInput): Promise<RescheduleResult> {
+    return this.#track(
+      'reschedule',
+      async (meta) => {
+        const { idempotency_key, ...req } = parse(
+          RescheduleInputSchema,
+          input,
+          'reschedule_booking',
+        );
+        return this.#idempotent(meta, idempotency_key, 'reschedule', req, async (ctx) => {
+          const old = await this.#load(req.booking_id);
+          if (old.status !== 'confirmed') {
+            throw new BookingError(
+              'invalid_state',
+              `Booking ${old.booking_id} is ${old.status}; only a confirmed booking can be rescheduled.`,
+            );
+          }
+          const outcome = evaluateBookingCancellation(old, ctx.now);
+          if (!outcome.allowed) {
+            throw new BookingError(
+              'cancellation_not_allowed',
+              'The booking has already started and can no longer be changed online.',
+              { details: { cancellation_policy: old.slot.cancellation_policy } },
+            );
+          }
+          if (old.payment.status === 'paid' || !old.customer) {
+            throw new BookingError(
+              'operation_not_supported',
+              'This booking has a paid deposit and cannot be rescheduled online yet.',
+              {
+                suggested_next_action:
+                  'Tell the user to contact the venue to move it, or cancel and book again if they accept the cancellation terms.',
+              },
+            );
+          }
+          if (req.user_confirmed !== true) {
+            throw new BookingError(
+              'user_confirmation_required',
+              outcome.free
+                ? 'Rescheduling requires explicit user approval (user_confirmed=true). It is currently free.'
+                : `Rescheduling now costs ${outcome.fee ? formatMoney(outcome.fee) : 'a fee'} under the original cancellation terms. Explicit user approval (user_confirmed=true) is required.`,
+              {
+                suggested_next_action:
+                  'Tell the user the new time and the fee (if any), ask for explicit approval, then call again with user_confirmed=true.',
+                details: { fee: outcome.fee, free: outcome.free },
+              },
+            );
+          }
+
+          await this.#checkHoldLimit();
+          const hold = await this.provider.createHold(
+            {
+              slot_id: req.new_slot_id,
+              expires_at: new Date(ctx.now.getTime() + this.holdTtlSeconds * 1000),
+              customer: old.customer,
+              notes: old.notes,
+            },
+            ctx,
+          );
+          const giveBack = (bookingId: string) =>
+            this.provider
+              .cancelBooking(
+                { booking_id: bookingId, reason: 'reschedule failed', fee: null, refund: null },
+                ctx,
+              )
+              .catch(() => undefined);
+
+          const otherVenue = hold.venue_id !== old.venue_id;
+          if (otherVenue || hold.slot.deposit?.due === 'at_confirmation') {
+            await giveBack(hold.booking_id);
+            throw new BookingError(
+              otherVenue ? 'validation_error' : 'operation_not_supported',
+              otherVenue
+                ? 'The new slot belongs to a different venue.'
+                : 'The new slot needs a deposit at confirmation, which rescheduling cannot take.',
+              {
+                suggested_next_action: otherVenue
+                  ? 'Search the same venue and pick one of its slots.'
+                  : 'Pick a slot without a deposit, or cancel and book again.',
+              },
+            );
+          }
+
+          let moved: Booking;
+          try {
+            moved = this.#normalize(
+              await this.provider.confirmHold(
+                { booking_id: hold.booking_id, customer: old.customer, payment_token: null },
+                ctx,
+              ),
+            );
+          } catch (e) {
+            await giveBack(hold.booking_id);
+            throw e;
+          }
+
+          let previous: Booking;
+          try {
+            previous = this.#normalize(
+              await this.provider.cancelBooking(
+                {
+                  booking_id: old.booking_id,
+                  reason: 'rescheduled',
+                  fee: outcome.fee,
+                  refund: outcome.refund,
+                },
+                ctx,
+              ),
+            );
+          } catch (e) {
+            // Keep the original booking and give the new slot back.
+            await giveBack(moved.booking_id);
+            throw e;
+          }
+          // Calendar sync, emails and Studio listen for confirm and cancel; keep them working.
+          const at = ctx.now.toISOString();
+          for (const [operation, booking] of [
+            ['confirm', moved],
+            ['cancel', previous],
+          ] as const) {
+            this.#emit({
+              operation,
+              ok: true,
+              at,
+              booking_id: booking.booking_id,
+              status: booking.status,
+              booking,
+            });
+          }
+          return { booking: moved, previous };
+        });
+      },
+      bookingIdOf(input),
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
@@ -448,7 +605,7 @@ export class BookingService {
     return booking;
   }
 
-  async #idempotent<T extends Booking | CancelResult>(
+  async #idempotent<T extends Booking | CancelResult | RescheduleResult>(
     meta: CallMeta,
     key: string,
     operation: Operation,

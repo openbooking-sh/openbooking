@@ -13,7 +13,7 @@ safe:
 
 | Protocol                              | Status       | What you get                                                                                                                        |
 | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **MCP** (Model Context Protocol)      | ✅ Supported | 5 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
+| **MCP** (Model Context Protocol)      | ✅ Supported | 7 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
 | **A2A** (Agent2Agent)                 | ⚪ Stub      | v1.0 Agent Card at `/.well-known/agent-card.json`; task endpoint not implemented yet                                                |
 
@@ -157,14 +157,15 @@ emails. See [docs/HOSTED.md](docs/HOSTED.md).
 
 ## The MCP tools
 
-| Tool                  | Does                                                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.  |
-| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved. |
-| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                 |
-| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.           |
-| `get_booking`         | Current status and details.                                                                                              |
-| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy. |
+| Tool                  | Does                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.                                 |
+| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved.                                |
+| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                                                |
+| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.                                          |
+| `get_booking`         | Current status and details.                                                                                                                             |
+| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy.                                |
+| `reschedule_booking`  | Moves a confirmed booking to a new slot: the new slot is held first, then the old booking is released under its original terms. Needs `user_confirmed`. |
 
 **Design rules:**
 
