@@ -209,6 +209,57 @@ The contract:
 
 `@openbooking-sh/provider-memory` and `@openbooking-sh/provider-calcom` are complete examples.
 
+Test it with `@openbooking-sh/conformance` (`npm install -D @openbooking-sh/conformance vitest`):
+
+```ts
+import { describeProviderConformance } from '@openbooking-sh/conformance/vitest';
+
+describeProviderConformance('MySystemProvider', {
+  create: () => new MySystemProvider(testConfig), // a fresh, empty provider per test
+  now: new Date('2030-06-03T08:00:00Z'), // before the date you search
+  query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
+});
+```
+
+The suite never assumes one place per slot: it books a slot until the provider answers
+`slot_unavailable`, then checks that parallel holds cannot go past that point. `query` must return
+an open slot, and another slot at a different time once the first is full.
+
+## 6. Get webhooks when bookings change
+
+Send `booking.held`, `booking.confirmed`, `booking.updated` and `booking.cancelled` to your CRM,
+SMS sender or own database:
+
+```ts
+const { app, webhooks } = createOpenBookingApp({
+  provider,
+  baseUrl: process.env.BASE_URL!,
+  webhooks: {
+    endpoints: [{ url: 'https://crm.example.com/hooks', secret: process.env.WEBHOOK_SECRET! }],
+  },
+});
+// On Vercel and other serverless hosts, let retries finish after the response:
+// waitUntil(webhooks!.idle());
+```
+
+Each delivery is a JSON POST with an `openbooking-signature` header (`t=…,v1=…`, HMAC-SHA256)
+and an `openbooking-event-id` header. Verify it on the receiving side with the raw body:
+
+```ts
+import { verifyWebhook } from '@openbooking-sh/core';
+
+const body = await request.text();
+if (!(await verifyWebhook(body, request.headers.get('openbooking-signature'), secret))) {
+  return new Response('bad signature', { status: 401 });
+}
+const event = JSON.parse(body); // { id, type, created_at, data: { booking, actor } }
+```
+
+Failed deliveries are retried after 2 s, 15 s and 60 s. Delivery is at least once, so dedupe on
+`event.id`. Retries (same idempotency key) and no-op cancels don't send events. Payloads include
+customer details, so never point a webhook at an analytics or logging service. Without the server,
+`createWebhooks()` returns a listener for `service.on()`.
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:
@@ -243,7 +294,7 @@ safe:
 | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **MCP** (Model Context Protocol)      | ✅ Supported | 5 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
-| **A2A** (Agent2Agent)                 | 🟡 Beta      | v1.0 Agent Card plus a JSON-RPC `SendMessage` endpoint (`/a2a`) for search, hold, confirm and cancel; no streaming or tasks      |
+| **A2A** (Agent2Agent)                 | 🟡 Beta      | v1.0 Agent Card plus a JSON-RPC `SendMessage` endpoint (`/a2a`) for search, hold, confirm and cancel; no streaming or tasks         |
 
 ## Start in one command
 
@@ -283,6 +334,7 @@ await listen(app, { port: 3000 });
 | [`@openbooking-sh/studio`](packages/studio)                                                                                         | Dashboard for the business                                               |
 | [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
 | [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                       | Cal.com connector (beta)                                                 |
+| [`@openbooking-sh/conformance`](packages/conformance)                                                                               | Test suite that proves your `BookingProvider` never double-books         |
 | [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
 | [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
 
@@ -522,6 +574,19 @@ implementation. The four rules:
 3. Expired holds stop blocking inventory.
 4. Business failures throw `BookingError` with a specific code.
 
+Prove it with the conformance suite (vitest). It books slots until the provider says no, fires
+parallel holds, lets holds expire and cancels, and fails if any rule is broken:
+
+```ts
+import { describeProviderConformance } from '@openbooking-sh/conformance/vitest';
+
+describeProviderConformance('MySystemProvider', {
+  create: () => new MySystemProvider(testConfig), // a fresh, empty provider per test
+  now: new Date('2030-06-03T08:00:00Z'), // before the date you search
+  query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
+});
+```
+
 ## Repository layout
 
 ```
@@ -686,6 +751,41 @@ app.route('/book', page.app);
 // On any website:
 // <script src="https://book.example.com/book/embed.js" async></script>
 ```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/conformance (packages/conformance/README.md) -->
+
+# @openbooking-sh/conformance
+
+**Conformance suite for booking providers.** Vitest checks that a `BookingProvider` keeps the promises the engine relies on: slots are never overbooked (even with parallel holds), expired holds stop blocking, cancellations free the place, and every failure is a `BookingError` with the right code. Optional methods (`updateBooking`, `rescheduleBooking`, `listBookings`) are tested only when implemented.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/conformance
+```
+
+## Usage
+
+```ts
+import { describeProviderConformance } from '@openbooking-sh/conformance/vitest';
+
+describeProviderConformance('MySystemProvider', {
+  create: () => new MySystemProvider(testConfig), // a fresh, empty provider per test
+  now: new Date('2030-06-03T08:00:00Z'), // before the date you search
+  query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
+});
+```
+
+Also exports `runProviderConformance(options)`, which returns a pass/fail result per check without a test runner.
 
 ## Learn more
 
@@ -1060,7 +1160,7 @@ Apache-2.0
 | `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
 | `@openbooking-sh/adapter-mcp`     | Five MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
 | `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
-| `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                             | core                                                                    |
+| `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                    | core                                                                    |
 | `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
 | `examples/demo`                   | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
 | `@openbooking-sh/booking-page`    | Public booking page and its JSON API, manage links, JSON-LD, WebMCP                                                 | core, `hono`                                                            |

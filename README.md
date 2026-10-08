@@ -55,6 +55,7 @@ await listen(app, { port: 3000 });
 | [`@openbooking-sh/studio`](packages/studio)                                                                                         | Dashboard for the business                                               |
 | [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
 | [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                       | Cal.com connector (beta)                                                 |
+| [`@openbooking-sh/conformance`](packages/conformance)                                                                               | Test suite that proves your `BookingProvider` never double-books         |
 | [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
 | [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
 
@@ -293,6 +294,19 @@ implementation. The four rules:
 2. Overlapping holds never both succeed.
 3. Expired holds stop blocking inventory.
 4. Business failures throw `BookingError` with a specific code.
+
+Prove it with the conformance suite (vitest). It books slots until the provider says no, fires
+parallel holds, lets holds expire and cancels, and fails if any rule is broken:
+
+```ts
+import { describeProviderConformance } from '@openbooking-sh/conformance/vitest';
+
+describeProviderConformance('MySystemProvider', {
+  create: () => new MySystemProvider(testConfig), // a fresh, empty provider per test
+  now: new Date('2030-06-03T08:00:00Z'), // before the date you search
+  query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
+});
+```
 
 ## Repository layout
 

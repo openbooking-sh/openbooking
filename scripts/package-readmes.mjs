@@ -131,6 +131,19 @@ const provider = new CalcomBookingProvider({
   venue: { id: 'venue', name: 'Studio Nord', timezone: 'Europe/Oslo', currency: 'NOK' },
 });`,
   },
+  conformance: {
+    title: 'Conformance suite for booking providers',
+    intro:
+      'Vitest checks that a `BookingProvider` keeps the promises the engine relies on: slots are never overbooked (even with parallel holds), expired holds stop blocking, cancellations free the place, and every failure is a `BookingError` with the right code. Optional methods (`updateBooking`, `rescheduleBooking`, `listBookings`) are tested only when implemented.',
+    usage: `import { describeProviderConformance } from '@openbooking-sh/conformance/vitest';
+
+describeProviderConformance('MySystemProvider', {
+  create: () => new MySystemProvider(testConfig), // a fresh, empty provider per test
+  now: new Date('2030-06-03T08:00:00Z'), // before the date you search
+  query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
+});`,
+    more: 'Also exports `runProviderConformance(options)`, which returns a pass/fail result per check without a test runner.',
+  },
   notifications: {
     title: 'Booking emails with calendar invites',
     intro:

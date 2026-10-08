@@ -14,6 +14,7 @@
 - [@openbooking-sh/adapter-mcp](https://github.com/openbooking-sh/openbooking/blob/main/packages/adapter-mcp/README.md)
 - [@openbooking-sh/adapter-ucp](https://github.com/openbooking-sh/openbooking/blob/main/packages/adapter-ucp/README.md)
 - [@openbooking-sh/booking-page](https://github.com/openbooking-sh/openbooking/blob/main/packages/booking-page/README.md)
+- [@openbooking-sh/conformance](https://github.com/openbooking-sh/openbooking/blob/main/packages/conformance/README.md)
 - [@openbooking-sh/core](https://github.com/openbooking-sh/openbooking/blob/main/packages/core/README.md)
 - [@openbooking-sh/create-openbooking](https://github.com/openbooking-sh/openbooking/blob/main/packages/create-openbooking/README.md)
 - [@openbooking-sh/google-calendar](https://github.com/openbooking-sh/openbooking/blob/main/packages/google-calendar/README.md)

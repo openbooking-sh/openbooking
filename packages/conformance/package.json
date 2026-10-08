@@ -1,13 +1,13 @@
 {
-  "name": "@openbooking-sh/provider-calcom",
-  "version": "0.7.0",
-  "description": "BookingProvider for Cal.com (hosted) and Cal.diy (self-hosted) via Cal.com API v2.",
+  "name": "@openbooking-sh/conformance",
+  "version": "0.0.0",
+  "description": "Conformance test suite for OpenBooking BookingProviders: proves a booking system never double-books, expires holds and reports errors correctly.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/openbooking-sh/openbooking.git",
-    "directory": "packages/provider-calcom"
+    "directory": "packages/conformance"
   },
   "bugs": {
     "url": "https://github.com/openbooking-sh/openbooking/issues"
@@ -15,13 +15,11 @@
   "keywords": [
     "openbooking",
     "booking",
+    "conformance",
+    "testing",
+    "vitest",
     "ai-agents",
-    "mcp",
-    "model-context-protocol",
-    "appointments",
-    "scheduling",
-    "cal.com",
-    "calcom"
+    "mcp"
   ],
   "type": "module",
   "sideEffects": false,
@@ -30,6 +28,11 @@
       "@openbooking/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./vitest": {
+      "@openbooking/source": "./src/vitest.ts",
+      "types": "./dist/vitest.d.ts",
+      "import": "./dist/vitest.js"
     }
   },
   "main": "./dist/index.js",
@@ -50,7 +53,15 @@
   "publishConfig": {
     "access": "public"
   },
+  "peerDependencies": {
+    "vitest": ">=3"
+  },
   "devDependencies": {
-    "@openbooking-sh/conformance": "workspace:^"
+    "@openbooking-sh/provider-memory": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   }
 }
