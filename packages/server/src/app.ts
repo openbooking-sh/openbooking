@@ -13,9 +13,12 @@ import {
 import { buildUcpProfile, createUcpRouter } from '@openbooking-sh/adapter-ucp';
 import {
   BookingService,
+  createWebhooks,
   runAsActor,
   type BookingProvider,
   type BookingServiceOptions,
+  type WebhookOptions,
+  type Webhooks,
 } from '@openbooking-sh/core';
 import {
   actorFromRequest,
@@ -57,9 +60,9 @@ export interface OpenBookingServerOptions {
    */
   studio?: { token?: string; path?: string; activity?: ActivityLog } | false;
   /**
-   * Public booking page at `path` (default /book). Browsers asking for `/` (Accept: text/html)
-   * get the page too, so a single-business deployment's root is its booking page. Pass `false`
-   * to disable.
+   * Public booking page at `path` (default /book). Requests for `/` that don't ask for JSON get
+   * the page too, so a single-business deployment's root is its booking page. Pass `false` to
+   * disable.
    */
   bookingPage?:
     | {
@@ -69,6 +72,11 @@ export interface OpenBookingServerOptions {
         profile?: BookingPageOptions['profile'];
       }
     | false;
+  /**
+   * Signed webhooks for booking.held, .confirmed, .updated and .cancelled. On serverless hosts,
+   * keep the function alive for `webhooks.idle()` (e.g. `waitUntil`) so retries can finish.
+   */
+  webhooks?: WebhookOptions;
 }
 
 export interface OpenBookingApp {
@@ -76,6 +84,7 @@ export interface OpenBookingApp {
   service: BookingService;
   studio: Studio | undefined;
   bookingPage: BookingPage | undefined;
+  webhooks: Webhooks | undefined;
   close(): Promise<void>;
 }
 
@@ -98,6 +107,8 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
       ? new BookingService({ provider: options.provider, ...options.serviceOptions })
       : undefined);
   if (!service) throw new Error('createOpenBookingApp: pass either `provider` or `service`.');
+  const webhooks = options.webhooks ? createWebhooks(options.webhooks) : undefined;
+  const offWebhooks = webhooks ? service.on(webhooks.listener) : undefined;
 
   const baseUrl = options.baseUrl.replace(/\/+$/, '');
   const name = options.name ?? service.provider.info.name;
@@ -235,7 +246,10 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
     service,
     studio,
     bookingPage: page,
+    webhooks,
     close: async () => {
+      offWebhooks?.();
+      await webhooks?.idle();
       await studio?.idle();
       studio?.close();
       await mcpHandler?.close();
