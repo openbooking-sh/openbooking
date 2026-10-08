@@ -234,6 +234,16 @@ export const VenueInfoSchema = z.object({
   min_lead_minutes: z.number().int().nullable().default(null),
   /** How many days ahead bookings are accepted. */
   max_days_ahead: z.number().int().nullable().default(null),
+  /**
+   * Weekly working hours of resources that have their own (resource id → weekday → periods).
+   * Resources not listed work whenever the venue is open. Time off is never exposed.
+   */
+  staff_hours: z
+    .record(
+      z.string(),
+      z.record(z.enum(WEEKDAYS), z.array(z.object({ open: LocalTimeSchema, close: z.string() }))),
+    )
+    .default({}),
 });
 export type VenueInfo = z.infer<typeof VenueInfoSchema>;
 
@@ -353,3 +363,13 @@ export const CancelInputSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type CancelInput = z.input<typeof CancelInputSchema>;
+
+export const RescheduleInputSchema = z.object({
+  booking_id: z.string().min(1),
+  /** A slot for the same service and party size, from search_availability. */
+  slot_id: z.string().min(1),
+  idempotency_key: IdempotencyKeySchema,
+  /** Required (true): the user approved the new time, price and cancellation terms. */
+  user_confirmed: z.boolean().optional(),
+});
+export type RescheduleInput = z.input<typeof RescheduleInputSchema>;

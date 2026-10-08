@@ -6,6 +6,7 @@ import {
   type Booking,
   type BookingProvider,
   type CancelBookingRequest,
+  type RescheduleBookingRequest,
   type CancellationPolicy,
   type ConfirmHoldRequest,
   type CreateHoldRequest,
@@ -83,6 +84,7 @@ export class MemoryBookingProvider implements BookingProvider {
       ...(config.description ? { description: config.description } : {}),
     };
     this.#venues = new Map(config.venues.map((v) => [v.venue.id, v]));
+    for (const v of config.venues) validateSchedules(v);
   }
 
   async listVenues(): Promise<Venue[]> {
@@ -140,7 +142,7 @@ export class MemoryBookingProvider implements BookingProvider {
       this.#store.listBlocking(cfg.venue.id, fromMs, toMs, ctx.now),
       this.#busyIn(cfg, fromMs, toMs, ctx.now),
     ]);
-    const blocking: BusyInterval[] = [...booked, ...busy];
+    const blocking: BusyInterval[] = [...booked, ...busy, ...timeOff(cfg, fromMs, toMs)];
     for (const start of starts) {
       const local = time.localTime(start, cfg.venue.timezone);
 
@@ -148,8 +150,10 @@ export class MemoryBookingProvider implements BookingProvider {
       if (query.time_to && local > query.time_to) continue;
       for (const offering of offerings) {
         if (!this.#offeringAllowed(cfg, offering, query.date, local)) continue;
-        const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter((r) =>
-          isFree(blocking, r.id, start, endOf(cfg, offering, start)),
+        const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter(
+          (r) =>
+            worksAt(cfg, r.id, query.date, local, offering.duration_minutes) &&
+            isFree(blocking, r.id, start, endOf(cfg, offering, start)),
         );
         const resource = free[0];
         if (!resource) continue;
@@ -194,9 +198,13 @@ export class MemoryBookingProvider implements BookingProvider {
 
     const now = ctx.now.toISOString();
     const bookingId = `bk_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-    const busy = await this.#busyIn(cfg, start.getTime(), endOf(cfg, offering, start), ctx.now);
+    const busy = [
+      ...(await this.#busyIn(cfg, start.getTime(), endOf(cfg, offering, start), ctx.now)),
+      ...timeOff(cfg, start.getTime(), endOf(cfg, offering, start)),
+    ];
     // Best fit first; the store's atomic insert decides, so a lost race moves on to the next one.
     for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
+      if (!worksAt(cfg, resource.id, date, local, offering.duration_minutes)) continue;
       if (!isFree(busy, resource.id, start, endOf(cfg, offering, start))) continue;
       const slot = this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id);
       const booking: Booking = {
@@ -290,6 +298,16 @@ export class MemoryBookingProvider implements BookingProvider {
         WEEKDAYS.map((d) => [d, (cfg.opening_hours[days.indexOf(d)] ?? []).map((p) => ({ ...p }))]),
       ) as VenueInfo['opening_hours'],
       closed_dates: [...(cfg.closed_dates ?? [])],
+      staff_hours: Object.fromEntries(
+        Object.entries(cfg.schedules ?? {})
+          .filter(([, s]) => s.hours)
+          .map(([id, s]) => [
+            id,
+            Object.fromEntries(
+              WEEKDAYS.map((d) => [d, (s.hours![days.indexOf(d)] ?? []).map((p) => ({ ...p }))]),
+            ) as VenueInfo['opening_hours'],
+          ]),
+      ),
       min_lead_minutes: cfg.min_lead_minutes,
       max_days_ahead: cfg.max_days_ahead,
     };
@@ -310,6 +328,80 @@ export class MemoryBookingProvider implements BookingProvider {
       ...(req.notes !== undefined ? { notes: req.notes } : {}),
       updated_at: ctx.now.toISOString(),
     }));
+  }
+
+  async rescheduleBooking(req: RescheduleBookingRequest, ctx: ProviderContext): Promise<Booking> {
+    const key = decodeSlotId(req.slot_id);
+    const cfg = this.#venue(key.v);
+    const offering = cfg.offerings.find((o) => o.id === key.o);
+    const start = new Date(key.s);
+    if (!offering || Number.isNaN(start.getTime())) throw invalidSlot();
+    const date = time.localDate(start, cfg.venue.timezone);
+    const local = time.localTime(start, cfg.venue.timezone);
+    const end = endOf(cfg, offering, start);
+
+    // A booking changed by someone else between our read and the store's lock is re-read, so the
+    // move never overwrites a newer version.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const current = (await this.#store.get(req.booking_id, ctx.now))?.booking;
+      if (!current) throw new BookingError('not_found', `No booking with id "${req.booking_id}".`);
+      if (
+        key.v !== current.venue_id ||
+        key.o !== current.slot.offering.id ||
+        key.p !== current.slot.party_size.total
+      ) {
+        throw new BookingError(
+          'validation_error',
+          'The new time must be for the same venue, service and party size.',
+          {
+            suggested_next_action:
+              'Search availability with the same service and party size. To change the service, cancel and book again.',
+          },
+        );
+      }
+      const bookable =
+        this.#candidateStarts(cfg, date, ctx.now).some((s) => s.getTime() === start.getTime()) &&
+        this.#offeringAllowed(cfg, offering, date, local);
+      if (!bookable) {
+        throw new BookingError(
+          'slot_unavailable',
+          'That time is not bookable (in the past or outside opening hours).',
+        );
+      }
+      const busy = [
+        ...(await this.#busyIn(cfg, start.getTime(), end, ctx.now)),
+        ...timeOff(cfg, start.getTime(), end),
+      ];
+      let changed = false;
+      for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
+        if (!worksAt(cfg, resource.id, date, local, offering.duration_minutes)) continue;
+        if (!isFree(busy, resource.id, start, end)) continue;
+        const booking: Booking = {
+          ...current,
+          slot: this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id),
+          updated_at: ctx.now.toISOString(),
+        };
+        try {
+          const moved = await this.#store.move(
+            { booking, resource_id: resource.id, start_ms: start.getTime(), end_ms: end },
+            ctx.now,
+            (b) => {
+              if (b.status !== 'confirmed') {
+                throw new BookingError('invalid_state', `Booking is ${b.status}, not confirmed.`);
+              }
+              if (b.updated_at !== current.updated_at) throw STALE;
+            },
+          );
+          if (moved) return booking;
+        } catch (e) {
+          if (e !== STALE) throw e;
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) break;
+    }
+    throw new BookingError('slot_unavailable', `The ${local} slot on ${date} was just taken.`);
   }
 
   async cancelBooking(req: CancelBookingRequest, ctx: ProviderContext): Promise<Booking> {
@@ -498,6 +590,65 @@ function isPerson(r: Resource): boolean {
   return r.capacity.max === 1 && r.kind !== 'table';
 }
 
+/** Whether the resource works the whole of [local, local + minutes) on `date` (venue-local). */
+function worksAt(
+  cfg: VenueConfig,
+  resourceId: string,
+  date: string,
+  local: string,
+  minutes: number,
+): boolean {
+  const hours = cfg.schedules?.[resourceId]?.hours;
+  if (!hours) return true;
+  const startMin = time.minutesOfDay(local);
+  return (hours[time.weekdayOfDate(date)] ?? []).some((p) => {
+    const close = p.close === '24:00' ? 1440 : time.minutesOfDay(p.close);
+    return startMin >= time.minutesOfDay(p.open) && startMin + minutes <= close;
+  });
+}
+
+const LOCAL_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/** A time-off bound as an instant: whole dates start at 00:00, and an end date is included. */
+function timeOffBound(value: string, timeZone: string, end: boolean): number {
+  if (LOCAL_DATE.test(value)) {
+    return time.zonedToInstant(end ? time.addDays(value, 1) : value, '00:00', timeZone).getTime();
+  }
+  if (LOCAL_DATETIME.test(value)) {
+    return time.zonedToInstant(value.slice(0, 10), value.slice(11), timeZone).getTime();
+  }
+  throw new Error(`Invalid time off "${value}": use YYYY-MM-DD or YYYY-MM-DDTHH:mm`);
+}
+
+/** Time off within [fromMs, toMs) as busy intervals, so it blocks exactly like a booking. */
+function timeOff(cfg: VenueConfig, fromMs: number, toMs: number): BusyInterval[] {
+  const out: BusyInterval[] = [];
+  for (const [resource_id, schedule] of Object.entries(cfg.schedules ?? {})) {
+    for (const off of schedule.time_off ?? []) {
+      const start_ms = timeOffBound(off.start, cfg.venue.timezone, false);
+      const end_ms = timeOffBound(off.end, cfg.venue.timezone, true);
+      if (start_ms < toMs && fromMs < end_ms) out.push({ resource_id, start_ms, end_ms });
+    }
+  }
+  return out;
+}
+
+/** Catch config mistakes at startup rather than as odd availability later. */
+function validateSchedules(cfg: VenueConfig): void {
+  for (const [id, schedule] of Object.entries(cfg.schedules ?? {})) {
+    if (!cfg.resources.some((r) => r.id === id)) {
+      throw new Error(`Schedule for unknown resource "${id}" at ${cfg.venue.id}`);
+    }
+    for (const off of schedule.time_off ?? []) {
+      const start = timeOffBound(off.start, cfg.venue.timezone, false);
+      if (timeOffBound(off.end, cfg.venue.timezone, true) <= start) {
+        throw new Error(`Time off for "${id}" ends before it starts: ${off.start} → ${off.end}`);
+      }
+    }
+  }
+}
+
 function isFree(blocking: BusyInterval[], resourceId: string, start: Date, endMs: number): boolean {
   const startMs = start.getTime();
   return !blocking.some(
@@ -584,6 +735,9 @@ function decodeSlotId(slotId: string): SlotKey {
     throw invalidSlot();
   }
 }
+
+/** Thrown inside a store move when the booking changed since it was read; the move is retried. */
+const STALE = new Error('booking changed since it was read');
 
 function invalidSlot(): BookingError {
   return new BookingError('validation_error', 'slot_id is not valid.', {

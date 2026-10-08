@@ -385,14 +385,15 @@ emails. See [docs/HOSTED.md](docs/HOSTED.md).
 
 ## The MCP tools
 
-| Tool                  | Does                                                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.  |
-| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved. |
-| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                 |
-| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.           |
-| `get_booking`         | Current status and details.                                                                                              |
-| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy. |
+| Tool                  | Does                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_business_info`   | Services (duration, price), staff customers can ask for by name, opening hours and how far ahead bookings are accepted.                                |
+| `search_availability` | Free times on a date, with who is booked, who else is free, price, deposit and cancellation policy. Nothing is reserved.                               |
+| `hold_slot`           | Reserves a slot until `expires_at`. Returns `booking_id` and the terms to show the user.                                                               |
+| `confirm_booking`     | Confirms a hold. Requires `user_confirmed: true`, customer details, and a `payment_token` if a deposit is due.                                         |
+| `get_booking`         | Current status and details.                                                                                                                            |
+| `reschedule_booking`  | Moves a confirmed booking to a new time for the same service, keeping its id and code. Needs `user_confirmed`; allowed while cancelling is still free. |
+| `cancel_booking`      | Releases a hold, or cancels a confirmed booking. A confirmed booking needs `user_confirmed`; the fee follows the policy.                               |
 
 **Design rules:**
 
@@ -600,7 +601,7 @@ Apache-2.0
 
 # @openbooking-sh/adapter-mcp
 
-**MCP server for booking.** Six booking tools for any MCP client (Claude, ChatGPT, Cursor and more): `get_business_info`, `search_availability`, `hold_slot`, `confirm_booking`, `get_booking` and `cancel_booking`. Served over Streamable HTTP or stdio.
+**MCP server for booking.** Seven booking tools for any MCP client (Claude, ChatGPT, Cursor and more): `get_business_info`, `search_availability`, `hold_slot`, `confirm_booking`, `get_booking`, `reschedule_booking` and `cancel_booking`. Served over Streamable HTTP or stdio.
 
 Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
 
@@ -1167,17 +1168,17 @@ pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / op
 
 ## Routes
 
-| Path                                                          | What                                                                                           |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 30-day signed session token)                         |
-| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                      |
-| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the six booking tools, each taking `business_id` |
-| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                  |
-| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                     |
-| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                    |
-| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                |
-| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                          |
-| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                     |
+| Path                                                          | What                                                                                             |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 30-day signed session token)                           |
+| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                        |
+| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id` |
+| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                    |
+| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                       |
+| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                      |
+| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                  |
+| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                            |
+| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                       |
 
 `{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
 `business_id` and the venue id on its bookings.
@@ -1302,21 +1303,6 @@ All optional, set as environment variables on the Vercel project:
 
 No customer names, emails or phone numbers are sent to any of them. Background work (emails,
 calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
-
-## ChatGPT and Claude directory submissions
-
-The OpenBooking app (`/mcp`) is built for this: no login for customers, one server for every
-business, read-only tools annotated, and consent enforced by the engine (`user_confirmed`). Still to
-do by hand before submitting:
-
-- [ ] Deploy hosted with durable storage on a stable domain (e.g. `app.openbooking.sh/mcp`).
-- [ ] Publish a privacy policy and terms (we process customer names, emails and phone numbers on
-      behalf of businesses) and a support contact.
-- [ ] App name, icon, short and long description, example prompts ("Book a haircut in Oslo on
-      Friday afternoon").
-- [ ] Test the full flow in ChatGPT developer mode and as a Claude custom connector.
-- [ ] Submit to the ChatGPT app directory and the Claude connectors directory, and check each
-      program's current requirements at submission time.
 
 ## Not done yet
 

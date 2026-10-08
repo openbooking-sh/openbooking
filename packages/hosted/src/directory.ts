@@ -1,6 +1,6 @@
 /**
  * The OpenBooking app: one MCP server for every listed business. `find_business` discovers them;
- * the five booking tools take a `business_id`. This is what goes into the ChatGPT and Claude
+ * the booking tools take a `business_id`. This is what goes into the ChatGPT and Claude
  * directories, so an assistant can book any OpenBooking business without per-business setup.
  */
 import { registerBookingTools } from '@openbooking-sh/adapter-mcp';
