@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/conformance",
-  "version": "0.0.0",
+  "version": "0.8.0",
   "description": "Conformance test suite for OpenBooking BookingProviders: proves a booking system never double-books, expires holds and reports errors correctly.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",
