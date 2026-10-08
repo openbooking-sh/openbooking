@@ -53,6 +53,8 @@ export interface BookingEvent {
   error_code?: ErrorCode;
   /** True when the result was an idempotent replay (no new side effects). */
   replayed?: boolean;
+  /** True when the operation changed nothing, e.g. cancelling an already cancelled booking. */
+  unchanged?: boolean;
   /** Who made the call (set when the request ran inside runAsActor). */
   actor?: Actor;
   /** The booking as the operation left it (successful single-booking operations only). */
@@ -485,6 +487,9 @@ export class BookingService {
         at: this.clock.now().toISOString(),
         ...(booking ? { booking_id: booking.booking_id, status: booking.status, booking } : hint),
         ...(meta.replayed ? { replayed: true } : {}),
+        ...((result as Partial<CancelResult> | undefined)?.already_inactive
+          ? { unchanged: true }
+          : {}),
       });
       return result;
     } catch (e) {
