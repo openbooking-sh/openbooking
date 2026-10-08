@@ -185,7 +185,7 @@ describe('discovery documents', () => {
     expect(index.protocols).toMatchObject({
       mcp: { status: 'supported' },
       ucp: { status: 'draft' },
-      a2a: { status: 'stub' },
+      a2a: { status: 'supported' },
     });
   });
 

@@ -15,7 +15,7 @@ safe:
 | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **MCP** (Model Context Protocol)      | ✅ Supported | 5 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
-| **A2A** (Agent2Agent)                 | ⚪ Stub      | v1.0 Agent Card at `/.well-known/agent-card.json`; task endpoint not implemented yet                                                |
+| **A2A** (Agent2Agent)                 | 🟡 Beta      | v1.0 Agent Card plus a JSON-RPC `SendMessage` endpoint (`/a2a`) for search, hold, confirm and cancel; no streaming or tasks         |
 
 ## Start in one command
 
@@ -304,7 +304,7 @@ packages/
   create-openbooking/  npx create-openbooking: a ready-to-run booking backend
   adapter-mcp/      MCP tools (Streamable HTTP + stdio)
   adapter-ucp/      UCP discovery + booking sessions (draft)
-  adapter-a2a/      A2A Agent Card (stub)
+  adapter-a2a/      A2A Agent Card + SendMessage endpoint
   studio/           OpenBooking Studio dashboard (/studio), incl. business settings
   booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
   notifications/    Confirmation/cancellation emails with .ics invites

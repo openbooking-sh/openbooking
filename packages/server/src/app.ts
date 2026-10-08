@@ -1,6 +1,6 @@
 import {
   buildAgentCard,
-  createA2AStub,
+  createA2AAdapter,
   AGENT_CARD_PATH,
   type AgentProvider,
 } from '@openbooking-sh/adapter-a2a';
@@ -97,7 +97,7 @@ export interface OpenBookingApp {
  *   *    /ucp/...                       UCP lodging booking-session REST (+ availability extension)
  *   GET  /.well-known/ucp               UCP business profile
  *   GET  /.well-known/agent-card.json   A2A Agent Card
- *   POST /a2a                           A2A JSON-RPC (stub → 501)
+ *   POST /a2a                           A2A JSON-RPC (SendMessage)
  *   GET  /healthz
  */
 export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBookingApp {
@@ -161,7 +161,9 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
               },
             }
           : {}),
-        ...(a2aPath ? { a2a: { status: 'stub', agent_card: `${baseUrl}${AGENT_CARD_PATH}` } } : {}),
+        ...(a2aPath
+          ? { a2a: { status: 'supported', agent_card: `${baseUrl}${AGENT_CARD_PATH}` } }
+          : {}),
       },
     });
   });
@@ -202,8 +204,10 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
   }
 
   if (a2aPath) {
-    const stub = createA2AStub({ service });
-    app.post(a2aPath, (c) => stub.fetch(c.req.raw));
+    const a2a = createA2AAdapter({ service });
+    app.post(a2aPath, async (c) =>
+      runAsActor(await actorFromRequest(c.req.raw, 'a2a'), () => a2a.fetch(c.req.raw)),
+    );
     app.get(AGENT_CARD_PATH, (c) => {
       // A2A §8.6: SHOULD send Cache-Control with max-age.
       c.header('Cache-Control', 'public, max-age=300');
