@@ -136,21 +136,32 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
       });
     });
   }
+  // WebMCP: current drafts use document.modelContext, where execute resolves to a value (we send a
+  // JSON string) and failures reject. Older builds used navigator.modelContext with MCP-style
+  // content arrays; they still get that shape.
+  var mc = document.modelContext || navigator.modelContext;
+  var legacy = !document.modelContext;
   function result(p) {
-    return p.then(function (r) { return { content: [{ type: 'text', text: JSON.stringify(r) }] }; })
-      .catch(function (e) { return { isError: true, content: [{ type: 'text', text: 'Error: ' + e.message + (e.payload ? ' ' + JSON.stringify(e.payload) : '') }] }; });
+    return p.then(function (r) {
+      return legacy ? { content: [{ type: 'text', text: JSON.stringify(r) }] } : JSON.stringify(r);
+    }, function (e) {
+      var text = 'Error: ' + e.message + (e.payload ? ' ' + JSON.stringify(e.payload) : '');
+      if (legacy) return { isError: true, content: [{ type: 'text', text: text }] };
+      throw new Error(text);
+    });
   }
   function uuid() {
     return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
-  var mc = navigator.modelContext;
   if (mc && opt('agents', 'on') !== 'off') {
     var tools = [
       { name: 'list_services', description: 'List the services of ' + C.name + ' that can be booked, with duration, price and staff.',
         inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: true },
         execute: function () { return result(call('/info')); } },
       { name: 'search_availability', description: 'Find free times at ' + C.name + ' on a date (YYYY-MM-DD, local time). Returns slot_ids. Nothing is reserved.',
         inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, service_id: { type: 'string' }, staff_id: { type: 'string' }, party_size: { type: 'integer', minimum: 1 } }, required: ['date'] },
+        annotations: { readOnlyHint: true },
         execute: function (a) {
           a = a || {};
           var q = '?date=' + encodeURIComponent(a.date || '') + (a.service_id ? '&service=' + encodeURIComponent(a.service_id) : '') +
@@ -162,6 +173,7 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
         execute: function (a) { return result(call('/hold', { slot_id: (a || {}).slot_id, idempotency_key: uuid() })); } },
       { name: 'confirm_booking', description: 'Confirm a held booking at ' + C.name + '. Only set user_confirmed=true after the user has explicitly approved this exact booking (time, service, price, cancellation policy). Needs first and last name plus email or phone.',
         inputSchema: { type: 'object', properties: { booking_id: { type: 'string' }, first_name: { type: 'string' }, last_name: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' }, notes: { type: 'string' }, user_confirmed: { type: 'boolean' } }, required: ['booking_id', 'first_name', 'last_name', 'user_confirmed'] },
+        annotations: { consequentialHint: true },
         execute: function (a) {
           a = a || {};
           var c = { first_name: a.first_name, last_name: a.last_name };
@@ -173,7 +185,7 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
         } }
     ];
     try {
-      if (typeof mc.registerTool === 'function') tools.forEach(function (t) { try { mc.registerTool(t); } catch (e) {} });
+      if (typeof mc.registerTool === 'function') tools.forEach(function (t) { try { Promise.resolve(mc.registerTool(t)).catch(function () {}); } catch (e) {} });
       else if (typeof mc.provideContext === 'function') mc.provideContext({ tools: tools });
     } catch (e) {}
   }
