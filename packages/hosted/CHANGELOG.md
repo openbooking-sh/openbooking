@@ -1,5 +1,23 @@
 # @openbooking-sh/hosted
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [660944c]
+- Updated dependencies [7c9ad2d]
+- Updated dependencies [e4b56d6]
+- Updated dependencies [783a56e]
+- Updated dependencies [671f98e]
+  - @openbooking-sh/server@0.7.0
+  - @openbooking-sh/core@0.7.0
+  - @openbooking-sh/provider-memory@0.7.0
+  - @openbooking-sh/adapter-mcp@0.7.0
+  - @openbooking-sh/booking-page@0.7.0
+  - @openbooking-sh/google-calendar@0.7.0
+  - @openbooking-sh/notifications@0.7.0
+  - @openbooking-sh/studio@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes

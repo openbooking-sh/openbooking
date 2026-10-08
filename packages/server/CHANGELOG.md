@@ -1,5 +1,26 @@
 # @openbooking-sh/server
 
+## 0.7.0
+
+### Minor Changes
+
+- 660944c: Implement the A2A `SendMessage` endpoint (`createA2AAdapter`). A2A agents can now search, hold, confirm and cancel bookings through the same BookingService as MCP and UCP. `createA2AStub` is removed.
+- 783a56e: Webhooks: `createWebhooks()` (core) and the `webhooks` option of `createOpenBookingApp` send signed `booking.held`, `.confirmed`, `.updated` and `.cancelled` events with retries; `verifyWebhook()` checks them on the receiving side. Replays and no-op cancels don't send events (`BookingEvent.unchanged` marks the latter).
+
+### Patch Changes
+
+- Updated dependencies [660944c]
+- Updated dependencies [7c9ad2d]
+- Updated dependencies [e4b56d6]
+- Updated dependencies [783a56e]
+- Updated dependencies [671f98e]
+  - @openbooking-sh/adapter-a2a@0.7.0
+  - @openbooking-sh/core@0.7.0
+  - @openbooking-sh/adapter-mcp@0.7.0
+  - @openbooking-sh/booking-page@0.7.0
+  - @openbooking-sh/adapter-ucp@0.7.0
+  - @openbooking-sh/studio@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

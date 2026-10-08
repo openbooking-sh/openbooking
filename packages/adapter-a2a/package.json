@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/adapter-a2a",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "description": "A2A (Agent2Agent) Agent Card generation for OpenBooking. SendMessage endpoint routing to the same booking engine as MCP and UCP.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",

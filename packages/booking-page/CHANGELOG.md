@@ -1,5 +1,15 @@
 # @openbooking-sh/booking-page
 
+## 0.7.0
+
+### Patch Changes
+
+- 671f98e: WebMCP follows the current draft: tools register on `document.modelContext` (falling back to `navigator.modelContext`), resolve to JSON strings and reject on errors, and carry `readOnlyHint` / `consequentialHint` annotations. Older builds keep the MCP-style content arrays.
+- Updated dependencies [7c9ad2d]
+- Updated dependencies [e4b56d6]
+- Updated dependencies [783a56e]
+  - @openbooking-sh/core@0.7.0
+
 ## 0.2.0
 
 ### Minor Changes
