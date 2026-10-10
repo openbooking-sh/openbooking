@@ -55,6 +55,15 @@ async function book(t: ReturnType<typeof setup>) {
 }
 
 describe('booking page API', () => {
+  it('loads nothing from third parties, so a visit tells no one else the visitor IP address', async () => {
+    const t = setup();
+    for (const path of ['/', '/manage/bk_x']) {
+      const html = await (await t.page.app.request(path)).text();
+      expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+      expect(html).not.toMatch(/<script[^>]+src=["']https?:/);
+    }
+  });
+
   it('describes the business', async () => {
     const t = setup();
     const { body } = await t.get('/api/info');

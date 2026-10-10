@@ -12,9 +12,6 @@ export const STUDIO_HTML = `<!doctype html>
 <meta name="robots" content="noindex" />
 <title>OpenBooking Studio</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%232747e8'/><path d='M10 16.5l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
   :root {
     --bg: #f8f8f5; --bg-2: #f1f1ec; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #8a90a3;

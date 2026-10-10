@@ -18,9 +18,6 @@ export function signupHtml(opts: {
 <title>Get bookable by AI assistants · OpenBooking</title>
 <meta name="description" content="Free. Your customers can book you through ChatGPT, Claude and Gemini. 10 minutes to set up." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%232747e8'/><path d='M10 16.5l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root { --bg: #f8f8f5; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #8a90a3; --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4; --red: #dc2626; --grad: linear-gradient(135deg, #2747e8, #6fb6ff); }
   @media (prefers-color-scheme: dark) { :root { --bg: #0b0d14; --card: #141826; --ink: #eef0f6; --ink-2: #b4b9cc; --ink-3: #7d8399; --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.16); --royal: #5b75ff; --royal-2: #4561f5; } }
