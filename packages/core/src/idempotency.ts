@@ -21,6 +21,12 @@ export interface IdempotencyRecord {
 export interface IdempotencyStore {
   get(key: string): Promise<IdempotencyRecord | undefined>;
   set(key: string, record: IdempotencyRecord, ttlMs: number): Promise<void>;
+  /**
+   * Delete every record whose key starts with `prefix` and resolve how many went. Optional: used
+   * when a hosted business closes its account (its keys are prefixed with its id), because the
+   * records hold copies of its bookings, customer details included.
+   */
+  deletePrefix?(prefix: string): Promise<number>;
 }
 
 export class MemoryIdempotencyStore implements IdempotencyStore {
@@ -43,6 +49,14 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 
   async set(key: string, record: IdempotencyRecord, ttlMs: number): Promise<void> {
     this.#records.set(key, { record, expiresAt: this.#now() + ttlMs });
+  }
+
+  async deletePrefix(prefix: string): Promise<number> {
+    let n = 0;
+    for (const key of [...this.#records.keys()]) {
+      if (key.startsWith(prefix) && this.#records.delete(key)) n++;
+    }
+    return n;
   }
 }
 

@@ -70,6 +70,13 @@ export class PostgresBusinessStore implements BusinessStore {
     return rows[0]?.data;
   }
 
+  async delete(id: string): Promise<boolean> {
+    const { rows } = await this.#db.query('delete from ob_businesses where id = $1 returning id', [
+      id,
+    ]);
+    return rows.length > 0;
+  }
+
   async update(id: string, fn: (business: Business) => Business): Promise<Business | undefined> {
     return this.#db.transaction(async (tx) => {
       const { rows } = await tx.query<{ data: Business }>(

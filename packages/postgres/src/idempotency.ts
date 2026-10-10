@@ -67,6 +67,15 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     }
   }
 
+  async deletePrefix(prefix: string): Promise<number> {
+    // left() and char_length() instead of LIKE, so a prefix never needs escaping.
+    const { rows } = await this.#db.query(
+      'delete from ob_idempotency where left(key, char_length($1::text)) = $1::text returning key',
+      [prefix],
+    );
+    return rows.length;
+  }
+
   /** Delete expired records. Returns how many were removed. */
   async purgeExpired(): Promise<number> {
     const { rows } = await this.#db.query(

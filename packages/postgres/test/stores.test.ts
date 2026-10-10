@@ -51,6 +51,20 @@ describe(`PostgresIdempotencyStore (${target})`, () => {
     expect(await store.purgeExpired()).toBe(1);
   });
 
+  it('deletes the records of one business by key prefix, and only those', async () => {
+    const store = new PostgresIdempotencyStore(await freshDb());
+    const rec = { fingerprint: 'f', value: { booking_id: 'bk_1' }, created_at: Date.now() };
+    await store.set('studio-nord:k1', rec, 60_000);
+    await store.set('studio-nord:k2', rec, 60_000);
+    await store.set('studio-nord-2:k1', rec, 60_000);
+    await store.set('other:k1', rec, 60_000);
+    // The colon ends the business id, so "studio-nord:" never reaches "studio-nord-2:".
+    expect(await store.deletePrefix('studio-nord:')).toBe(2);
+    expect(await store.get('studio-nord:k1')).toBeUndefined();
+    expect(await store.get('studio-nord-2:k1')).toBeDefined();
+    expect(await store.get('other:k1')).toBeDefined();
+  });
+
   it('keeps undefined and array results intact', async () => {
     const store = new PostgresIdempotencyStore(await freshDb());
     await store.set('void', { fingerprint: 'f', value: undefined, created_at: 1 }, 60_000);
@@ -68,6 +82,19 @@ describe(`PostgresActivityLog (${target})`, () => {
     agent: 'Claude',
     protocol: 'mcp',
     ...over,
+  });
+
+  it('clears one business, activity and booked-via attribution, and leaves the others', async () => {
+    const db = await freshDb();
+    const a = new PostgresActivityLog(db, { scope: 'a' });
+    const b = new PostgresActivityLog(db, { scope: 'b' });
+    await a.add(entry({ operation: 'confirm', booking_id: 'bk_a' }));
+    await b.add(entry({ operation: 'confirm', booking_id: 'bk_b' }));
+    await a.clear();
+    expect(await a.list()).toEqual([]);
+    expect((await a.bookedVia(['bk_a'])).size).toBe(0);
+    expect((await b.list()).length).toBe(1);
+    expect((await b.bookedVia(['bk_b'])).get('bk_b')).toBe('Claude');
   });
 
   it('lists newest first with after/booking filters', async () => {

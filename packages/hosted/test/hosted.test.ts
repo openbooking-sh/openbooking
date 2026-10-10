@@ -749,6 +749,67 @@ describe('customer data rights', () => {
     expect(booking.slot.offering.id).toBe('haircut');
   });
 
+  it('lets the owner download everything stored about the business, without secrets', async () => {
+    const { req, signup } = setup();
+    const { token, business_id } = await signup();
+    const bookingId = await book(req, business_id, 'first', ada, 'Allergic to latex');
+
+    const res = await req('/studio/api/account/export', { token });
+    expect(res.status).toBe(200);
+    expect(res.json.account.business_id).toBe(business_id);
+    expect(res.json.settings.profile.name).toBe('Studio Nord');
+    expect(res.json.bookings.map((b: any) => b.booking_id)).toEqual([bookingId]);
+    expect(res.json.bookings[0].customer.email).toBe('ada@example.com');
+    // No password hash, no tokens.
+    expect(res.text).not.toMatch(/scrypt\$|password_hash|refresh_token|access_token/);
+    expect((await req('/studio/api/account/export')).status).toBe(401);
+  });
+
+  it('deletes the account and everything in it, only with the password', async () => {
+    const { hosted, req, signup } = setup();
+    const email = 'owner-delete@example.com';
+    const mine = await signup({ email });
+    const other = await signup({ business_name: 'Beta Frisør' });
+    await book(req, mine.business_id, 'first', ada, 'Allergic to latex');
+    const otherBooking = await book(req, other.business_id, 'last', ada, 'Short on the sides');
+
+    const del = (token: string, body: unknown) =>
+      req('/studio/api/account/delete', { token, body });
+    // Without the right password nothing happens, and the session survives (403, not 401).
+    expect((await del(mine.token, { password: 'wrong password' })).status).toBe(403);
+    expect((await del(mine.token, {})).status).toBe(403);
+    expect((await req('/studio/api/bookings', { token: mine.token })).json.bookings).toHaveLength(
+      1,
+    );
+
+    expect((await del(mine.token, { password: 'correct horse' })).status).toBe(200);
+
+    // The account, its booking page and its session are gone ...
+    expect(await hosted.businesses.get(mine.business_id)).toBeUndefined();
+    expect((await req(`/b/${mine.business_id}`, { accept: 'text/html' })).status).toBe(404);
+    expect((await req('/studio/api/bookings', { token: mine.token })).status).toBe(401);
+    expect((await req('/api/login', { body: { email, password: 'correct horse' } })).status).toBe(
+      401,
+    );
+    // ... the other business is untouched ...
+    const left = await req('/studio/api/bookings', { token: other.token });
+    expect(left.json.bookings.map((b: any) => b.booking_id)).toEqual([otherBooking]);
+    // ... and signing up again under the same name starts empty: no bookings survived.
+    const again = await signup({ email });
+    expect(again.business_id).toBe(mine.business_id);
+    expect((await req('/studio/api/bookings', { token: again.token })).json.bookings).toEqual([]);
+  });
+
+  it('clears expired rate-limit windows, which are keyed by IP address, when it purges', async () => {
+    const purge = vi.fn(async () => {});
+    const { req } = setup({
+      cronSecret: 'a-long-cron-secret',
+      rateLimiter: { hit: async () => true, purge },
+    });
+    expect((await req('/api/maintenance/purge', { token: 'a-long-cron-secret' })).status).toBe(200);
+    expect(purge).toHaveBeenCalledTimes(1);
+  });
+
   it('has no purge endpoint without a cron secret', async () => {
     const { req } = setup();
     expect((await req('/api/maintenance/purge')).status).toBe(404);

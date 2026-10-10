@@ -69,6 +69,9 @@ export interface BookingRecordStore {
    * which bookings qualify.
    */
   anonymize?(query: AnonymizeQuery, now: Date): Promise<AnonymizeResult>;
+
+  /** Delete every booking of a venue (a hosted business closing its account). Resolves how many. */
+  deleteVenue?(venueId: string): Promise<number>;
 }
 
 /** Who to find: by email, by phone number, or both. A booking matches when either one does. */
@@ -254,6 +257,14 @@ export class MemoryBookingStore implements BookingRecordStore {
       }
     }
     return false;
+  }
+
+  async deleteVenue(venueId: string) {
+    let n = 0;
+    for (const [id, r] of [...this.#records]) {
+      if (r.booking.venue_id === venueId && this.#records.delete(id)) n++;
+    }
+    return n;
   }
 
   async anonymize(query: AnonymizeQuery, now: Date) {

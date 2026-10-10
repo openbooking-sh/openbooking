@@ -712,6 +712,13 @@ export const STUDIO_HTML = `<!doctype html>
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="cd-export" type="button">Download their data</button><button class="btn btn-sm btn-danger" id="cd-erase" type="button">Delete their data</button></div>' +
         '<p class="hint" id="cd-msg" role="status" aria-live="polite" style="margin-top:10px"></p></div>';
     }
+    if (SV.account && SV.account.delete_path) {
+      h += '<div class="card"><h2>Your account</h2><p class="hint">Download everything stored about your business, or close your account. Closing it deletes your bookings, customer details, settings and booking page for good. Upcoming bookings are not cancelled and customers are not told, so cancel or move them first.</p>' +
+        '<div style="margin-bottom:16px"><button class="btn btn-sm" id="acct-export" type="button">Download my data</button></div>' +
+        '<div class="field" style="max-width:320px"><label for="acct-pw">Your password</label><input id="acct-pw" type="password" autocomplete="current-password" /></div>' +
+        '<button class="btn btn-sm btn-danger" id="acct-delete" type="button">Delete my account</button>' +
+        '<p class="hint" id="acct-msg" role="status" aria-live="polite" style="margin-top:10px"></p></div>';
+    }
     h += '<div class="savebar"><span class="err" id="set-err"></span><button class="btn btn-primary" id="set-save">Save changes</button></div>';
     $('settings').innerHTML = h;
 
@@ -750,6 +757,27 @@ export const STUDIO_HTML = `<!doctype html>
         api('/customers/erase', { method: 'POST', body: JSON.stringify(w) }).then(function (d) {
           $('cd-msg').textContent = d.anonymized + ' booking(s) cleaned.' + (d.kept_upcoming ? ' ' + d.kept_upcoming + ' upcoming booking(s) kept: cancel them first to delete those too.' : '');
         }).catch(function (e) { $('cd-msg').textContent = e.message; });
+      };
+    }
+    if ($('acct-export')) {
+      $('acct-export').onclick = function () {
+        api(SV.account.export_path).then(function (d) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
+          a.download = 'openbooking-data.json';
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+          $('acct-msg').textContent = d.bookings.length + ' booking(s) in the file.';
+        }).catch(function (e) { $('acct-msg').textContent = e.message; });
+      };
+      $('acct-delete').onclick = function () {
+        var pw = $('acct-pw').value;
+        if (!pw) { $('acct-msg').textContent = 'Enter your password to confirm.'; return; }
+        if (!confirm('Delete your account and everything in it? This cannot be undone.')) return;
+        api(SV.account.delete_path, { method: 'POST', body: JSON.stringify({ password: pw }) }).then(function () {
+          saveToken('');
+          document.body.innerHTML = '<main style="max-width:460px;margin:80px auto;padding:0 16px;font:16px/1.5 system-ui"><h1>Account deleted</h1><p>Your account, bookings and settings are gone.</p></main>';
+        }).catch(function (e) { $('acct-msg').textContent = e.message; });
       };
     }
     $('set-save').onclick = save;

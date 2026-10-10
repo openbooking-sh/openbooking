@@ -48,6 +48,8 @@ export interface BusinessStore {
   /** Atomic read-modify-write. Resolves undefined when the business doesn't exist. */
   update(id: string, fn: (business: Business) => Business): Promise<Business | undefined>;
   list(): Promise<Business[]>;
+  /** Remove the account record. Resolves false when there was none. Optional: needed to close accounts. */
+  delete?(id: string): Promise<boolean>;
 }
 
 export class MemoryBusinessStore implements BusinessStore {
@@ -82,6 +84,10 @@ export class MemoryBusinessStore implements BusinessStore {
 
   async list() {
     return [...this.#byId.values()].map((b) => structuredClone(b));
+  }
+
+  async delete(id: string) {
+    return this.#byId.delete(id);
   }
 }
 

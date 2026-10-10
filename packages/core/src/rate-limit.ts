@@ -5,6 +5,8 @@
 export interface RateLimiter {
   /** Count one attempt for `key`. False when more than `limit` attempts fall in the window. */
   hit(key: string, limit: number, windowMs: number): Promise<boolean>;
+  /** Forget windows older than maxAgeMs (keys can hold IP addresses). Optional. */
+  purge?(maxAgeMs?: number): Promise<void>;
 }
 
 /** Fixed windows in a Map, per process. */
