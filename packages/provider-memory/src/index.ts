@@ -7,12 +7,19 @@ export {
 } from './provider';
 export {
   MemoryBookingStore,
+  anonymizeBooking,
   applyExpiry,
+  assertAnonymizeQuery,
   isBlocking,
   lostSlot,
+  matchesCustomer,
+  selectForAnonymizing,
+  type AnonymizeQuery,
+  type AnonymizeResult,
   type BookingRecord,
   type BookingRecordStore,
   type BookingListQuery,
+  type CustomerMatch,
 } from './store';
 export { demoRestaurantConfig, demoRestaurantVenue } from './seed';
 export { demoSalonConfig, demoSalonVenue } from './salon';

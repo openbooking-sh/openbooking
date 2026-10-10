@@ -133,6 +133,29 @@ With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) and `pnpm 
 of them and create the tables on start.
 Google refresh tokens are stored in the business record as-is; encrypt them at rest in that store.
 
+## Customer data
+
+A customer can ask the business what it holds about them, or to delete it. The owner does it in
+Studio, under **Settings, Customer data**: enter the customer's email address or phone number, then
+download their data (a JSON file of their bookings) or delete it. Deleting removes the name,
+contact details and notes from their bookings. The bookings themselves (time, service, status)
+stay, so the calendar history and statistics remain right. Phone numbers match on their digits,
+email addresses ignore case.
+
+- **Upcoming bookings are kept.** A held or confirmed booking that has not ended yet is counted but
+  not touched, so the business still knows who is coming. Cancel it first to erase it too.
+- **Retention.** Customer data is removed from every booking that ended more than
+  `retentionDays` ago (default 730). `GET /api/maintenance/purge` applies it; `vercel.json`
+  runs it daily. It needs `CRON_SECRET` set (Vercel sends it as a bearer token) and does not exist
+  without it.
+- **What this does not reach.** Events already written to the owner's Google Calendar, emails
+  already sent, and anything a webhook already delivered to an integrator are outside OpenBooking's
+  storage. The owner has to remove those themselves.
+- **Self-hosted servers** can offer the same by passing `dataRights` to `createStudio`; the
+  stores' `anonymize()` does the work.
+
+Deleting a whole account and exporting a business's data are not built yet.
+
 ## Observability
 
 All optional, set as environment variables on the Vercel project:
@@ -152,3 +175,4 @@ calendar sync, analytics, Slack) finishes after the response through `waitUntil(
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Encrypting Google refresh tokens at rest (they sit in the business record as-is).
 - Outlook (Nylas), deposits, rescheduling.
+- Deleting a whole account, and exporting a business's own data.

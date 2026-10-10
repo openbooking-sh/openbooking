@@ -1,8 +1,11 @@
 import { BookingError, type Booking } from '@openbooking-sh/core';
 import {
   applyExpiry,
+  assertAnonymizeQuery,
   isBlocking,
   lostSlot,
+  selectForAnonymizing,
+  type AnonymizeQuery,
   type BookingListQuery,
   type BookingRecord,
   type BookingRecordStore,
@@ -145,6 +148,43 @@ export class PostgresBookingStore implements BookingRecordStore {
         ],
       );
       return true;
+    });
+  }
+
+  async anonymize(query: AnonymizeQuery, now: Date) {
+    assertAnonymizeQuery(query);
+    return this.#db.transaction(async (tx) => {
+      const params: unknown[] = [query.venue_id];
+      let ended = '';
+      if (query.ended_before) {
+        params.push(query.ended_before.toISOString());
+        ended = 'and end_at < $2::timestamptz';
+      }
+      // Only rows that still carry personal data; the customer match itself runs in TypeScript
+      // (selectForAnonymizing), so the memory and Postgres stores agree on who matches.
+      const { rows } = await tx.query<Row>(
+        `select ${COLUMNS} from ob_bookings
+          where venue_id = $1 ${ended}
+            and (coalesce(data->'customer', 'null'::jsonb) <> 'null'::jsonb
+              or coalesce(data->'notes', 'null'::jsonb) <> 'null'::jsonb)
+          for update`,
+        params,
+      );
+      const { ids, keptUpcoming } = selectForAnonymizing(
+        rows.map((r) => toRecord(r, now)),
+        query,
+        now,
+      );
+      if (ids.length) {
+        // jsonb_set keeps every other field exactly as stored (status, expiry, times).
+        await tx.query(
+          `update ob_bookings
+              set data = jsonb_set(jsonb_set(data, '{customer}', 'null'::jsonb), '{notes}', 'null'::jsonb)
+            where booking_id = any($1::text[])`,
+          [ids],
+        );
+      }
+      return { anonymized: ids.length, kept_upcoming: keptUpcoming };
     });
   }
 

@@ -260,5 +260,100 @@ export function describeBookingStore(
       expect(await ids('v1')).toEqual(['a1']);
       expect(await ids('v2')).toEqual(['b1']);
     });
+
+    describe('anonymize', () => {
+      const ada = {
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        email: 'Ada@Example.com',
+        phone_number: '+47 123 45 678',
+      };
+      /** A booking carrying a customer, `days` from the contract's clock (negative = in the past). */
+      const withCustomer = (id: string, days: number, over: Parameters<typeof record>[0] = {}) => {
+        const r = record({ id, status: 'confirmed', start: T0 + days * 86_400_000, ...over });
+        r.booking.customer = ada;
+        r.booking.notes = 'Allergic to latex';
+        return r;
+      };
+
+      it('removes the customer and notes from their finished bookings, nothing else', async () => {
+        const store = await factory();
+        const past = withCustomer('past', -10);
+        const other = withCustomer('other', -10, { resource: 'r2' });
+        other.booking.customer = { first_name: 'Bob', last_name: 'Berg', email: 'bob@example.com' };
+        await store.insertIfFree(past, NOW);
+        await store.insertIfFree(other, NOW);
+
+        // Email in another case, phone in another format: both identify the same customer.
+        const r = await store.anonymize!(
+          { venue_id: 'v1', customer: { email: 'ada@example.COM' } },
+          NOW,
+        );
+        expect(r).toEqual({ anonymized: 1, kept_upcoming: 0 });
+
+        const got = (await store.get('past', NOW))!.booking;
+        expect(got.customer).toBeNull();
+        expect(got.notes).toBeNull();
+        expect(got.status).toBe('confirmed');
+        expect(got.slot).toEqual(past.booking.slot);
+        expect((await store.get('other', NOW))!.booking.customer?.first_name).toBe('Bob');
+
+        // Nothing left to remove: a second run changes nothing.
+        expect(
+          await store.anonymize!({ venue_id: 'v1', customer: { email: 'ada@example.com' } }, NOW),
+        ).toEqual({ anonymized: 0, kept_upcoming: 0 });
+      });
+
+      it('finds a customer by phone number whatever the spacing', async () => {
+        const store = await factory();
+        await store.insertIfFree(withCustomer('p1', -3), NOW);
+        const r = await store.anonymize!(
+          { venue_id: 'v1', customer: { phone: '+4712345678' } },
+          NOW,
+        );
+        expect(r?.anonymized).toBe(1);
+      });
+
+      it('keeps upcoming bookings and says how many, until they are cancelled', async () => {
+        const store = await factory();
+        await store.insertIfFree(withCustomer('soon', 3), NOW);
+        const query = { venue_id: 'v1', customer: { email: 'ada@example.com' } };
+        expect(await store.anonymize!(query, NOW)).toEqual({ anonymized: 0, kept_upcoming: 1 });
+        expect((await store.get('soon', NOW))!.booking.customer?.first_name).toBe('Ada');
+
+        await store.update('soon', NOW, (b) => ({ ...b, status: 'cancelled' }));
+        expect(await store.anonymize!(query, NOW)).toEqual({ anonymized: 1, kept_upcoming: 0 });
+        expect((await store.get('soon', NOW))!.booking.customer).toBeNull();
+      });
+
+      it('removes personal data from old bookings only, in one venue only', async () => {
+        const store = await factory();
+        await store.insertIfFree(withCustomer('old', -400), NOW);
+        await store.insertIfFree(withCustomer('recent', -10), NOW);
+        await store.insertIfFree(withCustomer('elsewhere', -400, { venue: 'v2' }), NOW);
+
+        const cutoff = new Date(NOW.getTime() - 365 * 86_400_000);
+        const r = await store.anonymize!({ venue_id: 'v1', ended_before: cutoff }, NOW);
+        expect(r).toEqual({ anonymized: 1, kept_upcoming: 0 });
+        expect((await store.get('old', NOW))!.booking.customer).toBeNull();
+        expect((await store.get('recent', NOW))!.booking.customer).not.toBeNull();
+        expect((await store.get('elsewhere', NOW))!.booking.customer).not.toBeNull();
+      });
+
+      it('refuses a query that names nobody and no age, so it can never erase everything', async () => {
+        const store = await factory();
+        await store.insertIfFree(withCustomer('x', -10), NOW);
+        await expect(store.anonymize!({ venue_id: 'v1' }, NOW)).rejects.toMatchObject({
+          code: 'validation_error',
+        });
+        await expect(store.anonymize!({ venue_id: 'v1', customer: {} }, NOW)).rejects.toMatchObject(
+          { code: 'validation_error' },
+        );
+        await expect(
+          store.anonymize!({ venue_id: 'v1', customer: { phone: '123' } }, NOW),
+        ).rejects.toMatchObject({ code: 'validation_error' });
+        expect((await store.get('x', NOW))!.booking.customer).not.toBeNull();
+      });
+    });
   });
 }

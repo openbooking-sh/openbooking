@@ -609,6 +609,7 @@ export const STUDIO_HTML = `<!doctype html>
 
   // ---------------------------------------------------------------- Settings
   var SV = null;     // last SettingsView from the server
+  var dataRights = false; // the host can export and erase one customer's data
   var draft = null;  // settings being edited
   var CATEGORIES = [['hair_salon', 'Hair salon'], ['barber', 'Barber'], ['beauty', 'Beauty & nails'], ['physiotherapist', 'Physiotherapy'], ['therapist', 'Therapy & counselling'], ['personal_trainer', 'Personal training'], ['tutor', 'Tutoring'], ['other', 'Other']];
   var DAYS = [['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'], ['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
@@ -705,6 +706,12 @@ export const STUDIO_HTML = `<!doctype html>
       h += '</div>';
     }
     h += '<div class="card"><h2>AI assistants</h2>' + check('s-listed', s.listed, 'List me in the OpenBooking app, so ChatGPT, Claude and other assistants can find and book me') + '</div>';
+    if (dataRights) {
+      h += '<div class="card"><h2>Customer data</h2><p class="hint">A customer asks what you hold about them, or asks you to delete it. Enter their email address or phone number. Deleting removes name, contact details and notes from their bookings; the bookings themselves stay in your calendar history. Upcoming bookings are kept: cancel them first.</p>' +
+        '<div class="two-f">' + field('Email', 'cd-email', '', 'type="email"') + field('Phone', 'cd-phone', '', 'placeholder="+47..."') + '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="cd-export" type="button">Download their data</button><button class="btn btn-sm btn-danger" id="cd-erase" type="button">Delete their data</button></div>' +
+        '<p class="hint" id="cd-msg" role="status" aria-live="polite" style="margin-top:10px"></p></div>';
+    }
     h += '<div class="savebar"><span class="err" id="set-err"></span><button class="btn btn-primary" id="set-save">Save changes</button></div>';
     $('settings').innerHTML = h;
 
@@ -721,6 +728,30 @@ export const STUDIO_HTML = `<!doctype html>
     if ($('g-on')) $('g-on').onclick = function () { api(g.connect_path, { method: 'POST', body: '{}' }).then(function (d) { location.href = d.url; }).catch(function (e) { toast(e.message); }); };
     if ($('resend-verify')) $('resend-verify').onclick = function (e) { e.preventDefault(); api(SV.account.resend_verification_path, { method: 'POST', body: '{}' }).then(function () { toast('Sent. Check your inbox.'); }).catch(function (x) { toast(x.message); }); };
     if ($('g-off')) $('g-off').onclick = function () { if (confirm('Disconnect Google Calendar?')) api(g.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
+    if ($('cd-export')) {
+      var who = function () { return { email: $('cd-email').value.trim() || undefined, phone: $('cd-phone').value.trim() || undefined }; };
+      var named = function (w) { if (w.email || w.phone) return true; $('cd-msg').textContent = 'Enter an email address or a phone number.'; return false; };
+      $('cd-export').onclick = function () {
+        var w = who();
+        if (!named(w)) return;
+        api('/customers/export', { method: 'POST', body: JSON.stringify(w) }).then(function (d) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
+          a.download = 'customer-data.json';
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+          $('cd-msg').textContent = d.bookings.length + ' booking(s) in the file.';
+        }).catch(function (e) { $('cd-msg').textContent = e.message; });
+      };
+      $('cd-erase').onclick = function () {
+        var w = who();
+        if (!named(w)) return;
+        if (!confirm('Delete name, contact details and notes from every past booking of this customer? This cannot be undone.')) return;
+        api('/customers/erase', { method: 'POST', body: JSON.stringify(w) }).then(function (d) {
+          $('cd-msg').textContent = d.anonymized + ' booking(s) cleaned.' + (d.kept_upcoming ? ' ' + d.kept_upcoming + ' upcoming booking(s) kept: cancel them first to delete those too.' : '');
+        }).catch(function (e) { $('cd-msg').textContent = e.message; });
+      };
+    }
     $('set-save').onclick = save;
   }
 
@@ -787,6 +818,7 @@ export const STUDIO_HTML = `<!doctype html>
     var v = s.venues[0];
     if (v) { tz = v.timezone; currency = v.currency || ''; $('venue-name').textContent = v.name; document.title = v.name + ' · OpenBooking Studio'; }
     $('nav-settings').classList.toggle('hidden', !s.settings);
+    dataRights = !!s.data_rights;
     $('logout-wrap').classList.toggle('hidden', !token);
   }
 

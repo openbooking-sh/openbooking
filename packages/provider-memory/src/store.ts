@@ -61,6 +61,98 @@ export interface BookingRecordStore {
 
   /** Newest first (by `created_at`), filtered by start time. */
   list(query: BookingListQuery, now: Date): Promise<BookingRecord[]>;
+
+  /**
+   * Remove the customer's name, contact details and notes from bookings, keeping the booking
+   * itself (time, service, status) so the calendar history and statistics stay right. Optional:
+   * a store that cannot do this simply lacks the method. See {@link selectForAnonymizing} for
+   * which bookings qualify.
+   */
+  anonymize?(query: AnonymizeQuery, now: Date): Promise<AnonymizeResult>;
+}
+
+/** Who to find: by email, by phone number, or both. A booking matches when either one does. */
+export interface CustomerMatch {
+  email?: string;
+  phone?: string;
+}
+
+export interface AnonymizeQuery {
+  venue_id: string;
+  /** Only this customer's bookings. */
+  customer?: CustomerMatch;
+  /** Only bookings that ended before this instant (retention). */
+  ended_before?: Date;
+}
+
+export interface AnonymizeResult {
+  /** Bookings whose personal data was removed. */
+  anonymized: number;
+  /** Matching bookings still ahead of us (held or confirmed): kept, the business still needs them. */
+  kept_upcoming: number;
+}
+
+const digits = (s: string) => s.replace(/\D/g, '');
+
+/** A phone number needs this many digits before it identifies anyone. */
+const MIN_PHONE_DIGITS = 6;
+
+/** Email is compared case-insensitively; phone numbers by their digits (so spacing doesn't matter). */
+export function matchesCustomer(booking: Booking, match: CustomerMatch): boolean {
+  const c = booking.customer;
+  if (!c) return false;
+  const email = match.email?.trim().toLowerCase();
+  const phone = match.phone ? digits(match.phone) : '';
+  return (
+    (!!email && c.email?.toLowerCase() === email) ||
+    (phone.length >= MIN_PHONE_DIGITS && !!c.phone_number && digits(c.phone_number) === phone)
+  );
+}
+
+/** The booking without anyone's personal data. */
+export function anonymizeBooking(booking: Booking): Booking {
+  return { ...booking, customer: null, notes: null };
+}
+
+/** Refuses a query that would erase everything: it must name a customer or an age. */
+export function assertAnonymizeQuery(query: AnonymizeQuery): void {
+  const c = query.customer;
+  const named = !!c && (!!c.email?.trim() || digits(c.phone ?? '').length >= MIN_PHONE_DIGITS);
+  if (!named && !query.ended_before) {
+    throw new BookingError(
+      'validation_error',
+      'Give an email address or phone number, or how old the bookings must be.',
+    );
+  }
+  if (c && !named) {
+    throw new BookingError('validation_error', 'Give an email address or a full phone number.');
+  }
+}
+
+/**
+ * Which bookings `anonymize` touches: this venue's, still carrying personal data, matching the
+ * customer and age filters. Upcoming bookings (held or confirmed, not yet ended) are counted and
+ * kept, so erasing a customer never loses who is coming tomorrow; cancel them first to erase them.
+ */
+export function selectForAnonymizing(
+  records: Iterable<BookingRecord>,
+  query: AnonymizeQuery,
+  now: Date,
+): { ids: string[]; keptUpcoming: number } {
+  const ids: string[] = [];
+  let keptUpcoming = 0;
+  for (const r of records) {
+    const b = r.booking;
+    if (b.venue_id !== query.venue_id || (!b.customer && !b.notes)) continue;
+    if (query.customer && !matchesCustomer(b, query.customer)) continue;
+    if (query.ended_before && r.end_ms >= query.ended_before.getTime()) continue;
+    if (r.end_ms > now.getTime() && isBlocking(b, now)) {
+      keptUpcoming++;
+      continue;
+    }
+    ids.push(b.booking_id);
+  }
+  return { ids, keptUpcoming };
 }
 
 /** The error stores throw when a confirm loses its slot to a newer hold. */
@@ -162,6 +254,16 @@ export class MemoryBookingStore implements BookingRecordStore {
       }
     }
     return false;
+  }
+
+  async anonymize(query: AnonymizeQuery, now: Date) {
+    assertAnonymizeQuery(query);
+    const { ids, keptUpcoming } = selectForAnonymizing(this.#records.values(), query, now);
+    for (const id of ids) {
+      const r = this.#records.get(id)!;
+      r.booking = anonymizeBooking(r.booking);
+    }
+    return { anonymized: ids.length, kept_upcoming: keptUpcoming };
   }
 
   async list(query: BookingListQuery, now: Date) {
