@@ -32,6 +32,8 @@ export interface ActivityLog {
   list(query?: ActivityQuery): Promise<ActivityEntry[]>;
   /** booking_id → agent credited with the booking. Missing ids have no recorded source. */
   bookedVia(bookingIds: string[]): Promise<Map<string, string>>;
+  /** Forget everything this log holds, booked-via attribution included (a business closing). */
+  clear?(): Promise<void>;
 }
 
 /** Credit rule: the agent that confirmed wins; otherwise the agent that first held it. */
@@ -123,5 +125,10 @@ export class ActivityStore implements ActivityLog {
       if (via) out.set(id, via);
     }
     return out;
+  }
+
+  async clear(): Promise<void> {
+    this.#entries.length = 0;
+    this.#bookedVia.clear();
   }
 }

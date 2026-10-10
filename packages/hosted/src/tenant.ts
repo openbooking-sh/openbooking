@@ -140,6 +140,45 @@ export class Tenant {
     return this.#business;
   }
 
+  /**
+   * Everything stored about this business, for the owner to download. Secrets stay out: no
+   * password hash, no Google tokens.
+   */
+  async exportData() {
+    const b = this.#business;
+    const now = this.service.clock.now();
+    const records = await this.#deps.bookings.list({ venue_id: this.id, limit: 100_000 }, now);
+    return {
+      exported_at: now.toISOString(),
+      account: {
+        business_id: b.id,
+        email: b.owner.email,
+        email_verified_at: b.owner.email_verified_at ?? null,
+        created_at: b.created_at,
+        google_calendar_connected: !!b.google,
+      },
+      settings: b.settings,
+      bookings: records.map((r) => r.booking),
+    };
+  }
+
+  /**
+   * Delete everything stored for this business. The account record goes last, so a failure half
+   * way leaves an account the owner can still log into and retry.
+   */
+  async eraseData(): Promise<void> {
+    const d = this.#deps;
+    const records = await d.bookings.list(
+      { venue_id: this.id, limit: 100_000 },
+      this.service.clock.now(),
+    );
+    for (const r of records) await d.calendarLinks.delete(r.booking.booking_id);
+    await d.activityFor(this.id).clear?.();
+    await d.idempotency.deletePrefix?.(`${this.id}:`);
+    await d.bookings.deleteVenue?.(this.id);
+    await d.businesses.delete?.(this.id);
+  }
+
   /** Every booking of this business that carries the customer's email or phone number. */
   async #customerBookings(who: CustomerMatch): Promise<Booking[]> {
     const records = await this.#deps.bookings.list(
@@ -229,6 +268,8 @@ export class Tenant {
               resend_verification_path: '/account/verify-email',
             }
           : {}),
+        export_path: '/account/export',
+        delete_path: '/account/delete',
       },
     };
   }

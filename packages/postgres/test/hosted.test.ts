@@ -77,6 +77,19 @@ describe(`hosted stores (${target})`, () => {
     expect(await limiter.hit('login:a', 3, 60_000)).toBe(true);
   });
 
+  it('deletes one business and nothing else', async () => {
+    const db = await freshDb();
+    const businesses = new PostgresBusinessStore(db);
+    await businesses.create(business('a', 'a@example.com'));
+    await businesses.create(business('b', 'b@example.com'));
+    expect(await businesses.delete('a')).toBe(true);
+    expect(await businesses.delete('a')).toBe(false);
+    expect(await businesses.get('a')).toBeUndefined();
+    expect(await businesses.get('b')).toBeDefined();
+    // The email is free again.
+    await businesses.create(business('a2', 'a@example.com'));
+  });
+
   it('keeps activity separate per business', async () => {
     const db = await freshDb();
     const a = new PostgresActivityLog(db, { scope: 'a' });

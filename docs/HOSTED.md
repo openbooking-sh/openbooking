@@ -154,7 +154,22 @@ email addresses ignore case.
 - **Self-hosted servers** can offer the same by passing `dataRights` to `createStudio`; the
   stores' `anonymize()` does the work.
 
-Deleting a whole account and exporting a business's data are not built yet.
+### The owner's own data
+
+Under **Settings, Your account** the owner can download everything stored about the business
+(account, settings and every booking, as JSON; never the password hash or Google tokens) and close
+the account. Closing asks for the password and deletes, in this order: calendar links, activity and
+booked-via attribution, idempotency records, all bookings, and last the account itself, so a failure
+half way leaves an account the owner can still log into and retry. The booking page stops working
+and the id is free to register again.
+
+- Upcoming bookings are not cancelled and customers are not told. The owner should cancel or move
+  them first.
+- The Google connection stays authorized in the owner's Google account until they remove it at
+  myaccount.google.com/permissions; events already in their calendar are theirs and stay.
+- Expired rate-limit windows (keyed by IP address) are deleted by the same daily purge.
+- A store that lacks `BookingRecordStore.deleteVenue` or `BusinessStore.delete` makes closing
+  refuse with 501 before anything is touched.
 
 ## Observability
 
@@ -175,4 +190,3 @@ calendar sync, analytics, Slack) finishes after the response through `waitUntil(
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Encrypting Google refresh tokens at rest (they sit in the business record as-is).
 - Outlook (Nylas), deposits, rescheduling.
-- Deleting a whole account, and exporting a business's own data.

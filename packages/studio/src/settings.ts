@@ -165,6 +165,10 @@ export interface SettingsView {
     email_verified?: boolean;
     /** POST here (Studio API path) to send the confirmation email again. */
     resend_verification_path?: string;
+    /** GET here (Studio API path) for everything stored about the business, as JSON. */
+    export_path?: string;
+    /** POST `{ password }` here to delete the account and everything in it. */
+    delete_path?: string;
   };
 }
 

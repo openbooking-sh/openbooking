@@ -64,6 +64,18 @@ export class PostgresActivityLog implements ActivityLog {
     return rows.map((r) => ({ id: Number(r.id), ...r.entry }));
   }
 
+  async clear(): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      // Attribution rows carry no scope; they belong to the bookings this scope's entries name.
+      await tx.query(
+        `delete from ob_booked_via where booking_id in
+           (select booking_id from ob_activity where scope = $1 and booking_id is not null)`,
+        [this.#scope],
+      );
+      await tx.query('delete from ob_activity where scope = $1', [this.#scope]);
+    });
+  }
+
   async bookedVia(bookingIds: string[]): Promise<Map<string, string>> {
     if (!bookingIds.length) return new Map();
     const { rows } = await this.#db.query<{ booking_id: string; agent: string }>(

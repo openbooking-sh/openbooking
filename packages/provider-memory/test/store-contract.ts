@@ -261,6 +261,18 @@ export function describeBookingStore(
       expect(await ids('v2')).toEqual(['b1']);
     });
 
+    it('deletes every booking of one venue and leaves the others', async () => {
+      const store = await factory();
+      await store.insertIfFree(record({ id: 'a1', venue: 'v1' }), NOW);
+      await store.insertIfFree(record({ id: 'a2', venue: 'v1', resource: 'r2' }), NOW);
+      await store.insertIfFree(record({ id: 'b1', venue: 'v2' }), NOW);
+      expect(await store.deleteVenue!('v1')).toBe(2);
+      expect(await store.get('a1', NOW)).toBeUndefined();
+      expect(await store.get('a2', NOW)).toBeUndefined();
+      expect(await store.get('b1', NOW)).toBeDefined();
+      expect(await store.deleteVenue!('v1')).toBe(0);
+    });
+
     describe('anonymize', () => {
       const ada = {
         first_name: 'Ada',

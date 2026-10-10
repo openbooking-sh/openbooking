@@ -158,6 +158,7 @@ const SignupInput = z.object({
     .catch(undefined),
 });
 
+const DeleteAccountInput = z.object({ password: z.string().max(200) });
 const LoginInput = z.object({ email: z.string().max(200), password: z.string().max(200) });
 const ForgotInput = z.object({ email: z.string().max(200) });
 const ResetInput = z.object({ token: z.string().max(500), password: z.string().min(8).max(200) });
@@ -187,7 +188,8 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     '127.0.0.1',
     '[::1]',
   ];
-  const limiter = options.rateLimiter ?? new MemoryRateLimiter(() => clock.now().getTime());
+  const limiter: RateLimiter =
+    options.rateLimiter ?? new MemoryRateLimiter(() => clock.now().getTime());
   const clientIp = options.clientIp ?? proxyClientIp;
   const requireVerifiedEmail = options.requireVerifiedEmail ?? !!options.mail;
   const google: (GoogleCredentials & { fetch?: typeof fetch }) | undefined = options.google
@@ -258,7 +260,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   };
 
   const app = new Hono<{ Variables: { tenant: Tenant } }>();
-  const err = (c: Context, e: unknown, status: 400 | 401 | 404 | 409 | 500 = 400) =>
+  const err = (c: Context, e: unknown, status: 400 | 401 | 404 | 409 | 500 | 501 = 400) =>
     c.json({ error: toErrorPayload(e) }, status);
 
   const tooMany = (c: Context) =>
@@ -673,6 +675,39 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     return c.json({ ok: true, sent: !!options.mail && !t.business.owner.email_verified_at });
   });
 
+  app.get(`${STUDIO_PATH}/api/account/export`, async (c) =>
+    c.json(await c.get('tenant').exportData()),
+  );
+
+  app.post(`${STUDIO_PATH}/api/account/delete`, async (c) => {
+    const t = c.get('tenant');
+    if (!(await allowed([`delete:${t.id}`, { limit: 5, windowMs: 15 * 60_000 }])))
+      return tooMany(c);
+    const parsed = DeleteAccountInput.safeParse(await c.req.json().catch(() => null));
+    const ok =
+      parsed.success &&
+      (await verifyPassword(parsed.data.password, t.business.owner.password_hash));
+    if (!ok) {
+      return c.json({ error: { code: 'forbidden', message: 'Wrong password.' } }, 403);
+    }
+    // Check before touching anything: half a deletion is worse than none.
+    if (!deps.bookings.deleteVenue || !deps.businesses.delete) {
+      return err(
+        c,
+        new BookingError('operation_not_supported', 'This storage cannot delete accounts yet.'),
+        501,
+      );
+    }
+    await t.idle();
+    await t.eraseData();
+    tenants.delete(t.id);
+    activity.delete(t.id);
+    await t.close();
+    track('account_deleted', t.id);
+    options.ops?.notify(':wave: A business closed its account.');
+    return c.json({ ok: true });
+  });
+
   app.post(`${STUDIO_PATH}/api/integrations/google/disconnect`, async (c) => {
     const t = c.get('tenant');
     const saved = await businesses.update(t.id, ({ google: _, ...rest }) => rest);
@@ -747,6 +782,8 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   const retentionDays = options.retentionDays ?? 730;
   const purgeExpiredData = async () => {
+    // Rate-limit windows are keyed by IP address; once a window is over there is no reason to keep it.
+    await limiter.purge?.();
     const store = deps.bookings;
     if (!store.anonymize || retentionDays <= 0) return { businesses: 0, anonymized: 0 };
     const cutoff = new Date(clock.now().getTime() - retentionDays * 86_400_000);

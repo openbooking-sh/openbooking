@@ -151,6 +151,14 @@ export class PostgresBookingStore implements BookingRecordStore {
     });
   }
 
+  async deleteVenue(venueId: string) {
+    const { rows } = await this.#db.query(
+      'delete from ob_bookings where venue_id = $1 returning booking_id',
+      [venueId],
+    );
+    return rows.length;
+  }
+
   async anonymize(query: AnonymizeQuery, now: Date) {
     assertAnonymizeQuery(query);
     return this.#db.transaction(async (tx) => {
