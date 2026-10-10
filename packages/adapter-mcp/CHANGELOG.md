@@ -1,5 +1,12 @@
 # @openbooking-sh/adapter-mcp
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [dd48af2]
+  - @openbooking-sh/core@0.9.0
+
 ## 0.7.0
 
 ### Minor Changes
