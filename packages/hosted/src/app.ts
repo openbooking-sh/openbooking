@@ -466,15 +466,14 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   // ---------------------------------------------------------------- Password reset, email check
 
+  // No analytics snippet here: the emailed link carries the reset token in the URL fragment.
   app.get('/reset', (c) =>
     c.html(
-      page(
-        resetHtml({
-          forgotApi: '/api/password/forgot',
-          resetApi: '/api/password/reset',
-          studioPath: STUDIO_PATH,
-        }),
-      ),
+      resetHtml({
+        forgotApi: '/api/password/forgot',
+        resetApi: '/api/password/reset',
+        studioPath: STUDIO_PATH,
+      }),
     ),
   );
 

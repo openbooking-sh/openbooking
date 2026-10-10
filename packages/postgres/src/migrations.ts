@@ -91,6 +91,25 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       create index ob_activity_scope on ob_activity (scope, id desc);
     `,
   },
+  {
+    version: 3,
+    name: 'row-level-security',
+    // Customer contact details live in these tables. With RLS on and no policies, a role that
+    // does not own the tables (the anon role of a REST or Data API layer, say) sees nothing; the
+    // owner role OpenBooking connects as is unaffected.
+    sql: `
+      alter table ob_bookings enable row level security;
+      alter table ob_idempotency enable row level security;
+      alter table ob_activity enable row level security;
+      alter table ob_booked_via enable row level security;
+      alter table ob_calcom_records enable row level security;
+      alter table ob_businesses enable row level security;
+      alter table ob_calendar_links enable row level security;
+      alter table ob_notification_log enable row level security;
+      alter table ob_rate_limits enable row level security;
+      alter table ob_migrations enable row level security;
+    `,
+  },
 ];
 
 /**

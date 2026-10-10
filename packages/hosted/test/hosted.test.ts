@@ -571,7 +571,17 @@ describe('analytics and operator notifications', () => {
     };
 
     // Owner pages carry the PostHog snippet; customer booking pages don't.
-    expect((await call('/signup')).text).toContain('phc_test');
+    const signup = (await call('/signup')).text;
+    expect(signup).toContain('phc_test');
+    // Page views only: Studio shows customer names and notes, sign-up takes a password.
+    expect(signup).toContain('autocapture:false');
+    expect(signup).toContain('enable_heatmaps:false');
+    expect(signup).toContain('disable_session_recording:true');
+    expect(signup).toContain('mask_all_text:true');
+    // The reset link carries its token in the URL, so that page is never tracked.
+    expect((await call('/reset')).text).not.toContain('phc_test');
+    // No request to Google Fonts: it would hand every visitor's IP address to Google.
+    expect(signup).not.toContain('fonts.googleapis.com');
     await call('/api/signup', {
       business_name: 'Studio Nord',
       your_name: 'Maria',

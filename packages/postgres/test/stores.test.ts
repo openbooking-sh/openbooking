@@ -20,6 +20,17 @@ describe(`migrations (${target})`, () => {
     const { rows } = await db.query<{ version: number }>('select version from ob_migrations');
     expect(rows.map((r) => Number(r.version))).toEqual(MIGRATIONS.map((m) => m.version));
   });
+
+  it('turns row level security on for every table, so only the owner role can read them', async () => {
+    const db = await freshDb();
+    const { rows } = await db.query<{ relname: string; relrowsecurity: boolean }>(
+      `select c.relname, c.relrowsecurity from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = current_schema() and c.relkind = 'r' and left(c.relname, 3) = 'ob_'`,
+    );
+    expect(rows.length).toBeGreaterThan(8);
+    expect(rows.filter((r) => !r.relrowsecurity).map((r) => r.relname)).toEqual([]);
+  });
 });
 
 describe(`PostgresIdempotencyStore (${target})`, () => {

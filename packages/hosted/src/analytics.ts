@@ -62,14 +62,19 @@ export class PostHogAnalytics implements Analytics {
 
 /**
  * The PostHog browser snippet for owner-facing pages (sign-up, setup, Studio). Cookieless: no
- * cookies or local storage, so no consent banner is needed. Turn on "Cookieless server hash mode"
- * in the PostHog project settings for unique-visitor counts.
+ * cookies or local storage. Whether that exempts it from consent is a legal question for the
+ * operator. Turn on "Cookieless server hash mode" in the PostHog project settings for
+ * unique-visitor counts.
+ *
+ * Page views only: no autocapture, heatmaps or session recording, and all text masked. Studio
+ * shows customer names and booking notes, and sign-up asks for a password, so nothing on the
+ * page may be read. Never add it to the reset page: the emailed link carries the token in the URL.
  */
 export function posthogSnippet(apiKey: string, host = 'https://eu.i.posthog.com'): string {
   const cfg = JSON.stringify({ key: apiKey, host }).replace(/</g, '\\u003c');
   return `<script>
 !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-(function(){var c=${cfg};posthog.init(c.key,{api_host:c.host,cookieless_mode:'always',person_profiles:'identified_only',capture_pageview:true,capture_pageleave:true,disable_session_recording:true,enable_heatmaps:true});})();
+(function(){var c=${cfg};posthog.init(c.key,{api_host:c.host,cookieless_mode:'always',person_profiles:'identified_only',autocapture:false,capture_pageview:true,capture_pageleave:true,disable_session_recording:true,enable_heatmaps:false,mask_all_text:true,mask_all_element_attributes:true});})();
 </script>`;
 }
 
