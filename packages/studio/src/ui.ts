@@ -14,7 +14,7 @@ export const STUDIO_HTML = `<!doctype html>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%232747e8'/><path d='M10 16.5l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
 <style>
   :root {
-    --bg: #f8f8f5; --bg-2: #f1f1ec; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #8a90a3;
+    --bg: #f8f8f5; --bg-2: #f1f1ec; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #646b80;
     --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4;
     --sky: #6fb6ff; --sky-bg: #eaf3ff; --green: #16a34a; --green-bg: #e8f7ee; --amber: #b45309;
     --amber-bg: #fdf3e2; --red: #dc2626; --red-bg: #fdecec; --mono: 'Geist Mono', ui-monospace, monospace;
@@ -179,9 +179,9 @@ export const STUDIO_HTML = `<!doctype html>
   <div class="card">
     <h1>OpenBooking Studio</h1>
     <div class="muted" id="login-msg">Enter your Studio token to continue.</div>
-    <input id="email" class="hidden" type="email" placeholder="Email" autocomplete="username" style="margin-bottom:0" />
-    <input id="token" type="password" placeholder="Studio token" autocomplete="current-password" />
-    <div class="err" id="login-err"></div>
+    <input id="email" class="hidden" type="email" aria-label="Email" placeholder="Email" autocomplete="username" style="margin-bottom:0" />
+    <input id="token" type="password" aria-label="Password or Studio token" placeholder="Studio token" autocomplete="current-password" />
+    <div class="err" id="login-err" role="alert"></div>
     <button class="btn btn-primary" id="login-btn" style="width:100%;justify-content:center">Open Studio</button>
     <div class="alt hidden" id="login-forgot"><a id="forgot-link" href="#">Forgot your password?</a></div>
     <div class="alt hidden" id="login-alt">New here? <a id="signup-link" href="#">Create your free account</a></div>
@@ -554,16 +554,16 @@ export const STUDIO_HTML = `<!doctype html>
       var isTables = cat.resources.some(function (r) { return r.capacity && r.capacity.max > 1; });
       openDrawer('<div class="drawer-head"><h1 style="font-size:20px">New booking</h1><button class="btn btn-sm" id="nb-close">Close</button></div>' +
         '<div class="muted" style="margin-bottom:18px">For phone calls and walk-ins.</div>' +
-        (opts ? '<div class="field"><label>Service</label><select id="nb-service">' + opts + '</select></div>' : '') +
-        '<div class="two-f"><div class="field"><label>Date</label><input type="date" id="nb-date" value="' + esc(calDate || '') + '" /></div>' +
-        '<div class="field"><label>' + (isTables ? 'Guests' : 'People') + '</label><input type="number" id="nb-party" min="1" max="50" value="' + (isTables ? 2 : 1) + '" /></div></div>' +
+        (opts ? '<div class="field"><label for="nb-service">Service</label><select id="nb-service">' + opts + '</select></div>' : '') +
+        '<div class="two-f"><div class="field"><label for="nb-date">Date</label><input type="date" id="nb-date" value="' + esc(calDate || '') + '" /></div>' +
+        '<div class="field"><label for="nb-party">' + (isTables ? 'Guests' : 'People') + '</label><input type="number" id="nb-party" min="1" max="50" value="' + (isTables ? 2 : 1) + '" /></div></div>' +
         '<button class="btn" id="nb-find">Find free times</button><div id="nb-times" class="times" style="margin-top:12px"></div>' +
         '<div id="nb-form" class="hidden">' +
-          '<div class="two-f"><div class="field"><label>First name</label><input id="nb-first" /></div><div class="field"><label>Last name</label><input id="nb-last" /></div></div>' +
-          '<div class="two-f"><div class="field"><label>Phone</label><input id="nb-phone" placeholder="+47..." /></div><div class="field"><label>Email</label><input id="nb-email" type="email" /></div></div>' +
-          '<div class="field"><label>Notes</label><textarea id="nb-notes"></textarea></div>' +
+          '<div class="two-f"><div class="field"><label for="nb-first">First name</label><input id="nb-first" /></div><div class="field"><label for="nb-last">Last name</label><input id="nb-last" /></div></div>' +
+          '<div class="two-f"><div class="field"><label for="nb-phone">Phone</label><input id="nb-phone" placeholder="+47..." /></div><div class="field"><label for="nb-email">Email</label><input id="nb-email" type="email" /></div></div>' +
+          '<div class="field"><label for="nb-notes">Notes</label><textarea id="nb-notes"></textarea></div>' +
           '<label class="check hidden" id="nb-dep-wrap"><input type="checkbox" id="nb-dep" /> <span id="nb-dep-label">Deposit collected</span></label>' +
-          '<div class="err" id="nb-err"></div>' +
+          '<div class="err" id="nb-err" role="alert"></div>' +
           '<button class="btn btn-primary" id="nb-save">Create booking</button>' +
         '</div>');
       $('nb-close').onclick = closeDrawer;
@@ -673,7 +673,7 @@ export const STUDIO_HTML = `<!doctype html>
     h += '<div class="card"><h2>Staff</h2><p class="hint">Everyone customers can book. ' + (cals ? 'Pick the calendar that holds each person&#39;s appointments; busy times there are never offered.' : '') + '</p>' +
       s.staff.map(function (m, i) {
         return '<div class="set-row st-row" data-i="' + i + '">' + field('Name', 'st-name-' + i, m.name) +
-          (cals ? '<div class="field"><label>Google calendar</label><select class="st-cal"><option value="">Default (' + esc((cals.filter(function (c) { return c.primary; })[0] || { summary: 'primary' }).summary) + ')</option>' + cals.map(function (c) { return '<option value="' + esc(c.id) + '"' + (m.google_calendar_id === c.id ? ' selected' : '') + '>' + esc(c.summary) + '</option>'; }).join('') + '</select></div>' : '<div></div>') +
+          (cals ? '<div class="field"><label>Google calendar</label><select class="st-cal" aria-label="Google calendar"><option value="">Default (' + esc((cals.filter(function (c) { return c.primary; })[0] || { summary: 'primary' }).summary) + ')</option>' + cals.map(function (c) { return '<option value="' + esc(c.id) + '"' + (m.google_calendar_id === c.id ? ' selected' : '') + '>' + esc(c.summary) + '</option>'; }).join('') + '</select></div>' : '<div></div>') +
           '<button class="btn btn-sm btn-danger" data-rm-staff="' + i + '">Remove</button></div>';
       }).join('') + '<button class="btn btn-sm" id="add-staff" style="margin-top:10px">+ Add staff member</button></div>';
     h += '<div class="card"><h2>Services</h2><p class="hint">Prices in ' + esc(p.currency) + '. Leave the price empty if it is set at the appointment.</p>' +
@@ -681,7 +681,7 @@ export const STUDIO_HTML = `<!doctype html>
         return '<div class="set-row sv-row" data-i="' + i + '">' + field('Service', 'sv-name-' + i, v.name) + field('Minutes', 'sv-dur-' + i, v.duration_minutes, 'type="number" min="5" max="600"') +
           field('Price', 'sv-price-' + i, major(v.price), 'type="number" min="0" step="any"') + '<button class="btn btn-sm btn-danger" data-rm-svc="' + i + '">Remove</button>' +
           '<div class="sv-wide">' + field('Description', 'sv-desc-' + i, v.description) + '</div>' +
-          (s.staff.length > 1 ? '<div class="sv-wide"><div class="field"><label>Who does it (none ticked = everyone)</label><div class="staff-pick">' + s.staff.map(function (m) { return '<label><input type="checkbox" class="sv-staff" value="' + esc(m.id) + '"' + (v.staff_ids.indexOf(m.id) >= 0 ? ' checked' : '') + ' />' + esc(m.name) + '</label>'; }).join('') + '</div></div></div>' : '') +
+          (s.staff.length > 1 ? '<div class="sv-wide"><div class="field"><label>Who does it (none ticked = everyone)</label><div class="staff-pick" role="group" aria-label="Who does it">' + s.staff.map(function (m) { return '<label><input type="checkbox" class="sv-staff" value="' + esc(m.id) + '"' + (v.staff_ids.indexOf(m.id) >= 0 ? ' checked' : '') + ' />' + esc(m.name) + '</label>'; }).join('') + '</div></div></div>' : '') +
           '</div>';
       }).join('') + '<button class="btn btn-sm" id="add-svc" style="margin-top:10px">+ Add service</button></div>';
     var c = s.cancellation, r = s.booking_rules;

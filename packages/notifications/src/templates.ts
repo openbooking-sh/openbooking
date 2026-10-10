@@ -157,7 +157,7 @@ function compose(p: {
 ${p.rows
   .map(
     ([k, v]) =>
-      `<tr><td style="padding:6px 12px 6px 0;color:#8a90a3;vertical-align:top;white-space:nowrap">${e(k)}</td><td style="padding:6px 0">${e(v)}</td></tr>`,
+      `<tr><td style="padding:6px 12px 6px 0;color:#646b80;vertical-align:top;white-space:nowrap">${e(k)}</td><td style="padding:6px 0">${e(v)}</td></tr>`,
   )
   .join('\n')}
 </table>
@@ -172,9 +172,9 @@ ${
     ? `<p style="margin:22px 0 0"><a href="${e(p.link[0])}" style="display:inline-block;background:#2747e8;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:500">${e(p.link[1])}</a></p>`
     : ''
 }
-<p style="margin:22px 0 0;font-size:13px;color:#8a90a3">${contact.map(e).join('<br>')}</p>
+<p style="margin:22px 0 0;font-size:13px;color:#646b80">${contact.map(e).join('<br>')}</p>
 </div>
-<p style="text-align:center;font-size:12px;color:#8a90a3;margin:14px 0 0">${e(footer)}</p>
+<p style="text-align:center;font-size:12px;color:#646b80;margin:14px 0 0">${e(footer)}</p>
 </body></html>`;
 
   return { subject: p.subject, text, html };

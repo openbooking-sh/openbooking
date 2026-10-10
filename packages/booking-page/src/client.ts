@@ -63,7 +63,8 @@ export const PAGE_SCRIPT = String.raw`
   function renderServices() {
     if (!D.offerings.length) { $('services').innerHTML = '<div class="muted">No services can be booked online yet.</div>'; return; }
     $('services').innerHTML = D.offerings.map(function (o) {
-      return '<button class="opt' + (state.service && state.service.id === o.id ? ' on' : '') + '" data-id="' + esc(o.id) + '"><span><b>' + esc(o.name) + '</b><small>' +
+      var on = !!(state.service && state.service.id === o.id);
+      return '<button class="opt' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-id="' + esc(o.id) + '"><span><b>' + esc(o.name) + '</b><small>' +
         o.duration_minutes + ' min' + (o.description ? ' · ' + esc(o.description) : '') + '</small></span><span class="p">' + (o.price ? money(o.price) : '') + '</span></button>';
     }).join('');
     $('services').querySelectorAll('.opt').forEach(function (b) {
@@ -86,7 +87,7 @@ export const PAGE_SCRIPT = String.raw`
     show('staff-wrap', D.staff.length > 1);
     var opts = [{ id: '', name: 'Anyone' }].concat(D.staff);
     $('staff').innerHTML = opts.map(function (s) {
-      return '<button class="chip' + (state.staff === s.id ? ' on' : '') + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</button>';
+      return '<button class="chip' + (state.staff === s.id ? ' on' : '') + '" aria-pressed="' + (state.staff === s.id) + '" data-id="' + esc(s.id) + '">' + esc(s.name) + '</button>';
     }).join('');
     $('staff').querySelectorAll('.chip').forEach(function (b) {
       b.onclick = function () { state.staff = b.getAttribute('data-id'); renderStaff(); loadTimes(); };
@@ -97,7 +98,7 @@ export const PAGE_SCRIPT = String.raw`
     for (var i = 0; i < 14; i++) {
       var d = addDays(t, i);
       var label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : fmtDay(d, { weekday: 'short', day: 'numeric', month: 'short' });
-      h += '<button class="chip' + (d === state.date ? ' on' : '') + '" data-d="' + d + '">' + esc(label) + '</button>';
+      h += '<button class="chip' + (d === state.date ? ' on' : '') + '" aria-pressed="' + (d === state.date) + '" data-d="' + d + '">' + esc(label) + '</button>';
     }
     $('dates').innerHTML = h;
     $('dates').querySelectorAll('.chip').forEach(function (b) {
@@ -136,7 +137,7 @@ export const PAGE_SCRIPT = String.raw`
       $('times').innerHTML = r.slots.map(function (s, i) {
         var hint = hinted && fmtTime(s.start) === P.time;
         if (hint) hit = true;
-        return '<button class="chip' + (hint ? ' hint' : '') + '" data-i="' + i + '" title="' + esc(s.resource ? s.resource.label : '') + '">' + fmtTime(s.start) + '</button>';
+        return '<button class="chip' + (hint ? ' hint' : '') + '" aria-pressed="false" data-i="' + i + '" title="' + esc(s.resource ? s.resource.label : '') + '">' + fmtTime(s.start) + '</button>';
       }).join('');
       $('times-msg').textContent = hinted ? (hit ? 'Your requested time ' + P.time + ' is free. Tap it to continue.' : P.time + ' is no longer free. Pick another time.') : '';
       $('times').querySelectorAll('.chip').forEach(function (b) {
@@ -161,7 +162,7 @@ export const PAGE_SCRIPT = String.raw`
       return;
     }
     release();
-    $('times').querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('on', x === btn); x.disabled = true; });
+    $('times').querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('on', x === btn); x.setAttribute('aria-pressed', x === btn ? 'true' : 'false'); x.disabled = true; });
     $('times-msg').textContent = 'Holding ' + fmtTime(slot.start) + ' for you…';
     api('/hold', { slot_id: slot.slot_id, idempotency_key: uuid() }).then(function (h) {
       state.hold = h.booking;

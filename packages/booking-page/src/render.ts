@@ -169,7 +169,7 @@ function addressLine(v: Venue): string {
 
 const STYLE = `
   :root {
-    --bg: #f8f8f5; --bg-2: #f1f1ec; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #8a90a3;
+    --bg: #f8f8f5; --bg-2: #f1f1ec; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #646b80;
     --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4;
     --sky-bg: #eaf3ff; --green: #16a34a; --green-bg: #e8f7ee; --amber: #b45309; --amber-bg: #fdf3e2;
     --red: #dc2626; --red-bg: #fdecec; --mono: 'Geist Mono', ui-monospace, monospace;
@@ -310,7 +310,7 @@ ${venueHeader(v, m.profile)}
   <div id="party-wrap" class="field hidden" style="max-width:160px"><label for="party">Guests</label><input id="party" type="number" min="1" max="50" value="1" /></div>
   <div class="chips" id="dates"></div>
   <div class="field" style="max-width:200px;margin-top:10px"><label for="date">Or choose a date</label><input id="date" type="date" /></div>
-  <div id="times-msg" class="muted"></div>
+  <div id="times-msg" class="muted" role="status" aria-live="polite"></div>
   <div class="times" id="times"></div>
 </section>
 
@@ -323,7 +323,7 @@ ${venueHeader(v, m.profile)}
   <div class="two"><div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" /></div>
   <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" autocomplete="tel" placeholder="+47..." /></div></div>
   <div class="field"><label for="notes">Anything we should know? (optional)</label><textarea id="notes" maxlength="500"></textarea></div>
-  <div class="err" id="err"></div>
+  <div class="err" id="err" role="alert"></div>
   <button class="btn btn-primary" id="confirm">Confirm booking</button>
   <p class="muted" style="font-size:13px">By confirming you accept the price and cancellation terms above.</p>
 </section>
@@ -365,7 +365,7 @@ ${venueHeader(v, m.profile)}
 <section class="card">
   <h2>Your booking</h2>
   <div id="body" class="muted">Loading…</div>
-  <div class="err" id="err"></div>
+  <div class="err" id="err" role="alert"></div>
   <div id="cancel-box" class="hidden">
     <div class="warn hidden" id="terms"></div>
     <button class="btn btn-danger" id="cancel">Cancel booking</button>
