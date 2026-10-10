@@ -40,7 +40,7 @@ function email(opts: {
 <p>${esc(opts.intro)}</p>
 <p><a href="${esc(opts.url)}" style="display:inline-block;background:#2747e8;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px">${esc(opts.button)}</a></p>
 <p style="color:#4a5068;font-size:13px">${esc(opts.outro)}</p>
-<p style="color:#8a90a3;font-size:13px">OpenBooking</p></div>`,
+<p style="color:#646b80;font-size:13px">OpenBooking</p></div>`,
   };
 }
 
@@ -84,7 +84,7 @@ export function resetHtml(opts: {
 <meta name="referrer" content="no-referrer" />
 <title>Reset password · OpenBooking</title>
 <style>
-  :root { --bg: #f8f8f5; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #8a90a3; --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4; --red: #dc2626; }
+  :root { --bg: #f8f8f5; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #646b80; --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4; --red: #dc2626; }
   @media (prefers-color-scheme: dark) { :root { --bg: #0b0d14; --card: #141826; --ink: #eef0f6; --ink-2: #b4b9cc; --ink-3: #7d8399; --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.16); --royal: #5b75ff; --royal-2: #4561f5; } }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.5 system-ui, sans-serif; }
@@ -107,14 +107,14 @@ export function resetHtml(opts: {
     <p>Enter the email you signed up with and we'll send you a link to choose a new one.</p>
     <label for="email">Email</label><input id="email" type="email" autocomplete="email" required />
     <button id="ask-go" type="submit">Send reset link</button>
-    <div class="msg" id="ask-msg"></div>
+    <div class="msg" id="ask-msg" role="status" aria-live="polite"></div>
   </form>
   <form class="card hidden" id="set" novalidate>
     <h1>Choose a new password</h1>
     <p>At least 8 characters. You'll be logged out everywhere else.</p>
     <label for="password">New password</label><input id="password" type="password" autocomplete="new-password" minlength="8" required />
     <button id="set-go" type="submit">Save and open Studio</button>
-    <div class="msg" id="set-msg"></div>
+    <div class="msg" id="set-msg" role="status" aria-live="polite"></div>
   </form>
   <p style="text-align:center;margin-top:18px;font-size:13.5px"><a id="back" href="#">Back to log in</a></p>
 </main>

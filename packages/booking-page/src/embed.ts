@@ -46,7 +46,7 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
   var left = opt('position', 'right') === 'left';
 
   // ---------------------------------------------------------------- popup
-  var overlay, frame;
+  var overlay, frame, closeBtn, lastFocus;
   function open(url) {
     if (!overlay) {
       overlay = document.createElement('div');
@@ -62,6 +62,7 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
       close.innerHTML = '&times;';
       close.style.cssText = 'position:absolute;top:10px;right:10px;z-index:1;width:36px;height:36px;border:0;border-radius:50%;background:rgba(11,16,32,.08);color:#0b1020;font:24px/36px system-ui,sans-serif;cursor:pointer;';
       close.onclick = hide;
+      closeBtn = close;
       frame = document.createElement('iframe');
       frame.title = 'Book with ' + C.name;
       frame.style.cssText = 'border:0;width:100%;height:100%;display:block;';
@@ -71,6 +72,10 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
       overlay.appendChild(box);
       overlay.addEventListener('click', function (e) { if (e.target === overlay) hide(); });
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.style.display !== 'none') hide(); });
+      // The page behind is inert while the dialog is open: focus that escapes comes back.
+      document.addEventListener('focusin', function (e) {
+        if (overlay.style.display !== 'none' && !overlay.contains(e.target)) closeBtn.focus();
+      });
       document.body.appendChild(overlay);
       if (window.matchMedia && window.matchMedia('(max-width: 600px)').matches) {
         overlay.style.padding = '0'; box.style.height = '100%'; box.style.borderRadius = '0';
@@ -78,12 +83,16 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
     }
     var target = url || C.page_url;
     if (frame.getAttribute('src') !== target) frame.setAttribute('src', target);
+    if (!overlay.contains(document.activeElement)) lastFocus = document.activeElement;
     overlay.style.display = 'flex';
     document.documentElement.style.overflow = 'hidden';
+    closeBtn.focus();
   }
   function hide() {
     if (overlay) overlay.style.display = 'none';
     document.documentElement.style.overflow = '';
+    if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
+    lastFocus = null;
   }
 
   function ready(fn) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }

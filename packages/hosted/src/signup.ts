@@ -19,7 +19,7 @@ export function signupHtml(opts: {
 <meta name="description" content="Free. Your customers can book you through ChatGPT, Claude and Gemini. 10 minutes to set up." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%232747e8'/><path d='M10 16.5l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
 <style>
-  :root { --bg: #f8f8f5; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #8a90a3; --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4; --red: #dc2626; --grad: linear-gradient(135deg, #2747e8, #6fb6ff); }
+  :root { --bg: #f8f8f5; --card: #fff; --ink: #0b1020; --ink-2: #4a5068; --ink-3: #646b80; --line: rgba(11,16,32,.08); --line-2: rgba(11,16,32,.14); --royal: #2747e8; --royal-2: #1b34c4; --red: #dc2626; --grad: linear-gradient(135deg, #2747e8, #6fb6ff); }
   @media (prefers-color-scheme: dark) { :root { --bg: #0b0d14; --card: #141826; --ink: #eef0f6; --ink-2: #b4b9cc; --ink-3: #7d8399; --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.16); --royal: #5b75ff; --royal-2: #4561f5; } }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.5 Geist, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -46,7 +46,7 @@ export function signupHtml(opts: {
 </head>
 <body>
 <main>
-  <div class="brand"><i><svg width="13" height="13" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>OpenBooking</div>
+  <div class="brand"><i><svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>OpenBooking</div>
   <h1>Let customers book you through ChatGPT, Claude and Gemini</h1>
   <p class="lead">Free. Ten minutes to set up. Every booking lands in one calendar with your phone and walk-in bookings.</p>
   <ul class="points">
@@ -68,7 +68,7 @@ export function signupHtml(opts: {
     <div class="field"><label for="email">Email</label><input id="email" type="email" required autocomplete="email" /></div>
     <div class="field"><label for="password">Password (at least 8 characters)</label><input id="password" type="password" required minlength="8" autocomplete="new-password" /></div>
     <button id="go" type="submit">Create my booking page</button>
-    <div class="err" id="err"></div>
+    <div class="err" id="err" role="alert"></div>
   </form>
   <div class="foot">Already have an account? <a id="login" href="#">Log in</a></div>
 </main>
