@@ -331,3 +331,56 @@ describe('booking channels', () => {
     expect(overview.agents).toEqual([expect.objectContaining({ agent: 'Studio', bookings: 1 })]);
   });
 });
+
+describe('Studio customer data', () => {
+  const post = (app: Hono, path: string, body: unknown, token?: string) =>
+    app.request(`/studio${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+
+  it('offers nothing unless the host supplies it', async () => {
+    const { app, get } = setup();
+    expect((await get('/api/session', 'secret-token')).json.data_rights).toBe(false);
+    expect(
+      (await post(app, '/api/customers/erase', { email: 'a@b.co' }, 'secret-token')).status,
+    ).toBe(404);
+  });
+
+  it('hands the customer to the host, behind the token, and refuses a request about nobody', async () => {
+    const seen: unknown[] = [];
+    const service = new BookingService({ provider: createDemoRestaurantProvider() });
+    const studio = createStudio({
+      service,
+      token: 'secret-token',
+      dataRights: {
+        exportCustomer: async (who) => (seen.push(['export', who]), []),
+        eraseCustomer: async (who) => (
+          seen.push(['erase', who]),
+          { anonymized: 2, kept_upcoming: 1 }
+        ),
+      },
+    });
+    const app = new Hono().route('/studio', studio.app);
+
+    expect((await post(app, '/api/customers/erase', { email: 'a@b.co' })).status).toBe(401);
+    expect((await post(app, '/api/customers/erase', {}, 'secret-token')).status).toBe(400);
+    const erased = await post(app, '/api/customers/erase', { email: 'a@b.co' }, 'secret-token');
+    expect(await erased.json()).toEqual({ anonymized: 2, kept_upcoming: 1 });
+    const exported = await post(
+      app,
+      '/api/customers/export',
+      { phone: '+4712345678' },
+      'secret-token',
+    );
+    expect(((await exported.json()) as any).bookings).toEqual([]);
+    expect(seen).toEqual([
+      ['erase', { email: 'a@b.co' }],
+      ['export', { phone: '+4712345678' }],
+    ]);
+  });
+});

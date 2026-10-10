@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BookingError,
   MemoryIdempotencyStore,
@@ -79,6 +79,16 @@ export interface HostedOptions {
   idempotency?: IdempotencyStore;
   activityFor?: (businessId: string) => ActivityLog;
   clock?: Clock;
+  /**
+   * Days after a booking ends before the customer's name, contact details and notes are removed
+   * from it (the booking itself stays). Default 730. 0 turns the clean-up off.
+   */
+  retentionDays?: number;
+  /**
+   * Secret for `GET /api/maintenance/purge`, which applies the retention period. Vercel Cron
+   * sends it as `Authorization: Bearer $CRON_SECRET`. The endpoint does not exist without it.
+   */
+  cronSecret?: string;
   holdTtlSeconds?: number;
   /** Booking emails. Without it no emails are sent. `from` is a bare address. */
   mail?: { mailer: Mailer; from: string };
@@ -125,6 +135,8 @@ export interface HostedApp {
   businesses: BusinessStore;
   /** Wait for background work (activity, emails, calendar sync) of every loaded business. */
   idle(): Promise<void>;
+  /** Remove personal data from bookings past the retention period. Safe to run any time. */
+  purgeExpiredData(): Promise<{ businesses: number; anonymized: number }>;
   close(): Promise<void>;
 }
 
@@ -733,8 +745,33 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   app.all('/b/:id', business);
   app.all('/b/:id/*', business);
 
+  const retentionDays = options.retentionDays ?? 730;
+  const purgeExpiredData = async () => {
+    const store = deps.bookings;
+    if (!store.anonymize || retentionDays <= 0) return { businesses: 0, anonymized: 0 };
+    const cutoff = new Date(clock.now().getTime() - retentionDays * 86_400_000);
+    const all = await businesses.list();
+    let anonymized = 0;
+    for (const b of all) {
+      const r = await store.anonymize({ venue_id: b.id, ended_before: cutoff }, clock.now());
+      anonymized += r.anonymized;
+    }
+    return { businesses: all.length, anonymized };
+  };
+  app.get('/api/maintenance/purge', async (c) => {
+    const secret = options.cronSecret;
+    if (!secret) return c.json({ error: { code: 'not_found', message: 'Not found.' } }, 404);
+    const given = Buffer.from((c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, ''));
+    const want = Buffer.from(secret);
+    if (given.length !== want.length || !timingSafeEqual(given, want)) {
+      return c.json({ error: { code: 'unauthorized', message: 'Wrong secret.' } }, 401);
+    }
+    return c.json({ ok: true, ...(await purgeExpiredData()) });
+  });
+
   return {
     app,
+    purgeExpiredData,
     tenant,
     businesses,
     idle: async () => {

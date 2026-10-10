@@ -35,7 +35,9 @@ import {
 } from '@openbooking-sh/notifications';
 import {
   MemoryBookingProvider,
+  matchesCustomer,
   type BookingListQuery,
+  type CustomerMatch,
   type BookingRecordStore,
   type BusySource,
 } from '@openbooking-sh/provider-memory';
@@ -106,6 +108,10 @@ export class Tenant {
       activity: deps.activityFor(business.id),
       insecureNoAuth: true,
       settings: { get: () => this.settingsView(), update: (s) => this.#saveSettings(s) },
+      dataRights: {
+        exportCustomer: (who) => this.#customerBookings(who),
+        eraseCustomer: (who) => this.#eraseCustomer(who),
+      },
     });
     if (deps.mail) {
       const { mailer, from } = deps.mail;
@@ -132,6 +138,26 @@ export class Tenant {
 
   get business(): Business {
     return this.#business;
+  }
+
+  /** Every booking of this business that carries the customer's email or phone number. */
+  async #customerBookings(who: CustomerMatch): Promise<Booking[]> {
+    const records = await this.#deps.bookings.list(
+      { venue_id: this.id, limit: 20_000 },
+      this.service.clock.now(),
+    );
+    return records.map((r) => r.booking).filter((b) => matchesCustomer(b, who));
+  }
+
+  async #eraseCustomer(who: CustomerMatch) {
+    const store = this.#deps.bookings;
+    if (!store.anonymize) {
+      throw new BookingError(
+        'operation_not_supported',
+        'This storage cannot erase customer data yet.',
+      );
+    }
+    return store.anonymize({ venue_id: this.id, customer: who }, this.service.clock.now());
   }
 
   get pageUrl(): string {

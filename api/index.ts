@@ -10,6 +10,9 @@
  * Observability (all optional): SENTRY_DSN (errors), POSTHOG_KEY (+ POSTHOG_HOST, EU by default)
  * for product analytics, SLACK_WEBHOOK_URL for operator notifications. Background work (emails,
  * calendar sync, analytics, Slack) finishes after the response via waitUntil.
+ *
+ * Data retention: set CRON_SECRET so the daily Vercel cron can call /api/maintenance/purge, which
+ * removes customer data from bookings that ended more than two years ago.
  */
 import * as Sentry from '@sentry/node';
 import { waitUntil } from '@vercel/functions';
@@ -121,6 +124,7 @@ async function boot(): Promise<Runtime> {
             }),
           }
         : {}),
+      ...(env.CRON_SECRET ? { cronSecret: env.CRON_SECRET } : {}),
       ...(env.SENTRY_DSN ? { onError: (e: unknown) => Sentry.captureException(e) } : {}),
     });
     return { fetch: (r) => hosted.app.fetch(r), idle: () => hosted.idle() };

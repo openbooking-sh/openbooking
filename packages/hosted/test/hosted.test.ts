@@ -8,7 +8,13 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { ManualClock } from '@openbooking-sh/core';
 import { MemoryMailer } from '@openbooking-sh/notifications';
 import { createFakeGoogle } from '../../google-calendar/test/fake-google';
-import { PostHogAnalytics, SlackNotifier, createHostedApp, slugify } from '../src';
+import {
+  PostHogAnalytics,
+  SlackNotifier,
+  createHostedApp,
+  slugify,
+  type HostedOptions,
+} from '../src';
 
 const BASE = 'http://localhost:3000';
 // Tuesday 6 October 2026, 09:00 in Oslo.
@@ -20,7 +26,7 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-function setup() {
+function setup(extra: Partial<HostedOptions> = {}) {
   const clock = new ManualClock(NOW);
   const mailer = new MemoryMailer();
   const google = createFakeGoogle();
@@ -30,6 +36,7 @@ function setup() {
     clock,
     mail: { mailer, from: 'bookings@openbooking.sh' },
     google: { clientId: 'cid', clientSecret: 'secret', fetch: google.fetch },
+    ...extra,
   });
   cleanups.push(hosted.close);
   const req = async (
@@ -638,5 +645,112 @@ describe('business ids', () => {
     expect(slugify('Bjørn & Åse Frisør')).toBe('bjorn-ase-frisor');
     expect(slugify('Café Blåbær')).toBe('cafe-blabaer');
     expect(slugify('!!!')).toBe('business');
+  });
+});
+
+describe('customer data rights', () => {
+  const book = async (
+    req: ReturnType<typeof setup>['req'],
+    id: string,
+    pick: 'first' | 'last',
+    customer: Record<string, string>,
+    notes: string,
+  ) => {
+    const api = `/b/${id}/book/api`;
+    const av = await req(`${api}/availability?date=${DAY}&service=haircut`);
+    const slot = pick === 'first' ? av.json.slots[0] : av.json.slots[av.json.slots.length - 1];
+    const hold = await req(`${api}/hold`, {
+      body: { slot_id: slot.slot_id, idempotency_key: randomUUID() },
+    });
+    const done = await req(`${api}/confirm`, {
+      body: {
+        booking_id: hold.json.booking.booking_id,
+        idempotency_key: randomUUID(),
+        customer,
+        notes,
+        user_confirmed: true,
+      },
+    });
+    expect(done.status, JSON.stringify(done.json)).toBe(200);
+    return done.json.booking.booking_id as string;
+  };
+
+  it('exports one customer, erases them once their bookings are past or cancelled, keeps the rest', async () => {
+    const { req, signup } = setup();
+    const { token, business_id } = await signup();
+    const bob = { first_name: 'Bob', last_name: 'Berg', email: 'bob@example.com' };
+    const adaId = await book(req, business_id, 'first', ada, 'Allergic to latex');
+    const bobId = await book(req, business_id, 'last', bob, 'Short on the sides');
+
+    const who = { email: 'ADA@example.com' };
+    const exported = await req('/studio/api/customers/export', { token, body: who });
+    expect(exported.status).toBe(200);
+    expect(exported.json.bookings.map((b: any) => b.booking_id)).toEqual([adaId]);
+    expect(exported.json.bookings[0].customer.first_name).toBe('Ada');
+
+    // Her booking is still ahead: kept, and counted, so the business knows who is coming.
+    const early = await req('/studio/api/customers/erase', { token, body: who });
+    expect(early.json).toEqual({ anonymized: 0, kept_upcoming: 1 });
+
+    const cancelled = await req(`/studio/api/bookings/${adaId}/cancel`, { token, body: {} });
+    expect(cancelled.status).toBe(200);
+    const erased = await req('/studio/api/customers/erase', { token, body: who });
+    expect(erased.json).toEqual({ anonymized: 1, kept_upcoming: 0 });
+
+    const ada1 = await req(`/studio/api/bookings/${adaId}`, { token });
+    expect(ada1.json.booking.customer).toBeNull();
+    expect(ada1.json.booking.notes).toBeNull();
+    expect(ada1.json.booking.status).toBe('cancelled');
+    expect(JSON.stringify((await req('/studio/api/bookings', { token })).json)).not.toContain(
+      'ada@example.com',
+    );
+    expect((await req('/studio/api/customers/export', { token, body: who })).json.bookings).toEqual(
+      [],
+    );
+    const bob1 = await req(`/studio/api/bookings/${bobId}`, { token });
+    expect(bob1.json.booking.customer.first_name).toBe('Bob');
+  });
+
+  it('needs the owner to be logged in, and somebody to look for', async () => {
+    const { req, signup } = setup();
+    const { token } = await signup();
+    expect((await req('/studio/api/customers/erase', { body: { email: 'a@b.co' } })).status).toBe(
+      401,
+    );
+    expect((await req('/studio/api/customers/erase', { token, body: {} })).status).toBe(400);
+    expect(
+      (await req('/studio/api/customers/erase', { token, body: { phone: '12' } })).status,
+    ).toBe(400);
+    // The feature is advertised to the Studio page.
+    expect((await req('/studio/api/session', { token })).json.data_rights).toBe(true);
+  });
+
+  it('removes personal data after the retention period, on a schedule only the cron secret can start', async () => {
+    const { hosted, clock, req, signup } = setup({ cronSecret: 's3cret-value' });
+    const { business_id } = await signup();
+    const bookingId = await book(req, business_id, 'first', ada, 'Allergic to latex');
+    const purge = (secret?: string) =>
+      req('/api/maintenance/purge', { ...(secret ? { token: secret } : {}) });
+
+    expect((await purge()).status).toBe(401);
+    expect((await purge('wrong-secret!')).status).toBe(401);
+    const early = await purge('s3cret-value');
+    expect(early.status).toBe(200);
+    expect(early.json.anonymized).toBe(0);
+
+    // Two years and a bit after the appointment, the customer is no longer in the database.
+    clock.set('2028-12-01T08:00:00Z');
+    const late = await purge('s3cret-value');
+    expect(late.json.anonymized).toBe(1);
+    const tenant = await hosted.tenant(business_id);
+    const booking = await tenant!.service.getBooking(bookingId);
+    expect(booking.customer).toBeNull();
+    expect(booking.notes).toBeNull();
+    expect(booking.slot.offering.id).toBe('haircut');
+  });
+
+  it('has no purge endpoint without a cron secret', async () => {
+    const { req } = setup();
+    expect((await req('/api/maintenance/purge')).status).toBe(404);
   });
 });

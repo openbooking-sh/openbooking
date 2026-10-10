@@ -13,6 +13,7 @@ import {
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ActivityStore, recordActivity, type ActivityLog } from './activity';
+import { CustomerMatchSchema, type DataRightsAdapter } from './data-rights';
 import { BusinessSettingsSchema, type StudioSettingsAdapter } from './settings';
 import { computeOverview } from './stats';
 import { STUDIO_HTML } from './ui';
@@ -35,6 +36,8 @@ export interface StudioOptions {
   name?: string;
   /** Lets the owner edit business settings in Studio (hosted OpenBooking). */
   settings?: StudioSettingsAdapter;
+  /** Lets the owner download or delete one customer's data from Studio. */
+  dataRights?: DataRightsAdapter;
 }
 
 export interface Studio {
@@ -118,6 +121,7 @@ export function createStudio(options: StudioOptions): Studio {
         venues,
         hold_ttl_seconds: service.holdTtlSeconds,
         settings: !!options.settings,
+        data_rights: !!options.dataRights,
       };
     }),
   );
@@ -191,6 +195,29 @@ export function createStudio(options: StudioOptions): Studio {
         if (!parsed.success) throw fromZodError(parsed.error, 'settings');
         return settings.update(parsed.data);
       }),
+    );
+  }
+
+  if (options.dataRights) {
+    const rights = options.dataRights;
+    // POST, not GET: an email address or phone number must not end up in URLs and access logs.
+    const customer = async (c: Context) => {
+      const parsed = CustomerMatchSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) throw fromZodError(parsed.error, 'customer');
+      return parsed.data;
+    };
+    app.post('/api/customers/export', (c) =>
+      json(c, async () => {
+        const who = await customer(c);
+        return {
+          exported_at: service.clock.now().toISOString(),
+          customer: who,
+          bookings: await rights.exportCustomer(who),
+        };
+      }),
+    );
+    app.post('/api/customers/erase', (c) =>
+      json(c, async () => rights.eraseCustomer(await customer(c))),
     );
   }
 

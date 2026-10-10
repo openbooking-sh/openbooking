@@ -22,4 +22,5 @@ export {
   type StudioSettingsAdapter,
   type WeekdayKey,
 } from './settings';
+export { CustomerMatchSchema, type CustomerRef, type DataRightsAdapter } from './data-rights';
 export { STUDIO_HTML } from './ui';

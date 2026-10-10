@@ -4,6 +4,7 @@
   "installCommand": "npm i -g pnpm@12.8.1 && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm build && mkdir -p public && touch public/.keep",
   "outputDirectory": "public",
+  "crons": [{ "path": "/api/maintenance/purge", "schedule": "17 3 * * *" }],
   "rewrites": [
     {
       "source": "/(.*)",
