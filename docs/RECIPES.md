@@ -248,7 +248,9 @@ if (!(await verifyWebhook(body, request.headers.get('openbooking-signature'), se
 const event = JSON.parse(body); // { id, type, created_at, data: { booking, actor } }
 ```
 
-Failed deliveries are retried after 2 s, 15 s and 60 s. Delivery is at least once, so dedupe on
+Failed deliveries are retried after 2 s, 15 s and 60 s. Events reach each endpoint in the order they
+happened, so a failing endpoint holds back its later events until the earlier one succeeds or gives
+up. Delivery is at least once, so dedupe on
 `event.id`. Retries (same idempotency key) and no-op cancels don't send events. Payloads include
 customer details, so never point a webhook at an analytics or logging service. Without the server,
 `createWebhooks()` returns a listener for `service.on()`.

@@ -7,7 +7,8 @@
  * authenticity and freshness; {@link verifyWebhook} does that. Deliveries retry with backoff
  * in-process; on serverless hosts, wait for {@link Webhooks.idle} (e.g. with `waitUntil`) so
  * the function isn't frozen mid-retry. Delivery is at-least-once: receivers should dedupe on
- * the `id` field.
+ * the `id` field. Events reach each endpoint in the order they happened; an endpoint that keeps
+ * failing holds back its later events until the earlier one succeeds or gives up (about 77 s).
  *
  * Payloads include customer details (it's the integrator's own endpoint), so never point a webhook
  * at an analytics or logging service.
@@ -157,6 +158,9 @@ export function createWebhooks(options: WebhookOptions): Webhooks {
     options.onFailure ??
     ((f) => console.warn(`[openbooking] webhook to ${f.endpoint} failed: ${f.error}`));
   const pending = new Set<Promise<void>>();
+  // One chain per endpoint: signing is async, so concurrent deliveries could otherwise reach the
+  // receiver out of order (a cancellation before the confirmation it cancels).
+  const tails = new Map<WebhookEndpoint, Promise<void>>();
 
   async function deliver(endpoint: WebhookEndpoint, event: WebhookEvent): Promise<void> {
     const body = JSON.stringify(event);
@@ -201,9 +205,15 @@ export function createWebhooks(options: WebhookOptions): Webhooks {
       };
       for (const endpoint of options.endpoints) {
         if (endpoint.events && !endpoint.events.includes(type)) continue;
-        const p = deliver(endpoint, event);
+        const p = (tails.get(endpoint) ?? Promise.resolve())
+          .catch(() => {})
+          .then(() => deliver(endpoint, event));
+        tails.set(endpoint, p);
         pending.add(p);
-        void p.finally(() => pending.delete(p));
+        void p.finally(() => {
+          pending.delete(p);
+          if (tails.get(endpoint) === p) tails.delete(endpoint);
+        });
       }
     },
     async idle() {

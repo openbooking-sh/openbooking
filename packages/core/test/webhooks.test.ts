@@ -155,6 +155,44 @@ describe('webhooks', () => {
     expect(failures).toEqual(['https://old.example/hooks HTTP 410']);
   });
 
+  it('delivers to one endpoint in order, even when an earlier delivery is slow or retried', async () => {
+    const seen: string[] = [];
+    let first = true;
+    const fetch = (async (_url: string, init: RequestInit) => {
+      const type = (JSON.parse(String(init.body)) as WebhookEvent).type;
+      if (first) {
+        first = false;
+        await new Promise((r) => setTimeout(r, 30));
+        seen.push(`${type} (failed once)`);
+        return new Response(null, { status: 500 });
+      }
+      seen.push(type);
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    const webhooks = createWebhooks({
+      endpoints: [{ url: 'https://crm.example/hooks', secret: SECRET }],
+      fetch,
+      retryDelaysMs: [0],
+    });
+    const service = new BookingService({
+      provider: new TinyProvider(),
+      onEvent: webhooks.listener,
+    });
+    const hold = await book(service);
+    await service.cancel({
+      booking_id: hold.booking_id,
+      idempotency_key: 'cancel-key-1',
+      user_confirmed: true,
+    });
+    await webhooks.idle();
+    expect(seen).toEqual([
+      'booking.held (failed once)',
+      'booking.held',
+      'booking.confirmed',
+      'booking.cancelled',
+    ]);
+  });
+
   it('rejects unsafe configuration up front', () => {
     expect(() => createWebhooks({ endpoints: [{ url: 'ftp://x', secret: SECRET }] })).toThrow(
       /http/,
