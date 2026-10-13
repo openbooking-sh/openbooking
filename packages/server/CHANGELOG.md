@@ -1,5 +1,18 @@
 # @openbooking-sh/server
 
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies [7fdf84e]
+- Updated dependencies [12ec3a2]
+  - @openbooking-sh/studio@0.10.0
+  - @openbooking-sh/core@0.10.0
+  - @openbooking-sh/adapter-mcp@0.10.0
+  - @openbooking-sh/adapter-a2a@0.10.0
+  - @openbooking-sh/adapter-ucp@0.10.0
+  - @openbooking-sh/booking-page@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

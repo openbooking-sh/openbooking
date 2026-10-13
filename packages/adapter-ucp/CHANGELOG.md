@@ -1,5 +1,12 @@
 # @openbooking-sh/adapter-ucp
 
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies [12ec3a2]
+  - @openbooking-sh/core@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes
