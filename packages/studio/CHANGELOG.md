@@ -1,5 +1,14 @@
 # @openbooking-sh/studio
 
+## 0.10.0
+
+### Patch Changes
+
+- 7fdf84e: Logging out of Studio now ends every session of the account on the server, so a copied token stops
+  working at once (it used to live on until it expired). Session tokens now last 7 days instead of 30.
+- Updated dependencies [12ec3a2]
+  - @openbooking-sh/core@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes
