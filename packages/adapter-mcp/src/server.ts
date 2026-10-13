@@ -516,7 +516,9 @@ function nextStep(b: Booking, expiresIn: number | null): string {
       ];
       if (!b.customer) steps.push('Collect first name, last name and email or phone number.');
       if (b.slot.deposit?.due === 'at_confirmation')
-        steps.push('Obtain a payment_token for the deposit.');
+        steps.push(
+          'A deposit is due: confirm_booking replies with a payment link for the user and a payment_token to send back once they have paid.',
+        );
       steps.push(
         'After the user explicitly approves, call confirm_booking with user_confirmed=true.',
       );

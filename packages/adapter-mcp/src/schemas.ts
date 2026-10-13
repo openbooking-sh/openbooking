@@ -78,7 +78,7 @@ export const ConfirmBookingInput = z.object({
     .string()
     .optional()
     .describe(
-      'Payment token for the deposit, only when the hold shows deposit.due = "at_confirmation"',
+      'Only when the hold shows deposit.due = "at_confirmation". With online payments, leave it out the first time: the payment_required reply holds a payment_url for the user and the payment_token to send here once they have paid.',
     ),
 });
 

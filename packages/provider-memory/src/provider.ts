@@ -249,7 +249,14 @@ export class MemoryBookingProvider implements BookingProvider {
         // Demo payment rule: tokens starting with "tok_" succeed, except "tok_fail…".
         // "manual:…" marks a deposit staff collected in person (Studio bookings).
         const token = req.payment_token ?? '';
-        if (token.startsWith('manual:')) {
+        if (req.payment) {
+          // The engine already checked this deposit with a payment provider.
+          payment = {
+            status: 'paid',
+            amount: req.payment.amount,
+            reference: req.payment.reference,
+          };
+        } else if (token.startsWith('manual:')) {
           payment = { status: 'paid', amount: deposit.amount, reference: token };
         } else if (!token.startsWith('tok_') || token.startsWith('tok_fail')) {
           throw new BookingError('payment_failed', 'The deposit payment was declined.', {

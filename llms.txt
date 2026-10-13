@@ -20,6 +20,7 @@
 - [@openbooking-sh/google-calendar](https://github.com/openbooking-sh/openbooking/blob/main/packages/google-calendar/README.md)
 - [@openbooking-sh/hosted](https://github.com/openbooking-sh/openbooking/blob/main/packages/hosted/README.md)
 - [@openbooking-sh/notifications](https://github.com/openbooking-sh/openbooking/blob/main/packages/notifications/README.md)
+- [@openbooking-sh/payments-stripe](https://github.com/openbooking-sh/openbooking/blob/main/packages/payments-stripe/README.md)
 - [@openbooking-sh/postgres](https://github.com/openbooking-sh/openbooking/blob/main/packages/postgres/README.md)
 - [@openbooking-sh/provider-calcom](https://github.com/openbooking-sh/openbooking/blob/main/packages/provider-calcom/README.md)
 - [@openbooking-sh/provider-memory](https://github.com/openbooking-sh/openbooking/blob/main/packages/provider-memory/README.md)
