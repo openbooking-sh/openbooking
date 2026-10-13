@@ -166,6 +166,8 @@ export interface SettingsView {
     /** POST here (Studio API path) to send the confirmation email again. */
     resend_verification_path?: string;
     /** GET here (Studio API path) for everything stored about the business, as JSON. */
+    /** POST here to end every session of this account, this one included. */
+    logout_path?: string;
     export_path?: string;
     /** POST `{ password }` here to delete the account and everything in it. */
     delete_path?: string;

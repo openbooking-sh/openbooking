@@ -10,17 +10,17 @@ pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / op
 
 ## Routes
 
-| Path                                                          | What                                                                                             |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 30-day signed session token)                           |
-| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                        |
-| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id` |
-| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                    |
-| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                       |
-| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                      |
-| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                  |
-| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                            |
-| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                       |
+| Path                                                          | What                                                                                                         |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 7-day signed session token, revoked by logout or a password reset) |
+| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                                    |
+| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id`             |
+| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                                |
+| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                                   |
+| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                                  |
+| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                              |
+| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                                        |
+| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                                   |
 
 `{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
 `business_id` and the venue id on its bookings.
@@ -107,6 +107,8 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 
 - **Password reset:** `/reset` emails a link that works once (it is tied to the current password
   hash) and expires in an hour. Saving a new password logs out every other session.
+- **Log out** ends every session of the account, not just that browser, so a copied token stops
+  working at once. Tokens last a week.
 - **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
   listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
   page and per-business MCP work straight away. Studio shows a "Confirm your email" step.

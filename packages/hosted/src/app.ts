@@ -675,6 +675,18 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     return c.json({ ok: true, sent: !!options.mail && !t.business.owner.email_verified_at });
   });
 
+  // Ends every session of this account, not just this browser's: tokens are stateless, so the epoch
+  // is what revokes them.
+  app.post(`${STUDIO_PATH}/api/account/logout`, async (c) => {
+    const t = c.get('tenant');
+    const saved = await businesses.update(t.id, (b) => ({
+      ...b,
+      owner: { ...b.owner, session_epoch: (b.owner.session_epoch ?? 0) + 1 },
+    }));
+    if (saved) t.sync(saved);
+    return c.json({ ok: true });
+  });
+
   app.get(`${STUDIO_PATH}/api/account/export`, async (c) =>
     c.json(await c.get('tenant').exportData()),
   );

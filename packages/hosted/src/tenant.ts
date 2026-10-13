@@ -268,6 +268,7 @@ export class Tenant {
               resend_verification_path: '/account/verify-email',
             }
           : {}),
+        logout_path: '/account/logout',
         export_path: '/account/export',
         delete_path: '/account/delete',
       },
