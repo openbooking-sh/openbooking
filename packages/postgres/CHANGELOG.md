@@ -1,5 +1,18 @@
 # @openbooking-sh/postgres
 
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies [e3fac6c]
+  - @openbooking-sh/core@0.12.0
+  - @openbooking-sh/hosted@0.12.0
+  - @openbooking-sh/studio@0.12.0
+  - @openbooking-sh/google-calendar@0.12.0
+  - @openbooking-sh/notifications@0.12.0
+  - @openbooking-sh/provider-calcom@0.12.0
+  - @openbooking-sh/provider-memory@0.12.0
+
 ## 0.11.0
 
 ### Patch Changes
