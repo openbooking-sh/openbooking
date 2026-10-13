@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BookingService,
   createWebhooks,
+  ManualClock,
   runAsActor,
   signWebhook,
   verifyWebhook,
@@ -12,6 +13,8 @@ import {
 import { CUSTOMER, TinyProvider } from './fixtures';
 
 const SECRET = 'whsec_test_0123456789';
+// Before the fixtures' slot starts: with the real clock these tests break the day the slot is past.
+const NOW = '2026-10-01T12:00:00Z';
 
 interface Delivery {
   url: string;
@@ -58,6 +61,7 @@ describe('webhooks', () => {
     });
     const service = new BookingService({
       provider: new TinyProvider(),
+      clock: new ManualClock(NOW),
       onEvent: webhooks.listener,
     });
 
@@ -129,6 +133,7 @@ describe('webhooks', () => {
     });
     const service = new BookingService({
       provider: new TinyProvider(),
+      clock: new ManualClock(NOW),
       onEvent: webhooks.listener,
     });
     await book(service);
@@ -147,6 +152,7 @@ describe('webhooks', () => {
     });
     const service2 = new BookingService({
       provider: new TinyProvider(),
+      clock: new ManualClock(NOW),
       onEvent: webhooks2.listener,
     });
     await book(service2);
@@ -176,6 +182,7 @@ describe('webhooks', () => {
     });
     const service = new BookingService({
       provider: new TinyProvider(),
+      clock: new ManualClock(NOW),
       onEvent: webhooks.listener,
     });
     const hold = await book(service);
