@@ -334,7 +334,13 @@ export const STUDIO_HTML = `<!doctype html>
     go.then(start).catch(function (e) { $('login-err').textContent = e.message === 'unauthorized' ? (login.mode === 'password' ? 'Wrong email or password.' : 'That token did not work.') : e.message; });
   };
   $('token').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('login-btn').click(); });
-  $('logout').onclick = function (e) { e.preventDefault(); saveToken(''); location.hash = ''; location.reload(); };
+  $('logout').onclick = function (e) {
+    e.preventDefault();
+    var done = function () { saveToken(''); location.hash = ''; location.reload(); };
+    // Hosted: also end the session on the server, so a copied token stops working.
+    if (SV && SV.account && SV.account.logout_path) api(SV.account.logout_path, { method: 'POST', body: '{}' }).then(done, done);
+    else done();
+  };
 
   document.querySelectorAll('.nav').forEach(function (b) { b.onclick = function () { go(b.getAttribute('data-view')); }; });
   document.querySelectorAll('#status-chips .chip').forEach(function (c) {

@@ -151,6 +151,30 @@ describe('sign-up and login', () => {
     expect(reserved.business_id).toBe('studio-2');
   });
 
+  it('logs out every session of the account, and lets a week-old token expire', async () => {
+    const { clock, req, signup } = setup();
+    const email = 'maria@example.com';
+    const a = await signup({ email });
+    const b = await req('/api/login', { body: { email, password: 'correct horse' } });
+    const other = await signup({ business_name: 'Beta Frisør' });
+    expect((await req('/studio/api/session', { token: b.json.token })).status).toBe(200);
+
+    expect((await req('/studio/api/account/logout', { token: a.token, body: {} })).status).toBe(
+      200,
+    );
+    // The token that logged out, and a copy of another one, are both dead ...
+    expect((await req('/studio/api/session', { token: a.token })).status).toBe(401);
+    expect((await req('/studio/api/session', { token: b.json.token })).status).toBe(401);
+    // ... other accounts are untouched, and logging in again works.
+    expect((await req('/studio/api/session', { token: other.token })).status).toBe(200);
+    const again = await req('/api/login', { body: { email, password: 'correct horse' } });
+    expect((await req('/studio/api/session', { token: again.json.token })).status).toBe(200);
+    expect((await req('/studio/api/account/logout', { body: {} })).status).toBe(401);
+
+    clock.set(new Date(clock.now().getTime() + 8 * 86_400_000).toISOString());
+    expect((await req('/studio/api/session', { token: again.json.token })).status).toBe(401);
+  });
+
   it('logs in with email and password; Studio asks for a password login otherwise', async () => {
     const { req, signup } = setup();
     await signup({ email: 'maria@example.com' });

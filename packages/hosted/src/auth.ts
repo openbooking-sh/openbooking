@@ -53,5 +53,7 @@ export function createSigner(secret: string, now: () => number = Date.now): Sign
   };
 }
 
-export const SESSION_TTL_MS = 30 * 24 * 3_600_000;
+// A week: the token lives in sessionStorage, so it is gone when the tab closes anyway, and a
+// stolen one stops working on its own (or at once, on logout or a password reset).
+export const SESSION_TTL_MS = 7 * 24 * 3_600_000;
 export const OAUTH_STATE_TTL_MS = 15 * 60_000;
