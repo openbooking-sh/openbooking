@@ -1,5 +1,14 @@
 # @openbooking-sh/studio
 
+## 0.11.0
+
+### Minor Changes
+
+- 10e30b3: Hosted businesses can take deposits through their own Stripe account. Studio has an Online
+  payments card (connect a key, set a deposit percentage); the booking page sends the customer to
+  Stripe Checkout and confirms the booking when they return. The booking page API now passes
+  `payment_token` through to the engine.
+
 ## 0.10.0
 
 ### Patch Changes
