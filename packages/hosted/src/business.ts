@@ -22,6 +22,8 @@ export interface Business {
     /** Set when Google stopped accepting the connection; cleared on reconnect. */
     error?: string;
   };
+  /** The owner's own Stripe account: deposits are paid straight to it. Never exported or shown. */
+  stripe?: { secret_key: string };
   created_at: string;
   updated_at: string;
   /** Bumped on every settings change; tenants rebuild their catalog when it moves. */

@@ -637,7 +637,7 @@ export const STUDIO_HTML = `<!doctype html>
   function major(n) { return n == null ? '' : String(n / 100); }
 
   function renderSettings() {
-    var s = draft, p = s.profile, a = p.address || {}, g = SV.integrations && SV.integrations.google;
+    var s = draft, p = s.profile, a = p.address || {}, g = SV.integrations && SV.integrations.google, st = SV.integrations && SV.integrations.stripe;
     var anyHours = DAYS.some(function (d) { return (s.opening_hours[d[0]] || []).length; });
     var steps = [
       ['Add your address and phone number', !!(a.street_address && p.phone_number)],
@@ -711,6 +711,20 @@ export const STUDIO_HTML = `<!doctype html>
       else h += (g.error ? '<p class="err">' + esc(g.error) + '</p>' : '') + '<p class="hint">Bookings appear in your calendar, and anything already in it is never offered to customers.</p><button class="btn btn-primary" id="g-on">Connect Google Calendar</button>';
       h += '</div>';
     }
+    if (st) {
+      h += '<div class="card"><h2>Online payments</h2>';
+      if (st.connected) {
+        h += '<p class="hint">Stripe is connected (' + (st.mode === 'live' ? 'live' : 'test mode, no real money') + ', key ending ' + esc(st.key_hint || '') + '). Deposits are paid straight to your Stripe account.</p>' +
+          field('Deposit when booking (% of the price, 0 = none)', 'pay-dep', (s.payments && s.payments.deposit_percent) || 0, 'type="number" min="0" max="100"') +
+          '<p class="hint">Customers pay on a Stripe page before the booking is confirmed. If they cancel in time, the deposit is refunded automatically, following your cancellation rules. Save changes to apply.</p>' +
+          '<button class="btn btn-sm btn-danger" id="stripe-off" type="button">Disconnect Stripe</button>';
+      } else {
+        h += '<p class="hint">Take a deposit when customers book. In Stripe, open Developers, then API keys, and create a restricted key that can write <b>Checkout Sessions</b> and <b>Refunds</b> (or use your secret key). Paste it here. Money goes straight to your own Stripe account.</p>' +
+          '<div class="field" style="max-width:420px"><label for="stripe-key">Stripe secret key</label><input id="stripe-key" type="password" autocomplete="off" placeholder="sk_live_... or rk_live_..." /></div>' +
+          '<button class="btn btn-primary" id="stripe-on" type="button">Connect Stripe</button><p class="err" id="stripe-err" role="alert"></p>';
+      }
+      h += '</div>';
+    }
     h += '<div class="card"><h2>AI assistants</h2>' + check('s-listed', s.listed, 'List me in the OpenBooking app, so ChatGPT, Claude and other assistants can find and book me') + '</div>';
     if (dataRights) {
       h += '<div class="card"><h2>Customer data</h2><p class="hint">A customer asks what you hold about them, or asks you to delete it. Enter their email address or phone number. Deleting removes name, contact details and notes from their bookings; the bookings themselves stay in your calendar history. Upcoming bookings are kept: cancel them first.</p>' +
@@ -740,6 +754,13 @@ export const STUDIO_HTML = `<!doctype html>
     $('settings').querySelectorAll('[data-rm-svc]').forEach(function (b) { b.onclick = function () { if (collect()) { draft.services.splice(Number(b.getAttribute('data-rm-svc')), 1); renderSettings(); } }; });
     if ($('g-on')) $('g-on').onclick = function () { api(g.connect_path, { method: 'POST', body: '{}' }).then(function (d) { location.href = d.url; }).catch(function (e) { toast(e.message); }); };
     if ($('resend-verify')) $('resend-verify').onclick = function (e) { e.preventDefault(); api(SV.account.resend_verification_path, { method: 'POST', body: '{}' }).then(function () { toast('Sent. Check your inbox.'); }).catch(function (x) { toast(x.message); }); };
+    if ($('stripe-on')) $('stripe-on').onclick = function () {
+      var key = $('stripe-key').value.trim();
+      if (!key) { $('stripe-err').textContent = 'Paste your Stripe secret key first.'; return; }
+      $('stripe-on').disabled = true;
+      api(st.connect_path, { method: 'POST', body: JSON.stringify({ secret_key: key }) }).then(loadSettings).catch(function (e) { $('stripe-err').textContent = e.message; $('stripe-on').disabled = false; });
+    };
+    if ($('stripe-off')) $('stripe-off').onclick = function () { if (confirm('Disconnect Stripe? Customers can no longer pay deposits online, and existing deposits can no longer be refunded automatically.')) api(st.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
     if ($('g-off')) $('g-off').onclick = function () { if (confirm('Disconnect Google Calendar?')) api(g.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
     if ($('cd-export')) {
       var who = function () { return { email: $('cd-email').value.trim() || undefined, phone: $('cd-phone').value.trim() || undefined }; };
@@ -831,6 +852,7 @@ export const STUDIO_HTML = `<!doctype html>
     var free = v('c-free');
     s.cancellation = { free_until_hours_before: free === '' ? null : Number(free), late_fee_percent: num('c-late', 0), no_show_fee_percent: num('c-noshow', 0) };
     s.booking_rules = { slot_interval_minutes: num('r-int', 15), buffer_minutes: num('r-buf', 0), min_lead_minutes: num('r-lead', 60), max_days_ahead: num('r-days', 60) };
+    s.payments = { deposit_percent: $('pay-dep') ? num('pay-dep', 0) : ((s.payments && s.payments.deposit_percent) || 0) };
     s.notifications = { owner_email: v('n-owner'), email_owner: $('n-eowner').checked, email_customers: $('n-ecust').checked };
     s.listed = $('s-listed').checked;
     $('set-err').textContent = err;

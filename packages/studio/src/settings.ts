@@ -97,6 +97,13 @@ export const BusinessSettingsSchema = z
       min_lead_minutes: z.number().int().min(0).max(10_080),
       max_days_ahead: z.number().int().min(1).max(365),
     }),
+    /** Online payments (needs Stripe connected). */
+    payments: z
+      .object({
+        /** Deposit taken when booking, as a percentage of the service price. 0 = none. */
+        deposit_percent: z.number().int().min(0).max(100).default(0),
+      })
+      .default({ deposit_percent: 0 }),
     notifications: z.object({
       /** Where "new booking" emails go. Defaults to the account email. */
       owner_email: optional(z.email()),
@@ -146,11 +153,23 @@ export interface GoogleIntegrationView {
   disconnect_path: string;
 }
 
+/** Stripe as Studio shows it: the owner's own account, so deposits go straight to them. */
+export interface StripeIntegrationView {
+  connected: boolean;
+  /** `test` keys take no real money. */
+  mode?: 'test' | 'live';
+  /** Last four characters of the key, to recognise it. */
+  key_hint?: string;
+  /** POST `{ secret_key }` → connects after checking the key with Stripe. */
+  connect_path: string;
+  disconnect_path: string;
+}
+
 export interface SettingsView {
   settings: BusinessSettings;
   /** Links the owner shares: booking page, "Book me through ChatGPT", the MCP endpoint. */
   links?: Array<{ label: string; url: string; hint?: string }>;
-  integrations?: { google?: GoogleIntegrationView };
+  integrations?: { google?: GoogleIntegrationView; stripe?: StripeIntegrationView };
   /** How the owner adds booking to their own website and Google profile. */
   install?: {
     /** The booking page link (Google Business Profile, Instagram, Facebook). */

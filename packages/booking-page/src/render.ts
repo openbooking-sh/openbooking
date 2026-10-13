@@ -37,6 +37,8 @@ export interface PageModel {
   staff: StaffOption[];
   /** Ask for the number of guests (tables, group classes). */
   showParty: boolean;
+  /** Deposits can be paid online (the engine has a payment provider). */
+  payments?: boolean;
   profile: PageProfile;
   pageUrl: string;
   /** Path prefix of the booking-page router, e.g. `/b/studio-nord/book`. */
@@ -288,6 +290,7 @@ export function renderPage(m: PageModel): string {
     })),
     staff: m.staff,
     show_party: m.showParty,
+    payments: m.payments === true,
     prefill: m.prefill,
   };
   const contact = v.phone_number ? ` on ${esc(v.phone_number)}` : '';
@@ -314,6 +317,11 @@ ${venueHeader(v, m.profile)}
   <div class="times" id="times"></div>
 </section>
 
+<section class="card hidden" id="s-paid">
+  <h2>Confirming your payment</h2>
+  <div class="muted" id="paid-msg" role="status" aria-live="polite">One moment…</div>
+</section>
+
 <section class="card hidden" id="s-details">
   <h2>3. Your details</h2>
   <div class="note" id="hold-note"></div>
@@ -325,6 +333,7 @@ ${venueHeader(v, m.profile)}
   <div class="field"><label for="notes">Anything we should know? (optional)</label><textarea id="notes" maxlength="500"></textarea></div>
   <div class="err" id="err" role="alert"></div>
   <button class="btn btn-primary" id="confirm">Confirm booking</button>
+  <p class="muted hidden" id="pay-note" style="font-size:13px">A deposit is due. You will pay on a secure Stripe page, then come back here to finish.</p>
   <p class="muted" style="font-size:13px">By confirming you accept the price and cancellation terms above.</p>
 </section>
 

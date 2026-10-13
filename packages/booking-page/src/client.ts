@@ -156,7 +156,7 @@ export const PAGE_SCRIPT = String.raw`
 
   function pickSlot(slot, btn) {
     if (!slot) return;
-    if (slot.deposit && slot.deposit.due === 'at_confirmation') {
+    if (slot.deposit && slot.deposit.due === 'at_confirmation' && !D.payments) {
       $('times-msg').innerHTML = '<div class="warn">This service needs a deposit of ' + money(slot.deposit.amount) +
         ', which can\'t be paid online yet. Please contact ' + esc(D.venue.name) + (D.venue.phone_number ? ' on ' + esc(D.venue.phone_number) : '') + ' to book.</div>';
       return;
@@ -169,6 +169,9 @@ export const PAGE_SCRIPT = String.raw`
       state.confirmKey = uuid();
       $('times-msg').textContent = '';
       renderReview($('review'), h.booking);
+      var due = !!(h.booking.deposit && h.booking.deposit.due === 'at_confirmation' && D.payments);
+      show('pay-note', due);
+      $('confirm').textContent = due ? 'Continue to payment' : 'Confirm booking';
       show('s-details', true);
       startCountdown();
       $('s-details').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -229,6 +232,13 @@ export const PAGE_SCRIPT = String.raw`
       state.hold = null;
       done(r.booking);
     }).catch(function (e) {
+      var d = e.payload && e.payload.code === 'payment_required' && e.payload.details;
+      if (d && d.payment_url) {
+        // To Stripe and back: the details wait in this tab until the customer returns.
+        try { sessionStorage.setItem('ob-pay-' + body.booking_id, JSON.stringify(body)); } catch (x) {}
+        location.href = d.payment_url;
+        return;
+      }
       $('err').textContent = e.message;
       if (e.payload && (e.payload.code === 'hold_expired' || e.payload.code === 'invalid_state')) {
         state.hold = null; show('s-details', false); loadTimes();
@@ -254,13 +264,44 @@ export const PAGE_SCRIPT = String.raw`
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // ------------------------------------------------------------------ back from Stripe
+  // The customer paid and Stripe sent them here with the session id. Confirm with it; the server
+  // asks Stripe whether it was paid, for this booking and this amount.
+  function finishPayment() {
+    var q = new URLSearchParams(location.search);
+    var id = q.get('paid'), session = q.get('session_id');
+    if (!id || !session) return false;
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem('ob-pay-' + id) || 'null'); } catch (x) {}
+    ['s-service', 's-when', 's-details'].forEach(function (s) { show(s, false); });
+    show('s-paid', true);
+    if (!saved) {
+      $('paid-msg').textContent = 'Your payment went through, but this page lost your details. Please contact ' + D.venue.name + (D.venue.phone_number ? ' on ' + D.venue.phone_number : '') + ' to finish the booking.';
+      return true;
+    }
+    saved.payment_token = session;
+    api('/confirm', saved).then(function (r) {
+      try { sessionStorage.removeItem('ob-pay-' + id); } catch (x) {}
+      show('s-paid', false);
+      done(r.booking);
+    }).catch(function (e) {
+      var late = e.payload && (e.payload.code === 'hold_expired' || e.payload.code === 'invalid_state');
+      $('paid-msg').textContent = late
+        ? 'Your time was released before the payment arrived, so you have not been booked. Your deposit is being refunded. Please pick a time again.'
+        : e.message;
+      if (late) { try { sessionStorage.removeItem('ob-pay-' + id); } catch (x) {} show('s-service', true); }
+    });
+    return true;
+  }
+
   // ------------------------------------------------------------------ pre-fill
   if (P.first_name) $('first').value = P.first_name;
   if (P.last_name) $('last').value = P.last_name;
   if (P.email) $('email').value = P.email;
   if (P.phone) $('phone').value = P.phone;
   renderServices();
-  if (P.service) pickService(P.service);
+  if (finishPayment()) { /* the page shows the payment result instead of the steps */ }
+  else if (P.service) pickService(P.service);
   else if (D.offerings.length === 1) pickService(D.offerings[0].id);
   window.addEventListener('pagehide', function () { /* holds lapse on their own; nothing to do */ });
 

@@ -94,6 +94,28 @@ verification for these scopes before outside users can connect without warnings;
 - **Failures.** Google down → bookings fail with a retryable error (we can't promise the time is
   free). Access revoked → Studio shows "reconnect", and bookings continue without Google.
 
+## Deposits (Stripe)
+
+Each business connects **its own** Stripe account in Studio → Settings → Online payments: paste a
+restricted key that may write Checkout Sessions and Refunds (or a secret key). Money goes straight
+to the owner, not through OpenBooking. The key is checked with Stripe before it is saved, and Studio
+only ever shows its last four characters.
+
+- **Deposit.** The owner sets a percentage of the service price (0 = none). A service has a deposit
+  only while Stripe is connected and it has a price.
+- **Booking page.** "Continue to payment" sends the customer to Stripe Checkout; Stripe returns
+  them to the page with the session id, and the page confirms the booking. The engine asks Stripe
+  whether that session was paid, for this booking and this amount, so a made-up token never works.
+- **Agents** get `payment_required` with `payment_url` and `payment_token` (see
+  [RECIPES](RECIPES.md)).
+- **Refunds** follow the cancellation rules and run automatically. If Stripe is down the booking is
+  still cancelled and the call answers `refund_failed`; cancelling again retries safely.
+- **Staff in Studio** record a deposit taken in person without Stripe.
+- **Disconnecting** Stripe stops new deposits. Deposits already paid can then no longer be refunded
+  automatically.
+
+The Stripe key sits in the business record as-is, like the Google tokens (not exported, not shown).
+
 ## Emails
 
 Set `RESEND_API_KEY` (and `MAIL_FROM`, default `bookings@openbooking.sh`, which must be a verified
@@ -191,4 +213,7 @@ calendar sync, analytics, Slack) finishes after the response through `waitUntil(
 - Custom domains or subdomains per business (paths only: `/b/{id}`).
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Encrypting Google refresh tokens at rest (they sit in the business record as-is).
-- Outlook (Nylas), deposits, rescheduling.
+- Outlook (Nylas) and rescheduling.
+- Stripe webhooks: a customer who pays but never returns to the booking page is not confirmed or
+  refunded until they come back (the hold expires after a few minutes). Webhooks would close that gap.
+- Encrypting the Stripe key at rest.

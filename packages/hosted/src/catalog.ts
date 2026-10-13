@@ -22,6 +22,7 @@ export function venueConfig(business: Business, pageUrl?: string): VenueConfig {
   const percentOf = (price: number | null, pct: number) =>
     price && pct ? Math.round((price * pct) / 100) : null;
 
+  const deposit = s.payments.deposit_percent;
   const offerings: OfferingConfig[] = s.services.map((svc) => ({
     id: svc.id,
     venue_id: business.id,
@@ -37,8 +38,15 @@ export function venueConfig(business: Business, pageUrl?: string): VenueConfig {
       late_fee_per_person: percentOf(svc.price, c.late_fee_percent),
       no_show_fee_per_person: percentOf(svc.price, c.no_show_fee_percent),
     },
-    // Deposits need online payments, which come later (Stripe payment links).
-    deposit: null,
+    // A deposit exists only when the owner can actually take it: Stripe connected, a price set.
+    deposit:
+      business.stripe && svc.price && deposit
+        ? {
+            min_party_size: 1,
+            amount_per_person: Math.round((svc.price * deposit) / 100),
+            due: 'at_confirmation',
+          }
+        : null,
   }));
 
   return {

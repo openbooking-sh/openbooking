@@ -378,6 +378,9 @@ importers:
       '@openbooking-sh/notifications':
         specifier: workspace:^
         version: link:../notifications
+      '@openbooking-sh/payments-stripe':
+        specifier: workspace:^
+        version: link:../payments-stripe
       '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory

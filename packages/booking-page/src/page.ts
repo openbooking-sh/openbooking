@@ -95,6 +95,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
       offerings: cat.offerings,
       staff: cat.staff,
       showParty: cat.resources.some((r) => r.capacity.max > 1),
+      payments: service.payments !== undefined,
       profile: prof,
       pageUrl,
       apiPath,
@@ -280,6 +281,8 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
         idempotency_key: key,
         user_confirmed: b.user_confirmed === true,
         customer: b.customer as never,
+        // The Stripe session id the customer came back with; the engine verifies it with Stripe.
+        ...(typeof b.payment_token === 'string' ? { payment_token: b.payment_token } : {}),
       });
       return { booking: { ...view(booking), manage_url: manageUrl(booking) ?? null } };
     }),

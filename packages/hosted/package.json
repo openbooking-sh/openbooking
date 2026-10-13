@@ -52,6 +52,7 @@
     "@openbooking-sh/core": "workspace:^",
     "@openbooking-sh/google-calendar": "workspace:^",
     "@openbooking-sh/notifications": "workspace:^",
+    "@openbooking-sh/payments-stripe": "workspace:^",
     "@openbooking-sh/provider-memory": "workspace:^",
     "@openbooking-sh/server": "workspace:^",
     "@openbooking-sh/studio": "workspace:^",

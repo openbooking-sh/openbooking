@@ -17,6 +17,7 @@ import {
   type CalendarLinkStore,
   type GoogleCredentials,
 } from '@openbooking-sh/google-calendar';
+import { StripeError, StripePayments } from '@openbooking-sh/payments-stripe';
 import {
   MemoryNotificationLog,
   type Mailer,
@@ -95,6 +96,8 @@ export interface HostedOptions {
   notificationLog?: NotificationLog;
   /** Google OAuth client (Calendar API enabled). The redirect URI is `{baseUrl}/oauth/google/callback`. */
   google?: { clientId: string; clientSecret: string; fetch?: typeof fetch };
+  /** Test hook: the fetch calls to Stripe go through. */
+  stripeFetch?: typeof fetch;
   calendarLinks?: CalendarLinkStore;
   /** Host header allow-list for MCP endpoints. Defaults to the baseUrl host plus localhost. */
   allowedHosts?: string[];
@@ -212,6 +215,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ...(options.mail ? { mail: options.mail } : {}),
     notificationLog: options.notificationLog ?? new MemoryNotificationLog(),
     ...(google ? { google } : {}),
+    ...(options.stripeFetch ? { stripeFetch: options.stripeFetch } : {}),
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
     allowedHosts,
     requireVerifiedEmail,
@@ -723,6 +727,46 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   app.post(`${STUDIO_PATH}/api/integrations/google/disconnect`, async (c) => {
     const t = c.get('tenant');
     const saved = await businesses.update(t.id, ({ google: _, ...rest }) => rest);
+    if (saved) t.sync(saved);
+    return c.json({ ok: true });
+  });
+
+  // The owner's own Stripe account: deposits go straight to them. The key is checked with Stripe
+  // before it is saved and is never sent back to Studio, only its last four characters.
+  app.post(`${STUDIO_PATH}/api/integrations/stripe/connect`, async (c) => {
+    const t = c.get('tenant');
+    const { secret_key } = (await c.req.json().catch(() => ({}))) as { secret_key?: unknown };
+    const key = typeof secret_key === 'string' ? secret_key.trim() : '';
+    try {
+      await new StripePayments({
+        secretKey: key,
+        successUrl: t.pageUrl,
+        cancelUrl: t.pageUrl,
+        ...(options.stripeFetch ? { fetch: options.stripeFetch } : {}),
+      }).check();
+    } catch (e) {
+      const why =
+        e instanceof StripeError
+          ? `Stripe did not accept that key: ${e.message}`
+          : 'Paste a secret key from Stripe (starts with sk_test_, sk_live_ or rk_).';
+      return err(c, new BookingError('validation_error', why));
+    }
+    const saved = await businesses.update(t.id, (b) => ({
+      ...b,
+      stripe: { secret_key: key },
+      version: b.version + 1,
+    }));
+    if (saved) t.sync(saved);
+    track('stripe_connected', t.id);
+    return c.json({ ok: true });
+  });
+
+  app.post(`${STUDIO_PATH}/api/integrations/stripe/disconnect`, async (c) => {
+    const t = c.get('tenant');
+    const saved = await businesses.update(t.id, ({ stripe: _, ...rest }) => ({
+      ...rest,
+      version: rest.version + 1,
+    }));
     if (saved) t.sync(saved);
     return c.json({ ok: true });
   });

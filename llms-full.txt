@@ -853,14 +853,8 @@ import { BookingService } from '@openbooking-sh/core';
 
 const service = new BookingService({ provider: myProvider });
 
-const { slots } = await service.searchAvailability({
-  date: '2026-10-09',
-  party_size: { total: 1 },
-});
-const hold = await service.hold({
-  slot_id: slots[0].slot_id,
-  idempotency_key: crypto.randomUUID(),
-});
+const { slots } = await service.searchAvailability({ date: '2026-10-09', party_size: { total: 1 } });
+const hold = await service.hold({ slot_id: slots[0].slot_id, idempotency_key: crypto.randomUUID() });
 const booking = await service.confirm({
   booking_id: hold.booking_id,
   idempotency_key: crypto.randomUUID(),
@@ -928,12 +922,7 @@ npm install @openbooking-sh/google-calendar
 ## Usage
 
 ```ts
-import {
-  googleAuthUrl,
-  exchangeCode,
-  attachCalendarSync,
-  googleBusySource,
-} from '@openbooking-sh/google-calendar';
+import { googleAuthUrl, exchangeCode, attachCalendarSync, googleBusySource } from '@openbooking-sh/google-calendar';
 ```
 
 See `@openbooking-sh/hosted` for a complete wiring.
@@ -1354,17 +1343,17 @@ pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / op
 
 ## Routes
 
-| Path                                                          | What                                                                                             |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 30-day signed session token)                           |
-| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                        |
-| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id` |
-| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                    |
-| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                       |
-| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                      |
-| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                  |
-| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                            |
-| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                       |
+| Path                                                          | What                                                                                                         |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 7-day signed session token, revoked by logout or a password reset) |
+| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                                    |
+| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id`             |
+| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                                |
+| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                                   |
+| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                                  |
+| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                              |
+| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                                        |
+| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                                   |
 
 `{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
 `business_id` and the venue id on its bookings.
@@ -1438,6 +1427,28 @@ verification for these scopes before outside users can connect without warnings;
 - **Failures.** Google down → bookings fail with a retryable error (we can't promise the time is
   free). Access revoked → Studio shows "reconnect", and bookings continue without Google.
 
+## Deposits (Stripe)
+
+Each business connects **its own** Stripe account in Studio → Settings → Online payments: paste a
+restricted key that may write Checkout Sessions and Refunds (or a secret key). Money goes straight
+to the owner, not through OpenBooking. The key is checked with Stripe before it is saved, and Studio
+only ever shows its last four characters.
+
+- **Deposit.** The owner sets a percentage of the service price (0 = none). A service has a deposit
+  only while Stripe is connected and it has a price.
+- **Booking page.** "Continue to payment" sends the customer to Stripe Checkout; Stripe returns
+  them to the page with the session id, and the page confirms the booking. The engine asks Stripe
+  whether that session was paid, for this booking and this amount, so a made-up token never works.
+- **Agents** get `payment_required` with `payment_url` and `payment_token` (see
+  [RECIPES](RECIPES.md)).
+- **Refunds** follow the cancellation rules and run automatically. If Stripe is down the booking is
+  still cancelled and the call answers `refund_failed`; cancelling again retries safely.
+- **Staff in Studio** record a deposit taken in person without Stripe.
+- **Disconnecting** Stripe stops new deposits. Deposits already paid can then no longer be refunded
+  automatically.
+
+The Stripe key sits in the business record as-is, like the Google tokens (not exported, not shown).
+
 ## Emails
 
 Set `RESEND_API_KEY` (and `MAIL_FROM`, default `bookings@openbooking.sh`, which must be a verified
@@ -1451,6 +1462,8 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 
 - **Password reset:** `/reset` emails a link that works once (it is tied to the current password
   hash) and expires in an hour. Saving a new password logs out every other session.
+- **Log out** ends every session of the account, not just that browser, so a copied token stops
+  working at once. Tokens last a week.
 - **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
   listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
   page and per-business MCP work straight away. Studio shows a "Confirm your email" step.
@@ -1533,4 +1546,7 @@ calendar sync, analytics, Slack) finishes after the response through `waitUntil(
 - Custom domains or subdomains per business (paths only: `/b/{id}`).
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Encrypting Google refresh tokens at rest (they sit in the business record as-is).
-- Outlook (Nylas), deposits, rescheduling.
+- Outlook (Nylas) and rescheduling.
+- Stripe webhooks: a customer who pays but never returns to the booking page is not confirmed or
+  refunded until they come back (the hold expires after a few minutes). Webhooks would close that gap.
+- Encrypting the Stripe key at rest.
