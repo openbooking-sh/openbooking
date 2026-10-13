@@ -1,5 +1,13 @@
 # @openbooking-sh/conformance
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [dd48af2]
+- Updated dependencies [eb99a97]
+  - @openbooking-sh/core@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes
