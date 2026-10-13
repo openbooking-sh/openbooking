@@ -87,6 +87,11 @@ export class StripePayments implements PaymentProvider {
     return { url: session.url, token: session.id };
   }
 
+  /** Is the key accepted, and may it read Checkout Sessions? Throws {@link StripeError} if not. */
+  async check(): Promise<void> {
+    await this.#call('GET', '/v1/checkout/sessions', { query: 'limit=1' });
+  }
+
   async verify(token: string): Promise<PaymentVerification> {
     // A real Checkout Session id only: it goes into a URL path.
     if (!/^cs_[A-Za-z0-9_]+$/.test(token)) {

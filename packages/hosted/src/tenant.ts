@@ -14,8 +14,13 @@ import {
   type ConfirmHoldRequest,
   type CreateHoldRequest,
   type IdempotencyRecord,
+  type Checkout,
+  type CheckoutRequest,
   type IdempotencyStore,
+  type PaymentProvider,
+  type PaymentVerification,
   type ProviderContext,
+  type RefundRequest,
   type UpdateBookingRequest,
 } from '@openbooking-sh/core';
 import {
@@ -41,6 +46,7 @@ import {
   type BookingRecordStore,
   type BusySource,
 } from '@openbooking-sh/provider-memory';
+import { StripePayments } from '@openbooking-sh/payments-stripe';
 import { createOpenBookingApp, type OpenBookingApp } from '@openbooking-sh/server';
 import {
   createStudio,
@@ -68,6 +74,8 @@ export interface TenantDeps {
   /** Owners must confirm their email before the business is listed in the OpenBooking app. */
   requireVerifiedEmail?: boolean;
   onEvent?: (businessId: string, event: BookingEvent) => void;
+  /** Test hook: the fetch Stripe calls go through. */
+  stripeFetch?: typeof fetch;
 }
 
 export const GOOGLE_RECONNECT =
@@ -84,7 +92,17 @@ export class Tenant {
   #notifications: NotificationHandle | undefined;
   #google: { key: string; client: GoogleCalendarClient; sync: CalendarSync } | undefined;
   #googleBusy: BusySource | undefined;
+  #stripe: { key: string; payments: StripePayments } | undefined;
   readonly #deps: TenantDeps;
+  /**
+   * Always handed to the engine, so a deposit is never taken on trust. It forwards to the owner's
+   * Stripe account as it is now (the key can change without rebuilding the service).
+   */
+  readonly #payments: PaymentProvider = {
+    createCheckout: (r: CheckoutRequest): Promise<Checkout> => this.#stripeNow().createCheckout(r),
+    verify: (t: string): Promise<PaymentVerification> => this.#stripeNow().verify(t),
+    refund: (r: RefundRequest): Promise<void> => this.#stripeNow().refund(r),
+  };
 
   constructor(business: Business, deps: TenantDeps) {
     this.id = business.id;
@@ -96,6 +114,7 @@ export class Tenant {
     this.service = new BookingService({
       provider: this.provider,
       idempotencyStore: prefixed(deps.idempotency, `${business.id}:`),
+      payments: this.#payments,
       ...(deps.clock ? { clock: deps.clock } : {}),
       ...(deps.holdTtlSeconds ? { holdTtlSeconds: deps.holdTtlSeconds } : {}),
       ...(deps.onEvent ? { onEvent: (e) => deps.onEvent!(this.id, e) } : {}),
@@ -255,6 +274,19 @@ export class Tenant {
           connect_path: '/integrations/google/connect',
           disconnect_path: '/integrations/google/disconnect',
         },
+        stripe: {
+          connected: !!b.stripe,
+          ...(b.stripe
+            ? {
+                mode: b.stripe.secret_key.includes('_live_')
+                  ? ('live' as const)
+                  : ('test' as const),
+                key_hint: b.stripe.secret_key.slice(-4),
+              }
+            : {}),
+          connect_path: '/integrations/stripe/connect',
+          disconnect_path: '/integrations/stripe/disconnect',
+        },
       },
       install: {
         booking_page: this.pageUrl,
@@ -286,6 +318,30 @@ export class Tenant {
     if (!saved) throw new BookingError('not_found', 'This business no longer exists.');
     this.sync(saved);
     return this.settingsView();
+  }
+
+  #stripeNow(): StripePayments {
+    const key = this.#business.stripe?.secret_key;
+    if (!key) {
+      throw new BookingError(
+        'operation_not_supported',
+        'This business has no online payments set up. Ask the business to take the deposit directly.',
+      );
+    }
+    if (this.#stripe?.key !== key) {
+      this.#stripe = {
+        key,
+        payments: new StripePayments({
+          secretKey: key,
+          // Stripe fills in the session id; the booking page then confirms with it.
+          successUrl: (b) =>
+            `${this.pageUrl}?paid=${encodeURIComponent(b.booking_id)}&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: this.pageUrl,
+          ...(this.#deps.stripeFetch ? { fetch: this.#deps.stripeFetch } : {}),
+        }),
+      };
+    }
+    return this.#stripe.payments;
   }
 
   #setupGoogle(): void {
