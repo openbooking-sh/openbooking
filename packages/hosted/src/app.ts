@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BookingError,
+  isBookingError,
   MemoryIdempotencyStore,
   runAsActor,
   systemClock,
@@ -17,7 +18,7 @@ import {
   type CalendarLinkStore,
   type GoogleCredentials,
 } from '@openbooking-sh/google-calendar';
-import { StripeError, StripePayments } from '@openbooking-sh/payments-stripe';
+import { StripeError, StripePayments, verifyWebhook } from '@openbooking-sh/payments-stripe';
 import {
   MemoryNotificationLog,
   type Mailer,
@@ -737,13 +738,15 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     const t = c.get('tenant');
     const { secret_key } = (await c.req.json().catch(() => ({}))) as { secret_key?: unknown };
     const key = typeof secret_key === 'string' ? secret_key.trim() : '';
+    let stripe: StripePayments;
     try {
-      await new StripePayments({
+      stripe = new StripePayments({
         secretKey: key,
         successUrl: t.pageUrl,
         cancelUrl: t.pageUrl,
         ...(options.stripeFetch ? { fetch: options.stripeFetch } : {}),
-      }).check();
+      });
+      await stripe.check();
     } catch (e) {
       const why =
         e instanceof StripeError
@@ -751,9 +754,14 @@ export function createHostedApp(options: HostedOptions): HostedApp {
           : 'Paste a secret key from Stripe (starts with sk_test_, sk_live_ or rk_).';
       return err(c, new BookingError('validation_error', why));
     }
+    // Ask Stripe to tell us about payments, so one that arrives after the customer left is still
+    // dealt with. A key without that permission still works; Studio says what is missing.
+    const webhook = await stripe
+      .createWebhook(`${baseUrl}/b/${t.id}/stripe/webhook`)
+      .catch(() => undefined);
     const saved = await businesses.update(t.id, (b) => ({
       ...b,
-      stripe: { secret_key: key },
+      stripe: { secret_key: key, ...(webhook ? { webhook } : {}) },
       version: b.version + 1,
     }));
     if (saved) t.sync(saved);
@@ -763,6 +771,18 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.post(`${STUDIO_PATH}/api/integrations/stripe/disconnect`, async (c) => {
     const t = c.get('tenant');
+    const old = t.business.stripe;
+    if (old?.webhook) {
+      // Best effort: a webhook left behind is refused by us anyway (no secret to check it with).
+      await new StripePayments({
+        secretKey: old.secret_key,
+        successUrl: t.pageUrl,
+        cancelUrl: t.pageUrl,
+        ...(options.stripeFetch ? { fetch: options.stripeFetch } : {}),
+      })
+        .deleteWebhook(old.webhook.id)
+        .catch(() => undefined);
+    }
     const saved = await businesses.update(t.id, ({ stripe: _, ...rest }) => ({
       ...rest,
       version: rest.version + 1,
@@ -826,6 +846,49 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   );
 
   // ---------------------------------------------------------------- One business
+
+  // Stripe calls this when a Checkout Session is paid. The booking page normally confirms the
+  // booking itself when the customer returns; this covers the customer who never does. Anything
+  // other than a verified payment for one of this business's bookings is ignored with a 200.
+  app.post('/b/:id/stripe/webhook', async (c) => {
+    const id = c.req.param('id');
+    const b = await businesses.get(id);
+    const secret = b?.stripe?.webhook?.secret;
+    const t = secret ? await tenant(id) : undefined;
+    if (!t || !secret) return c.json({ error: 'Not set up.' }, 404);
+    let event;
+    try {
+      event = await verifyWebhook(await c.req.text(), c.req.header('stripe-signature'), secret, {
+        now: () => clock.now().getTime(),
+      });
+    } catch {
+      return c.json({ error: 'Bad signature.' }, 400);
+    }
+    const session = event.data.object;
+    const bookingId = (session.metadata as Record<string, string> | undefined)?.booking_id;
+    const paid = session.payment_status === 'paid';
+    const handled =
+      (event.type === 'checkout.session.completed' ||
+        event.type === 'checkout.session.async_payment_succeeded') &&
+      paid &&
+      bookingId &&
+      typeof session.id === 'string';
+    if (!handled) return c.json({ ok: true, ignored: true });
+    try {
+      const result = await runAsActor({ protocol: 'web', agent: 'Stripe' }, () =>
+        t.service.reconcilePayment(bookingId, session.id as string),
+      );
+      // The hold is live: the customer may still be on their way back. A failing answer makes
+      // Stripe deliver the event again later, when the hold has expired.
+      if (result === 'pending') return c.json({ ok: false, retry: true }, 503);
+      track('stripe_payment_reconciled', id, { result });
+      return c.json({ ok: true, result });
+    } catch (e) {
+      if (isBookingError(e) && e.code === 'not_found') return c.json({ ok: true, ignored: true });
+      console.error('[openbooking] Stripe webhook failed', e);
+      return c.json({ error: 'Try again.' }, 500);
+    }
+  });
 
   const business = async (c: Context) => {
     const id = c.req.param('id') ?? '';

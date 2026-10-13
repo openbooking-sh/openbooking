@@ -92,6 +92,29 @@ export class StripePayments implements PaymentProvider {
     await this.#call('GET', '/v1/checkout/sessions', { query: 'limit=1' });
   }
 
+  /**
+   * Ask Stripe to call `url` when a Checkout Session is paid. The signing secret is only returned
+   * now, so keep it. Needs a key that may write Webhook Endpoints.
+   */
+  async createWebhook(url: string): Promise<{ id: string; secret: string }> {
+    const hook = await this.#call('POST', '/v1/webhook_endpoints', {
+      body: form({
+        url,
+        'enabled_events[0]': 'checkout.session.completed',
+        'enabled_events[1]': 'checkout.session.async_payment_succeeded',
+      }),
+    });
+    if (typeof hook.id !== 'string' || typeof hook.secret !== 'string') {
+      throw new StripeError(502, 'Stripe returned a webhook endpoint without an id or secret.');
+    }
+    return { id: hook.id, secret: hook.secret };
+  }
+
+  async deleteWebhook(id: string): Promise<void> {
+    if (!/^we_[A-Za-z0-9_]+$/.test(id)) return;
+    await this.#call('DELETE', `/v1/webhook_endpoints/${id}`);
+  }
+
   async verify(token: string): Promise<PaymentVerification> {
     // A real Checkout Session id only: it goes into a URL path.
     if (!/^cs_[A-Za-z0-9_]+$/.test(token)) {
@@ -128,7 +151,7 @@ export class StripePayments implements PaymentProvider {
   }
 
   async #call(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
     opts: { body?: string; query?: string; idempotencyKey?: string } = {},
   ): Promise<Record<string, unknown>> {
@@ -159,4 +182,61 @@ function form(fields: Record<string, string | number>): string {
   return new URLSearchParams(
     Object.entries(fields).map(([k, v]) => [k, String(v)] as [string, string]),
   ).toString();
+}
+
+/** What a Stripe webhook delivers: the parts we read. */
+export interface StripeEvent {
+  id: string;
+  type: string;
+  data: { object: Record<string, unknown> };
+}
+
+/**
+ * Check a webhook really came from Stripe: the `Stripe-Signature` header carries a timestamp and
+ * an HMAC-SHA256 of `<timestamp>.<raw body>` under the endpoint's signing secret. Pass the body
+ * exactly as received. Throws when the signature is wrong or the timestamp is too old (replay).
+ */
+export async function verifyWebhook(
+  payload: string,
+  header: string | null | undefined,
+  secret: string,
+  options: { now?: () => number; toleranceSeconds?: number } = {},
+): Promise<StripeEvent> {
+  const parts = (header ?? '').split(',').map((p) => p.trim().split('=') as [string, string]);
+  const timestamp = Number(parts.find(([k]) => k === 't')?.[1]);
+  const signatures = parts.filter(([k]) => k === 'v1').map(([, v]) => v ?? '');
+  if (!Number.isFinite(timestamp) || signatures.length === 0) {
+    throw new StripeError(400, 'Missing or malformed Stripe-Signature header.');
+  }
+  const age = Math.abs((options.now?.() ?? Date.now()) / 1000 - timestamp);
+  if (age > (options.toleranceSeconds ?? 300)) {
+    throw new StripeError(400, 'The webhook timestamp is too old.');
+  }
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  const data = new TextEncoder().encode(`${timestamp}.${payload}`);
+  for (const sig of signatures) {
+    const bytes = hexToBytes(sig);
+    // crypto.subtle.verify compares in constant time.
+    if (bytes && (await crypto.subtle.verify('HMAC', key, bytes, data))) {
+      try {
+        return JSON.parse(payload) as StripeEvent;
+      } catch {
+        throw new StripeError(400, 'The webhook body is not JSON.');
+      }
+    }
+  }
+  throw new StripeError(400, 'The webhook signature does not match.');
+}
+
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> | undefined {
+  if (!/^(?:[0-9a-f]{2})+$/i.test(hex)) return undefined;
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
 }

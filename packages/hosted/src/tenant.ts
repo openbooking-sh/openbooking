@@ -282,6 +282,7 @@ export class Tenant {
                   ? ('live' as const)
                   : ('test' as const),
                 key_hint: b.stripe.secret_key.slice(-4),
+                webhook: !!b.stripe.webhook,
               }
             : {}),
           connect_path: '/integrations/stripe/connect',

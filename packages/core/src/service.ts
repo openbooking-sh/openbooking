@@ -218,6 +218,45 @@ export class BookingService {
     return this.#track('get', async () => this.#load(bookingId), bookingId);
   }
 
+  /**
+   * A payment arrived for a booking and nobody is waiting on it: the customer paid and never came
+   * back to confirm. Called from the payment provider's webhook.
+   *
+   * - `settled`: the booking is confirmed (or was cancelled with the deposit already handled).
+   * - `pending`: the hold is still live, so the customer may yet come back. Ask again later.
+   * - `refunded`: the hold ran out or was released, so the money went back (full amount).
+   * - `unpaid`: the provider says this session was not paid for this booking; nothing to do.
+   */
+  async reconcilePayment(
+    bookingId: string,
+    paymentToken: string,
+  ): Promise<'settled' | 'pending' | 'refunded' | 'unpaid'> {
+    const payments = this.payments;
+    if (!payments) {
+      throw new BookingError('operation_not_supported', 'No payment provider is configured.');
+    }
+    const booking = await this.getBooking(bookingId);
+    if (booking.status === 'confirmed' || booking.payment.status === 'paid') return 'settled';
+    if (booking.status === 'held') return 'pending';
+    const paid = await payments.verify(paymentToken).catch((cause: unknown) => {
+      throw new BookingError('provider_error', 'The payment provider could not be reached.', {
+        cause,
+      });
+    });
+    if (!paid.paid || paid.booking_id !== booking.booking_id) return 'unpaid';
+    try {
+      // Same key as the refund in confirm_booking, so the customer is never refunded twice.
+      await payments.refund({
+        reference: paid.reference,
+        amount: paid.amount,
+        idempotency_key: `refund:${booking.booking_id}`,
+      });
+    } catch (cause) {
+      throw new BookingError('refund_failed', 'The refund did not go through yet.', { cause });
+    }
+    return 'refunded';
+  }
+
   /** Bookings for dashboards and staff tools. Requires the provider to implement listBookings. */
   async listBookings(query: ListBookingsQuery = {}): Promise<Booking[]> {
     return this.#track('list', async () => {

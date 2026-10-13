@@ -158,6 +158,11 @@ export interface StripeIntegrationView {
   connected: boolean;
   /** `test` keys take no real money. */
   mode?: 'test' | 'live';
+  /**
+   * Stripe tells us when a customer paid but did not come back to the page. False when the key may
+   * not create webhook endpoints: reconnect with that permission.
+   */
+  webhook?: boolean;
   /** Last four characters of the key, to recognise it. */
   key_hint?: string;
   /** POST `{ secret_key }` → connects after checking the key with Stripe. */

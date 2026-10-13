@@ -23,7 +23,14 @@ export interface Business {
     error?: string;
   };
   /** The owner's own Stripe account: deposits are paid straight to it. Never exported or shown. */
-  stripe?: { secret_key: string };
+  stripe?: {
+    secret_key: string;
+    /**
+     * The endpoint we asked Stripe to create when the key was connected, and its signing secret.
+     * Missing when the key may not write webhook endpoints.
+     */
+    webhook?: { id: string; secret: string };
+  };
   created_at: string;
   updated_at: string;
   /** Bumped on every settings change; tenants rebuild their catalog when it moves. */
