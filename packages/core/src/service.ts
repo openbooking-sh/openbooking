@@ -20,6 +20,7 @@ import {
   DEFAULT_IDEMPOTENCY_TTL_MS,
   type IdempotencyStore,
 } from './idempotency';
+import type { PaymentProvider } from './payments';
 import type { BookingProvider, ProviderContext } from './provider';
 import { MemoryRateLimiter, type RateLimiter } from './rate-limit';
 import {
@@ -34,7 +35,9 @@ import {
   type CancelInput,
   type RescheduleInput,
   type ConfirmInput,
+  type DepositTerms,
   type HoldInput,
+  type Money,
   type Offering,
   type Resource,
   type Slot,
@@ -88,6 +91,11 @@ export interface BookingServiceOptions {
    */
   holdLimit?: { limit: number; windowMs: number; limiter?: RateLimiter } | false;
   onEvent?: (event: BookingEvent) => void;
+  /**
+   * Takes deposits that are due at confirmation, and refunds them on cancellation. Without it the
+   * deposit is judged by the booking system itself (tokens in the demo provider).
+   */
+  payments?: PaymentProvider;
 }
 
 export interface SearchResult {
@@ -106,6 +114,7 @@ export const DEFAULT_HOLD_TTL_SECONDS = 600;
 export class BookingService {
   readonly provider: BookingProvider;
   readonly clock: Clock;
+  readonly payments: PaymentProvider | undefined;
   readonly holdTtlSeconds: number;
   readonly #guard: IdempotencyGuard;
   readonly #listeners = new Set<(e: BookingEvent) => void>();
@@ -113,6 +122,7 @@ export class BookingService {
   constructor(options: BookingServiceOptions) {
     this.provider = options.provider;
     this.clock = options.clock ?? systemClock;
+    this.payments = options.payments;
     this.holdTtlSeconds = options.holdTtlSeconds ?? DEFAULT_HOLD_TTL_SECONDS;
     const now = () => this.clock.now().getTime();
     this.#guard = new IdempotencyGuard(
@@ -290,7 +300,10 @@ export class BookingService {
               },
             );
           }
-          if (booking.status === 'expired') throw holdExpired(booking);
+          if (booking.status === 'expired') {
+            await this.#refundLatePayment(booking, req.payment_token);
+            throw holdExpired(booking);
+          }
 
           if (req.user_confirmed !== true) {
             throw new BookingError(
@@ -309,16 +322,29 @@ export class BookingService {
           }
 
           const deposit = booking.slot.deposit;
-          if (deposit?.due === 'at_confirmation' && !req.payment_token) {
-            throw new BookingError(
-              'payment_required',
-              `A deposit of ${formatMoney(deposit.amount)} is due at confirmation.`,
-              { details: { deposit } },
-            );
+          let payment: { reference: string; amount: Money } | undefined;
+          if (deposit?.due === 'at_confirmation') {
+            // Staff taking the deposit in person in Studio is the one token that skips the check.
+            const inPerson =
+              req.payment_token?.startsWith('manual:') && currentActor()?.protocol === 'studio';
+            if (this.payments && !inPerson) {
+              payment = await this.#checkDeposit(booking, deposit, req.payment_token);
+            } else if (!req.payment_token) {
+              throw new BookingError(
+                'payment_required',
+                `A deposit of ${formatMoney(deposit.amount)} is due at confirmation.`,
+                { details: { deposit } },
+              );
+            }
           }
 
           const confirmed = await this.provider.confirmHold(
-            { booking_id: booking.booking_id, customer, payment_token: req.payment_token ?? null },
+            {
+              booking_id: booking.booking_id,
+              customer,
+              payment_token: req.payment_token ?? null,
+              ...(payment ? { payment } : {}),
+            },
             ctx,
           );
           return this.#normalize(confirmed);
@@ -445,6 +471,11 @@ export class BookingService {
         return this.#idempotent(meta, idempotency_key, 'cancel', req, async (ctx) => {
           const booking = await this.#load(req.booking_id);
           if (booking.status === 'cancelled' || booking.status === 'expired') {
+            // A refund that failed the first time is retried here; the provider's idempotency key
+            // makes sure the customer is never refunded twice.
+            if (booking.status === 'cancelled') {
+              await this.#refund(booking, booking.cancellation?.refund);
+            }
             return { booking, already_inactive: true };
           }
 
@@ -491,6 +522,7 @@ export class BookingService {
             },
             ctx,
           );
+          await this.#refund(booking, outcome.refund);
           return { booking: this.#normalize(cancelled), already_inactive: false };
         });
       },
@@ -501,6 +533,92 @@ export class BookingService {
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
+
+  /**
+   * The deposit must be paid before the booking is confirmed. Without a token the customer gets a
+   * payment page (`payment_required` carries its link and token); with one, the provider confirms
+   * it was paid, for this booking and this amount. Nothing an agent sends is taken on trust.
+   */
+  async #checkDeposit(
+    booking: Booking,
+    deposit: DepositTerms,
+    token: string | undefined,
+  ): Promise<{ reference: string; amount: Money }> {
+    const payments = this.payments!;
+    if (!token) {
+      const checkout = await payments.createCheckout({
+        booking,
+        amount: deposit.amount,
+        description: deposit.description,
+        idempotency_key: `checkout:${booking.booking_id}`,
+      });
+      throw new BookingError(
+        'payment_required',
+        `A deposit of ${formatMoney(deposit.amount)} is due at confirmation.`,
+        {
+          suggested_next_action:
+            'Give the user payment_url to pay the deposit. Once they say they have paid, call confirm_booking again with payment_token (the hold stays valid until it expires).',
+          details: { deposit, payment_url: checkout.url, payment_token: checkout.token },
+        },
+      );
+    }
+    const paid = await payments.verify(token).catch((cause: unknown) => {
+      throw new BookingError('provider_error', 'The payment provider could not be reached.', {
+        cause,
+      });
+    });
+    const wrong =
+      !paid.paid ||
+      paid.booking_id !== booking.booking_id ||
+      paid.amount.amount !== deposit.amount.amount ||
+      paid.amount.currency.toUpperCase() !== deposit.amount.currency.toUpperCase();
+    if (wrong) {
+      throw new BookingError(
+        'payment_failed',
+        paid.paid
+          ? 'That payment is not for this booking, or not for the deposit amount.'
+          : 'The deposit has not been paid yet.',
+      );
+    }
+    return { reference: paid.reference, amount: paid.amount };
+  }
+
+  /** Refund the customer what the cancellation terms say they get back. */
+  async #refund(booking: Booking, refund: Money | null | undefined): Promise<void> {
+    if (!this.payments || !refund || refund.amount <= 0) return;
+    const { status, reference } = booking.payment;
+    if (status !== 'paid' || !reference || reference.startsWith('manual:')) return;
+    try {
+      await this.payments.refund({
+        reference,
+        amount: refund,
+        idempotency_key: `refund:${booking.booking_id}`,
+      });
+    } catch (cause) {
+      throw new BookingError(
+        'refund_failed',
+        'The booking is cancelled, but the refund did not go through yet.',
+        { cause },
+      );
+    }
+  }
+
+  /** The customer paid after the hold ran out: give the money back instead of keeping it. */
+  async #refundLatePayment(booking: Booking, token: string | undefined): Promise<void> {
+    if (!this.payments || !token) return;
+    try {
+      const paid = await this.payments.verify(token);
+      if (paid.paid && paid.booking_id === booking.booking_id) {
+        await this.payments.refund({
+          reference: paid.reference,
+          amount: paid.amount,
+          idempotency_key: `refund:${booking.booking_id}`,
+        });
+      }
+    } catch {
+      // Best effort: the caller still gets hold_expired, and the payment shows in the provider.
+    }
+  }
 
   #ctx(idempotency_key?: string): ProviderContext {
     return { now: this.clock.now(), ...(idempotency_key ? { idempotency_key } : {}) };

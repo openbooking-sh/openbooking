@@ -17,6 +17,7 @@ export const ErrorCodeSchema = z.enum([
   'customer_details_required',
   'payment_required',
   'payment_failed',
+  'refund_failed',
   'cancellation_not_allowed',
   'reschedule_not_allowed',
   'idempotency_conflict',
@@ -54,6 +55,8 @@ const DEFAULT_NEXT_ACTION: Record<ErrorCode, string> = {
   payment_required:
     'This booking needs a deposit. Obtain a payment token for the deposit amount and call again with payment_token.',
   payment_failed: 'The payment was declined. Ask the user for another payment method.',
+  refund_failed:
+    'The booking is cancelled, but the refund did not go through. Tell the user it is on its way, and call cancel_booking again with the same idempotency_key to retry the refund.',
   cancellation_not_allowed:
     'The booking can no longer be cancelled online. Tell the user to contact the venue directly.',
   reschedule_not_allowed:
@@ -68,7 +71,11 @@ const DEFAULT_NEXT_ACTION: Record<ErrorCode, string> = {
     'Too many holds were made from here in a short time. Wait a few minutes, or complete or release existing holds first.',
 };
 
-const RETRYABLE: ReadonlySet<ErrorCode> = new Set(['provider_error', 'rate_limited']);
+const RETRYABLE: ReadonlySet<ErrorCode> = new Set([
+  'provider_error',
+  'rate_limited',
+  'refund_failed',
+]);
 
 export interface BookingErrorOptions {
   suggested_next_action?: string;

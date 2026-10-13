@@ -255,6 +255,42 @@ up. Delivery is at least once, so dedupe on
 customer details, so never point a webhook at an analytics or logging service. Without the server,
 `createWebhooks()` returns a listener for `service.on()`.
 
+## 7. Take deposits with Stripe
+
+A slot can require a deposit at confirmation. Give the service a payment provider and the engine
+handles the rest:
+
+```ts
+import { StripePayments } from '@openbooking-sh/payments-stripe';
+
+const service = new BookingService({
+  provider,
+  payments: new StripePayments({
+    secretKey: process.env.STRIPE_SECRET_KEY!, // sk_test_… while you try it
+    successUrl: 'https://example.com/booked',
+    cancelUrl: 'https://example.com/book',
+  }),
+});
+```
+
+1. `confirm_booking` without a token fails with `payment_required`. The error carries a
+   `payment_url` (a Stripe Checkout page) and a `payment_token`. The agent gives the user the link.
+2. After the user pays, `confirm_booking` again with that `payment_token`. The engine asks Stripe
+   whether the session was paid, for this booking, for the deposit amount. Only then is the booking
+   confirmed, and the payment reference is kept on it. Tokens an agent makes up are refused.
+3. Cancelling refunds what the cancellation terms say (the whole deposit before the free-cancellation
+   deadline, the deposit minus the late fee after it). If Stripe is down, the booking is still
+   cancelled and `cancel_booking` replies `refund_failed`; calling it again retries, and the
+   idempotency key means the customer is never refunded twice.
+4. If the customer pays after the hold expired, the payment is refunded and the agent gets
+   `hold_expired`.
+
+Staff taking a deposit in cash in Studio still works: Studio records it as collected, with no
+Stripe involved. For a connected account (Stripe Connect) pass `stripeAccount`.
+
+Not built yet: per-business Stripe accounts and the payment page in the hosted booking page and
+Studio. For now `payments` is for self-hosted setups.
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:
