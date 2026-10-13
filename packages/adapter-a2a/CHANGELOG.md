@@ -1,5 +1,12 @@
 # @openbooking-sh/adapter-a2a
 
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies [e3fac6c]
+  - @openbooking-sh/core@0.12.0
+
 ## 0.10.0
 
 ### Patch Changes
