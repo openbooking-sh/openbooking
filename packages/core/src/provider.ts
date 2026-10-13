@@ -46,6 +46,11 @@ export interface ConfirmHoldRequest {
   customer: Customer;
   /** Present when the slot's deposit is due at confirmation. */
   payment_token: string | null;
+  /**
+   * Set when the engine already checked the deposit with a `PaymentProvider`: the provider should
+   * record the booking as paid with this reference instead of judging `payment_token` itself.
+   */
+  payment?: { reference: string; amount: Money };
 }
 
 export interface UpdateBookingRequest {

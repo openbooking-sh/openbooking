@@ -408,6 +408,12 @@ importers:
         specifier: workspace:^
         version: link:../provider-memory
 
+  packages/payments-stripe:
+    dependencies:
+      '@openbooking-sh/core':
+        specifier: workspace:^
+        version: link:../core
+
   packages/postgres:
     dependencies:
       '@openbooking-sh/core':

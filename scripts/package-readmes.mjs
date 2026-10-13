@@ -131,6 +131,22 @@ const provider = new CalcomBookingProvider({
   venue: { id: 'venue', name: 'Studio Nord', timezone: 'Europe/Oslo', currency: 'NOK' },
 });`,
   },
+  'payments-stripe': {
+    title: 'Stripe deposits',
+    intro:
+      'Takes the deposit of a booking on a Stripe Checkout page and refunds it by the cancellation terms. The engine only confirms a booking after Stripe says the deposit was paid, for that booking and that amount, so an agent can never skip the payment with a made-up token. Plain `fetch`, no Stripe SDK.',
+    usage: `import { BookingService } from '${S}/core';
+import { StripePayments } from '${S}/payments-stripe';
+
+const service = new BookingService({
+  provider,
+  payments: new StripePayments({
+    secretKey: process.env.STRIPE_SECRET_KEY!,
+    successUrl: 'https://example.com/booked',
+    cancelUrl: 'https://example.com/book',
+  }),
+});`,
+  },
   conformance: {
     title: 'Conformance suite for booking providers',
     intro:
