@@ -2,6 +2,7 @@
  * Deposits through the owner's own Stripe account, end to end on hosted: connect the key, set a
  * deposit, book through the booking page's API, pay, get refunded on cancellation.
  */
+import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManualClock } from '@openbooking-sh/core';
 import { createHostedApp } from '../src';
@@ -10,6 +11,7 @@ const BASE = 'http://localhost:3000';
 const NOW = '2026-10-06T07:00:00Z';
 const DAY = '2026-10-08';
 const KEY = 'sk_test_hosted_1234';
+const WHSEC = 'whsec_test_secret';
 const ADA = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -18,14 +20,27 @@ afterEach(async () => {
 });
 
 /** A Stripe that remembers sessions; `pay` is the customer paying. */
-function fakeStripe() {
-  const calls: Array<{ method: string; url: string; auth: string; body: URLSearchParams }> = [];
+function fakeStripe(options: { webhooks?: boolean } = {}) {
+  const calls: Array<{
+    method: string;
+    url: string;
+    auth: string;
+    body: URLSearchParams;
+    idempotency?: string;
+  }> = [];
   const sessions = new Map<string, Record<string, unknown>>();
   const fetch = (async (url: string, init: RequestInit) => {
     const u = new URL(url);
     const body = new URLSearchParams(String(init.body ?? ''));
     const auth = String((init.headers as Record<string, string>).authorization);
-    calls.push({ method: String(init.method), url: u.pathname, auth, body });
+    const idempotency = (init.headers as Record<string, string>)['idempotency-key'];
+    calls.push({
+      method: String(init.method),
+      url: u.pathname,
+      auth,
+      body,
+      ...(idempotency ? { idempotency } : {}),
+    });
     const json = (j: unknown, status = 200) => new Response(JSON.stringify(j), { status });
     if (auth !== `Bearer ${KEY}`) {
       return json({ error: { message: 'Invalid API Key provided.' } }, 401);
@@ -50,6 +65,12 @@ function fakeStripe() {
       return found ? json(found) : json({ error: { message: 'No such session' } }, 404);
     }
     if (u.pathname === '/v1/refunds') return json({ id: 're_1' });
+    if (u.pathname === '/v1/webhook_endpoints' && init.method === 'POST') {
+      return options.webhooks === false
+        ? json({ error: { message: 'This key cannot write webhook endpoints.' } }, 403)
+        : json({ id: 'we_1', secret: WHSEC });
+    }
+    if (u.pathname.startsWith('/v1/webhook_endpoints/')) return json({ deleted: true });
     return json({ error: { message: 'unexpected' } }, 404);
   }) as unknown as typeof globalThis.fetch;
   return {
@@ -60,8 +81,8 @@ function fakeStripe() {
   };
 }
 
-function setup() {
-  const stripe = fakeStripe();
+function setup(stripeOptions: { webhooks?: boolean } = {}) {
+  const stripe = fakeStripe(stripeOptions);
   const clock = new ManualClock(NOW);
   const hosted = createHostedApp({
     baseUrl: BASE,
@@ -91,7 +112,21 @@ function setup() {
     }
     return { status: res.status, json, text };
   };
-  return { stripe, req };
+  /** Deliver a Stripe webhook the way Stripe would, signed with the endpoint secret. */
+  const webhook = async (event: unknown, over: { secret?: string; at?: number } = {}) => {
+    const payload = JSON.stringify(event);
+    const t = Math.floor((over.at ?? clock.now().getTime()) / 1000);
+    const v1 = createHmac('sha256', over.secret ?? WHSEC)
+      .update(`${t}.${payload}`)
+      .digest('hex');
+    const res = await hosted.app.request(`${BASE}/b/studio-nord/stripe/webhook`, {
+      method: 'POST',
+      headers: { 'stripe-signature': `t=${t},v1=${v1}` },
+      body: payload,
+    });
+    return { status: res.status, json: (await res.json()) as any };
+  };
+  return { stripe, req, clock, webhook };
 }
 type Req = ReturnType<typeof setup>['req'];
 
@@ -220,5 +255,119 @@ describe('deposits on hosted', () => {
 
     await req('/studio/api/integrations/stripe/disconnect', { body: {}, token });
     expect((await hold(req, 'blow-dry')).deposit).toBeNull();
+  });
+});
+
+const paidEvent = (session: string, booking: string) => ({
+  id: 'evt_1',
+  type: 'checkout.session.completed',
+  data: {
+    object: { id: session, payment_status: 'paid', metadata: { booking_id: booking } },
+  },
+});
+
+describe('Stripe webhooks', () => {
+  it('registers a webhook when the key is connected, and says so when it cannot', async () => {
+    const ok = setup();
+    const token = await signup(ok.req);
+    await ok.req('/studio/api/integrations/stripe/connect', { body: { secret_key: KEY }, token });
+    const hook = ok.stripe.calls.find((c) => c.url === '/v1/webhook_endpoints')!;
+    expect(hook.body.get('url')).toBe(`${BASE}/b/studio-nord/stripe/webhook`);
+    const view = await ok.req('/studio/api/settings', { token });
+    expect(view.json.integrations.stripe.webhook).toBe(true);
+    expect(view.text).not.toContain(WHSEC);
+    await ok.req('/studio/api/integrations/stripe/disconnect', { body: {}, token });
+    expect(ok.stripe.calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/we_1'))).toBe(
+      true,
+    );
+
+    const limited = setup({ webhooks: false });
+    const t2 = await signup(limited.req);
+    const connected = await limited.req('/studio/api/integrations/stripe/connect', {
+      body: { secret_key: KEY },
+      token: t2,
+    });
+    expect(connected.status).toBe(200);
+    const view2 = await limited.req('/studio/api/settings', { token: t2 });
+    expect(view2.json.integrations.stripe.webhook).toBe(false);
+  });
+
+  it('refunds a customer who paid after the hold ran out and never came back', async () => {
+    const { req, stripe, clock, webhook } = setup();
+    await ownerWithDeposit(req);
+    const held = await hold(req);
+    const asked = await req(`${page}/api/confirm`, {
+      body: {
+        booking_id: held.booking_id,
+        idempotency_key: 'confirm-c1',
+        customer: ADA,
+        user_confirmed: true,
+      },
+    });
+    const session = asked.json.error.details.payment_token as string;
+    stripe.pay(session);
+
+    // The customer may still be on their way back: ask Stripe to try again later.
+    expect((await webhook(paidEvent(session, held.booking_id))).status).toBe(503);
+    expect(stripe.calls.some((c) => c.url === '/v1/refunds')).toBe(false);
+
+    clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+    const first = await webhook(paidEvent(session, held.booking_id));
+    expect(first).toMatchObject({ status: 200, json: { result: 'refunded' } });
+    // Stripe delivers events more than once: the same refund key, so no second refund.
+    await webhook(paidEvent(session, held.booking_id));
+    const refunds = stripe.calls.filter((c) => c.url === '/v1/refunds');
+    expect(refunds.length).toBeGreaterThan(0);
+    expect(new Set(refunds.map((r) => r.idempotency))).toEqual(
+      new Set([`refund:${held.booking_id}`]),
+    );
+    expect(Object.fromEntries(refunds[0]!.body)).toEqual({
+      payment_intent: `pi_${session}`,
+      amount: '72500',
+    });
+  });
+
+  it('leaves a booking the customer already confirmed alone', async () => {
+    const { req, stripe, webhook } = setup();
+    await ownerWithDeposit(req);
+    const held = await hold(req);
+    const asked = await req(`${page}/api/confirm`, {
+      body: {
+        booking_id: held.booking_id,
+        idempotency_key: 'confirm-c1',
+        customer: ADA,
+        user_confirmed: true,
+      },
+    });
+    const session = asked.json.error.details.payment_token as string;
+    stripe.pay(session);
+    const done = await req(`${page}/api/confirm`, {
+      body: {
+        booking_id: held.booking_id,
+        idempotency_key: 'confirm-c1',
+        customer: ADA,
+        user_confirmed: true,
+        payment_token: session,
+      },
+    });
+    expect(done.json.booking.status).toBe('confirmed');
+    expect(await webhook(paidEvent(session, held.booking_id))).toMatchObject({
+      status: 200,
+      json: { result: 'settled' },
+    });
+    expect(stripe.calls.some((c) => c.url === '/v1/refunds')).toBe(false);
+  });
+
+  it('refuses what is not signed by Stripe or is old, and ignores what is not ours', async () => {
+    const { req, webhook, clock } = setup();
+    await ownerWithDeposit(req);
+    const event = paidEvent('cs_test_1', 'bk_x');
+    expect((await webhook(event, { secret: 'whsec_forged' })).status).toBe(400);
+    expect((await webhook(event, { at: clock.now().getTime() - 3_600_000 })).status).toBe(400);
+    // Signed, but not a payment of ours: acknowledged and ignored.
+    expect((await webhook({ ...event, type: 'customer.created' })).status).toBe(200);
+    const noBooking = { ...event, data: { object: { id: 'cs_1', payment_status: 'paid' } } };
+    expect((await webhook(noBooking)).json).toMatchObject({ ignored: true });
+    expect((await webhook(event)).json).toMatchObject({ ignored: true });
   });
 });

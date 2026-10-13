@@ -194,6 +194,31 @@ describe('deposits through a payment provider', () => {
     ]);
   });
 
+  it('settles a payment nobody is waiting on: waits while the hold is live, then refunds once', async () => {
+    const { clock, payments, service, confirm, failure } = setup();
+    const hold = await holdDepositSlot(service);
+    const asked = await failure(confirm(hold.booking_id));
+    const token = (asked.details as { payment_token: string }).payment_token;
+
+    // Not paid: nothing to give back, whatever the booking looks like.
+    expect(await service.reconcilePayment(hold.booking_id, token)).toBe('pending');
+    clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+    expect(await service.reconcilePayment(hold.booking_id, token)).toBe('unpaid');
+    expect(payments.refunds).toEqual([]);
+
+    payments.pay(token);
+    expect(await service.reconcilePayment(hold.booking_id, token)).toBe('refunded');
+    expect(await service.reconcilePayment(hold.booking_id, token)).toBe('refunded');
+    expect(new Set(payments.refunds.map((r) => r.idempotency_key))).toEqual(
+      new Set([`refund:${hold.booking_id}`]),
+    );
+
+    // A payment for some other booking is not this booking's to refund.
+    const other = await holdDepositSlot(service);
+    clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+    expect(await service.reconcilePayment(other.booking_id, token)).toBe('unpaid');
+  });
+
   it('refunds nothing for a booking that never paid a deposit', async () => {
     const { payments, service, confirm } = setup();
     const { slots } = await service.searchAvailability({

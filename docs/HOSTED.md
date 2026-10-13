@@ -110,6 +110,12 @@ only ever shows its last four characters.
   [RECIPES](RECIPES.md)).
 - **Refunds** follow the cancellation rules and run automatically. If Stripe is down the booking is
   still cancelled and the call answers `refund_failed`; cancelling again retries safely.
+- **Customers who never come back.** Connecting the key also registers a webhook at
+  `/b/{id}/stripe/webhook` (the key needs the Webhook Endpoints permission; Studio says when it
+  could not). The signature is checked, and a payment for a hold that has since expired is refunded
+  in full. While the hold is still live the webhook answers 503, so Stripe delivers it again later.
+  The refund uses the same idempotency key as every other refund of that booking, so duplicate
+  deliveries never refund twice.
 - **Staff in Studio** record a deposit taken in person without Stripe.
 - **Disconnecting** Stripe stops new deposits. Deposits already paid can then no longer be refunded
   automatically.
@@ -214,6 +220,6 @@ calendar sync, analytics, Slack) finishes after the response through `waitUntil(
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Encrypting Google refresh tokens at rest (they sit in the business record as-is).
 - Outlook (Nylas) and rescheduling.
-- Stripe webhooks: a customer who pays but never returns to the booking page is not confirmed or
-  refunded until they come back (the hold expires after a few minutes). Webhooks would close that gap.
+- A customer who pays in time but never returns is refunded, not booked (we do not keep their
+  details until they come back).
 - Encrypting the Stripe key at rest.

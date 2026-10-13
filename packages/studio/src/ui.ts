@@ -715,6 +715,7 @@ export const STUDIO_HTML = `<!doctype html>
       h += '<div class="card"><h2>Online payments</h2>';
       if (st.connected) {
         h += '<p class="hint">Stripe is connected (' + (st.mode === 'live' ? 'live' : 'test mode, no real money') + ', key ending ' + esc(st.key_hint || '') + '). Deposits are paid straight to your Stripe account.</p>' +
+          (st.webhook ? '' : '<p class="err">Stripe could not be told to notify us about payments, so a customer who pays and closes the page is not handled automatically. Disconnect, then connect a key that may also write <b>Webhook Endpoints</b>.</p>') +
           field('Deposit when booking (% of the price, 0 = none)', 'pay-dep', (s.payments && s.payments.deposit_percent) || 0, 'type="number" min="0" max="100"') +
           '<p class="hint">Customers pay on a Stripe page before the booking is confirmed. If they cancel in time, the deposit is refunded automatically, following your cancellation rules. Save changes to apply.</p>' +
           '<button class="btn btn-sm btn-danger" id="stripe-off" type="button">Disconnect Stripe</button>';
