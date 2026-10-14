@@ -5,7 +5,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManualClock } from '@openbooking-sh/core';
-import { createHostedApp } from '../src';
+import { createHostedApp, starterSettings, venueConfig } from '../src';
 
 const BASE = 'http://localhost:3000';
 const NOW = '2026-10-06T07:00:00Z';
@@ -369,5 +369,27 @@ describe('Stripe webhooks', () => {
     const noBooking = { ...event, data: { object: { id: 'cs_1', payment_status: 'paid' } } };
     expect((await webhook(noBooking)).json).toMatchObject({ ignored: true });
     expect((await webhook(event)).json).toMatchObject({ ignored: true });
+  });
+});
+
+describe('businesses saved before online payments existed', () => {
+  it('still build a catalog, without a deposit', () => {
+    const settings: any = starterSettings({
+      name: 'Old Salon',
+      ownerName: 'Ola',
+      category: 'barber',
+    });
+    delete settings.payments;
+    const now = new Date().toISOString();
+    const venue = venueConfig({
+      id: 'old-salon',
+      owner: { email: 'o@example.com', password_hash: 'x' },
+      settings,
+      stripe: { secret_key: KEY },
+      created_at: now,
+      updated_at: now,
+      version: 1,
+    });
+    expect(venue.offerings.every((o) => !o.deposit)).toBe(true);
   });
 });
