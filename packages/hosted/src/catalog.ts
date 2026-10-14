@@ -22,7 +22,8 @@ export function venueConfig(business: Business, pageUrl?: string): VenueConfig {
   const percentOf = (price: number | null, pct: number) =>
     price && pct ? Math.round((price * pct) / 100) : null;
 
-  const deposit = s.payments.deposit_percent;
+  // Businesses saved before online payments existed have no `payments` block.
+  const deposit = s.payments?.deposit_percent ?? 0;
   const offerings: OfferingConfig[] = s.services.map((svc) => ({
     id: svc.id,
     venue_id: business.id,
