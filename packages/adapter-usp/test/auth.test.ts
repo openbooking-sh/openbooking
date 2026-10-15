@@ -11,9 +11,12 @@ import {
   createPopAuthenticator,
   createUspRouter,
   MemoryUspState,
+  ProtocolError,
   USP_AUTHORITY,
+  type ProfileFetcher,
 } from '../src';
 import { b64, ORIGIN, platform, type Platform, type World } from './platform';
+import { platformProfile, stubProfiles } from './platform-profile';
 import { problemErrors, profileErrors } from './spec';
 
 const NOW = '2026-10-01T08:00:00Z';
@@ -21,7 +24,7 @@ const FAR = '2026-10-16';
 const BUYER = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 const type = (slug: string) => `${USP_AUTHORITY}/errors/${slug}`;
 
-function setup(options: { checkProfile?: (uri: string) => Promise<void> } = {}) {
+function setup(options: { fetchProfile?: ProfileFetcher } = {}) {
   const clock = new ManualClock(NOW);
   const service = new BookingService({ provider: createDemoSalonProvider(), clock });
   const state = new MemoryUspState(() => clock.now().getTime());
@@ -29,7 +32,7 @@ function setup(options: { checkProfile?: (uri: string) => Promise<void> } = {}) 
     baseUrl: ORIGIN,
     state,
     clock,
-    ...(options.checkProfile ? { checkProfile: options.checkProfile } : {}),
+    ...(options.fetchProfile ? { fetchProfile: options.fetchProfile } : {}),
   });
   const app = new Hono().route(
     '/usp',
@@ -377,19 +380,38 @@ describe('identity binding (trust on first use)', () => {
     ).toBe(201);
   });
 
-  it('refuses a platform whose profile cannot be checked, when a check is plugged in', async () => {
+  it('refuses a platform whose profile cannot be fetched, without binding its key to it', async () => {
     const w = setup({
-      checkProfile: async () => {
-        throw new Error('unreachable');
+      fetchProfile: async (uri) => {
+        if (uri.includes('down.example')) {
+          throw new ProtocolError('profile_unreachable', 'The profile host could not be reached.');
+        }
+        return platformProfile();
       },
     });
-    const p = await platform(w);
+    const p = await platform(w, 'https://down.example/p.json');
     const slot = await firstSlot(w);
-    const res = await p.call('POST', '/availability/holds', {
-      slot_id: slot.id,
-      service_id: 'haircut',
-    });
+    const body = { slot_id: slot.id, service_id: 'haircut' };
+    const res = await p.call('POST', '/availability/holds', body);
     expect(res.status).toBe(424);
     expect(res.json.type).toBe(type('profile-unreachable'));
+    // The failed profile was never bound: the same key can still come back with a working one.
+    const retry = await p.call('POST', '/availability/holds', body, {
+      headers: { 'usp-agent': 'profile="https://up.example/p.json"' },
+    });
+    expect(retry.status).toBe(201);
+  });
+
+  it('only fetches a platform profile after the proof checks out', async () => {
+    const stub = stubProfiles();
+    const w = setup({ fetchProfile: stub.fetcher });
+    const p = await platform(w);
+    const slot = await firstSlot(w);
+    const body = { slot_id: slot.id, service_id: 'haircut' };
+    // No proof: refused before any fetch, so an anonymous caller cannot make us call out.
+    expect((await p.call('POST', '/availability/holds', body, { noProof: true })).status).toBe(401);
+    expect(stub.calls).toEqual([]);
+    expect((await p.call('POST', '/availability/holds', body)).status).toBe(201);
+    expect(stub.calls).toEqual(['https://agent.example/profile.json']);
   });
 });

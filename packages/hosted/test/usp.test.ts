@@ -7,12 +7,26 @@ import { createHash } from 'node:crypto';
 import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManualClock } from '@openbooking-sh/core';
+import { USP, USP_VERSION, type ProfileFetcher } from '@openbooking-sh/adapter-usp';
 import { createHostedApp, MemoryBusinessStore } from '../src';
 
 const BASE = 'https://app.example';
 const NOW = '2026-10-06T07:00:00Z';
 const DAY = '2026-10-08';
 const BUYER = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
+
+/** Platform profiles without a network: every platform can use everything. */
+const fetched: string[] = [];
+const profiles: ProfileFetcher = async (uri) => {
+  fetched.push(uri);
+  const entry = [{ version: USP_VERSION }];
+  return {
+    usp: {
+      version: USP_VERSION,
+      capabilities: { [USP.catalog]: entry, [USP.availability]: entry, [USP.bookings]: entry },
+    },
+  };
+};
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -27,6 +41,7 @@ function setup() {
     sessionSecret: 'test-secret-0123456789',
     clock,
     businesses,
+    uspPlatformProfiles: profiles,
   });
   cleanups.push(hosted.close);
   const req = async (
@@ -189,6 +204,8 @@ describe('a business that turns USP on', () => {
       `${BASE}/b/studio-nord/book/confirm/${booking.id}`,
     );
     expect(booking.service_id).toBe('haircut');
+    // Hosted fetched the platform's own profile through its shared fetcher.
+    expect(fetched).toContain('https://agents.example/profile.json');
 
     // The link works on the hosted booking page, and opening it books nothing.
     const page = await w.req(`/b/studio-nord/book/confirm/${booking.id}`);

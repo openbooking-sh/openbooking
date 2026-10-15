@@ -12,6 +12,7 @@
 import { randomBytes } from 'node:crypto';
 import type { UspAuthenticator, UspIssuedCredential, UspPrincipal } from './auth';
 import { sha256, verifyPop } from './pop';
+import type { ProfileFetcher } from './profile-fetch';
 import { ProtocolError } from './protocol';
 import type { UspStateStore } from './state';
 
@@ -24,11 +25,11 @@ export interface PopAuthenticatorOptions {
   /** Override how the expected `htu` is built, e.g. behind a proxy that rewrites the path. */
   htu?: (request: Request) => string;
   /**
-   * Check the platform's profile (it must be fetchable over HTTPS, spec 8.2.3). Throw to refuse.
-   * Not set by default: the hardened fetcher is a separate piece, so until it is plugged in the
-   * profile URI is recorded but not retrieved.
+   * Fetch the platform's profile (it must be reachable over HTTPS, spec 8.2.3); it throws a
+   * `ProtocolError` when it cannot. Use `createProfileFetcher()`. Without it the profile URI is
+   * recorded but not retrieved, so no capability negotiation happens.
    */
-  checkProfile?: (profileUri: string) => Promise<void>;
+  fetchProfile?: ProfileFetcher;
   /** How long a credential stays valid after the booking ends. Default 7 days. */
   credentialGraceMs?: number;
 }
@@ -100,6 +101,9 @@ export function createPopAuthenticator(options: PopAuthenticatorOptions): UspAut
         rest: { method: request.method, url: expectedUrl(request) },
       });
 
+      // Fetch before binding: a profile that cannot be fetched must not become the one this key
+      // is stuck with for good.
+      const platform = options.fetchProfile ? await options.fetchProfile(profileUri) : undefined;
       if (!(await options.state.bindProfile(result.jkt, profileUri))) {
         throw new ProtocolError(
           'profile_not_trusted',
@@ -107,18 +111,9 @@ export function createPopAuthenticator(options: PopAuthenticatorOptions): UspAut
           'Use the same profile URI as before, or a new key.',
         );
       }
-      if (options.checkProfile) {
-        try {
-          await options.checkProfile(profileUri);
-        } catch {
-          throw new ProtocolError(
-            'profile_unreachable',
-            'The platform profile could not be fetched.',
-          );
-        }
-      }
       return {
         id: result.jkt,
+        ...(platform ? { platform } : {}),
         ...(result.credential ? { credential: { scope: result.credential.scope } } : {}),
       };
     },

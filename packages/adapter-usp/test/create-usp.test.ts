@@ -4,6 +4,7 @@ import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import { Hono } from 'hono';
 import { createUsp, MemoryUspState, scopeUspState, USP_AUTHORITY } from '../src';
 import { platform } from './platform';
+import { stubProfiles } from './platform-profile';
 import { profileErrors } from './spec';
 
 const PUBLIC = 'https://hosted.example/b/studio-nord';
@@ -21,6 +22,7 @@ function setup(options: { consent?: 'action' | 'commit' } = {}) {
     service,
     baseUrl: `${PUBLIC}/`,
     businessId: 'studio-nord',
+    platformProfiles: stubProfiles().fetcher,
     consent,
     ...(consent === 'action'
       ? { continueUrl: (b: { booking_id: string }) => `${PUBLIC}/book/confirm/${b.booking_id}` }
@@ -103,7 +105,9 @@ describe('createUsp behind a path prefix', () => {
 
   it('refuses to start without somewhere to send the buyer (consent action)', () => {
     const service = new BookingService({ provider: createDemoSalonProvider() });
-    expect(() => createUsp({ service, baseUrl: PUBLIC })).toThrow(/continueUrl/);
+    expect(() => createUsp({ service, baseUrl: PUBLIC, platformProfiles: false })).toThrow(
+      /continueUrl/,
+    );
   });
 });
 

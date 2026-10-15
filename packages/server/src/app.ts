@@ -14,6 +14,7 @@ import { buildUcpProfile, createUcpRouter } from '@openbooking-sh/adapter-ucp';
 import {
   createUsp,
   type ConsentMode,
+  type ProfileFetcher,
   type UspBusinessAuth,
   type UspStateStore,
 } from '@openbooking-sh/adapter-usp';
@@ -75,6 +76,12 @@ export interface OpenBookingServerOptions {
         businessAuth?: UspBusinessAuth;
         /** Stable id of the business in USP. Default: the host of `baseUrl`. */
         businessId?: string;
+        /**
+         * How platform profiles are fetched. Default: a hardened fetcher that only reaches the
+         * public internet. Pass one to share its cache across businesses, or `false` to not fetch
+         * profiles (no capability negotiation: for local development and tests).
+         */
+        platformProfiles?: ProfileFetcher | false;
       }
     | false;
   /**
@@ -260,6 +267,9 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
       ...(options.usp.state ? { state: options.usp.state } : {}),
       ...(options.usp.businessAuth ? { businessAuth: options.usp.businessAuth } : {}),
       ...(options.usp.businessId ? { businessId: options.usp.businessId } : {}),
+      ...(options.usp.platformProfiles !== undefined
+        ? { platformProfiles: options.usp.platformProfiles }
+        : {}),
       ...(page ? { continueUrl: page.confirmUrl, bookingUrl: page.manageUrl } : {}),
     });
     app.use(`${usp.path}/*`, async (c, next) =>

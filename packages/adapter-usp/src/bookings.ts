@@ -38,7 +38,8 @@ import {
   type BookingContext,
   type ConsentMode,
 } from './booking-mapping';
-import { USP } from './constants';
+import { OB_NEXT_ACTION, USP } from './constants';
+import { negotiate } from './negotiation';
 import { bodyText, guard, jsonObject, parse } from './http';
 import { serviceId } from './mapping';
 import { businessOutcome, envelope, message, ProtocolError, type UspMessage } from './protocol';
@@ -120,7 +121,10 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
     );
 
   /** Authenticate, then run. Without an authenticator every privileged operation is refused. */
-  const privileged = (handler: (c: Context, p: UspPrincipal, text: string) => Promise<Response>) =>
+  const privileged = (
+    needs: (typeof USP)['availability' | 'bookings'],
+    handler: (c: Context, p: UspPrincipal, text: string) => Promise<Response>,
+  ) =>
     guard(async (c) => {
       if (!o.auth) {
         throw new ProtocolError(
@@ -130,7 +134,47 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
         );
       }
       const text = await bodyText(c);
-      return handler(c, await o.auth.authenticate(c.req.raw, text), text);
+      const principal = await o.auth.authenticate(c.req.raw, text);
+      if (principal.platform) {
+        // Use only what both sides have (spec 8.3), and refuse a platform that is newer than us (8.4).
+        const n = negotiate(principal.platform);
+        if (n.kind === 'version_unsupported') {
+          throw new ProtocolError(
+            'version_unsupported',
+            'The platform speaks a newer USP version than this business supports.',
+            `Use USP version ${n.latest} or earlier.`,
+            undefined,
+            {
+              messages: [
+                message(
+                  'info',
+                  'latest_supported_version',
+                  `The latest supported version is ${n.latest}.`,
+                ),
+              ],
+            },
+          );
+        }
+        if (n.kind !== 'ok' || !(needs in n.capabilities)) {
+          return c.json({
+            usp: envelope(),
+            messages: [
+              message(
+                'error',
+                'capabilities_incompatible',
+                'Your platform profile and this business share no capability that covers this operation.',
+                {
+                  // The spec's prose gives this `unrecoverable`, but its own message schema does
+                  // not allow that value, so no severity is sent (it is optional).
+                  [OB_NEXT_ACTION]:
+                    'Add the capability to your platform profile, or tell the operator it is a configuration mismatch.',
+                },
+              ),
+            ],
+          });
+        }
+      }
+      return handler(c, principal, text);
     });
 
   /** The key for one step of an operation, scoped to the caller so keys never collide or leak. */
@@ -252,7 +296,7 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.post(
     '/availability/holds',
-    privileged(async (c, p, text) => {
+    privileged(USP.availability, async (c, p, text) => {
       const req = parse(HoldRequest, jsonObject(text));
       await checkKey(p, c, 'hold', req);
       const key = keyOf(c);
@@ -300,7 +344,7 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.delete(
     '/availability/holds/:hold_id',
-    privileged(async (c, p) => {
+    privileged(USP.availability, async (c, p) => {
       const id = bookingIdOfHold(param(c, 'hold_id'));
       if (!id) throw notFound();
       let booking = await owned(p, id, false);
@@ -328,7 +372,7 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.post(
     '/bookings',
-    privileged(async (c, p, text) => {
+    privileged(USP.bookings, async (c, p, text) => {
       const req = parse(CreateRequest, jsonObject(text));
       await checkKey(p, c, 'create', req);
       const key = keyOf(c);
@@ -468,12 +512,14 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.get(
     '/bookings/:booking_id',
-    privileged(async (c, p) => bookingResponse(c, await owned(p, param(c, 'booking_id'), true))),
+    privileged(USP.bookings, async (c, p) =>
+      bookingResponse(c, await owned(p, param(c, 'booking_id'), true)),
+    ),
   );
 
   app.put(
     '/bookings/:booking_id',
-    privileged(async (c, p, text) => {
+    privileged(USP.bookings, async (c, p, text) => {
       const req = parse(UpdateRequest, jsonObject(text));
       await checkKey(p, c, 'update', req);
       const booking = await owned(p, param(c, 'booking_id'), true);
@@ -525,7 +571,7 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.post(
     '/bookings/:booking_id/cancel',
-    privileged(async (c, p, text) => {
+    privileged(USP.bookings, async (c, p, text) => {
       const req = parse(CancelRequest, jsonObject(text));
       await checkKey(p, c, 'cancel', req);
       const booking = await owned(p, param(c, 'booking_id'), true);
@@ -580,7 +626,7 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.post(
     '/bookings/:booking_id/reschedule',
-    privileged(async (c, p, text) => {
+    privileged(USP.bookings, async (c, p, text) => {
       const req = parse(RescheduleRequest, jsonObject(text));
       await checkKey(p, c, 'reschedule', req);
       if (req.hold_id) {

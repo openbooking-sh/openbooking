@@ -9,6 +9,7 @@ import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from 'jos
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManualClock, type BookingEvent } from '@openbooking-sh/core';
 import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
+import { USP, USP_VERSION, type ProfileFetcher } from '@openbooking-sh/adapter-usp';
 import { createOpenBookingApp, type OpenBookingServerOptions } from '../src';
 
 // The address the business publishes. The socket below is on a random local port, so a proof
@@ -86,6 +87,19 @@ async function platform(
   };
 }
 
+/** Platform profiles without a network: every platform can use everything. */
+const fetched: string[] = [];
+const profiles: ProfileFetcher = async (uri) => {
+  fetched.push(uri);
+  const entry = [{ version: USP_VERSION }];
+  return {
+    usp: {
+      version: USP_VERSION,
+      capabilities: { [USP.catalog]: entry, [USP.availability]: entry, [USP.bookings]: entry },
+    },
+  };
+};
+
 const BUYER = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 
 async function freeSlot(url: string) {
@@ -113,7 +127,7 @@ describe('USP in the server', () => {
   });
 
   it('publishes its profile and lists itself in the index', async () => {
-    const w = await boot({ usp: {} });
+    const w = await boot({ usp: { platformProfiles: profiles } });
     const res = await fetch(`${w.url}/.well-known/usp`, { redirect: 'manual' });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
@@ -132,7 +146,7 @@ describe('USP in the server', () => {
   });
 
   it('holds a booking for the customer, who confirms it on the real page; Studio sees the channel', async () => {
-    const w = await boot({ usp: {} });
+    const w = await boot({ usp: { platformProfiles: profiles } });
     const assistant = await platform(w);
     const slot = await freeSlot(w.url);
 
@@ -148,6 +162,8 @@ describe('USP in the server', () => {
     expect(booking.status).toBe('requires_action');
     expect(booking.actions[0].continue_url).toBe(`${BASE}/book/confirm/${booking.id}`);
     expect(body.booking_scoped_credential.cnf.jkt).toBe(assistant.jkt);
+    // The platform's profile was fetched, and it is the one it named.
+    expect(fetched).toContain('https://agents.perplexity.ai/profile.json');
 
     // The customer opens the link on the real booking page.
     const page = await fetch(`${w.url}/book/confirm/${booking.id}`);
@@ -187,7 +203,7 @@ describe('USP in the server', () => {
   });
 
   it('confirms at once in "commit" mode', async () => {
-    const w = await boot({ usp: { consent: 'commit' } });
+    const w = await boot({ usp: { consent: 'commit', platformProfiles: profiles } });
     const assistant = await platform(w);
     const slot = await freeSlot(w.url);
     const res = await assistant.fetch(
@@ -203,7 +219,7 @@ describe('USP in the server', () => {
   });
 
   it('checks proofs against the published address, not the socket it arrived on', async () => {
-    const w = await boot({ usp: { consent: 'commit' } });
+    const w = await boot({ usp: { consent: 'commit', platformProfiles: profiles } });
     const slot = await freeSlot(w.url);
     const body = { slot_id: slot.id, service_id: 'haircut' };
     const wrong = await platform(w, 'https://agents.example/p.json', w.url);
@@ -213,8 +229,21 @@ describe('USP in the server', () => {
     expect((await right.fetch('POST', '/usp/availability/holds', body)).status).toBe(201);
   });
 
-  it('refuses every privileged call without a proof', async () => {
+  it('fetches platform profiles by default, and refuses a platform whose profile host cannot be reached', async () => {
+    // No stub: the real, hardened fetcher. ".invalid" never resolves, so this needs no network.
     const w = await boot({ usp: { consent: 'commit' } });
+    const slot = await freeSlot(w.url);
+    const ghost = await platform(w, 'https://platform.invalid/profile.json');
+    const res = await ghost.fetch('POST', '/usp/availability/holds', {
+      slot_id: slot.id,
+      service_id: 'haircut',
+    });
+    expect(res.status).toBe(424);
+    expect((await json(res)).type).toBe('https://usp-protocol.dev/errors/profile-unreachable');
+  });
+
+  it('refuses every privileged call without a proof', async () => {
+    const w = await boot({ usp: { consent: 'commit', platformProfiles: profiles } });
     const slot = await freeSlot(w.url);
     const res = await fetch(`${w.url}/usp/availability/holds`, {
       method: 'POST',
@@ -231,7 +260,7 @@ describe('USP in the server', () => {
         provider: createDemoSalonProvider(),
         baseUrl: BASE,
         bookingPage: false,
-        usp: {},
+        usp: { platformProfiles: profiles },
       }),
     ).toThrow(/booking page/);
     expect(() =>
@@ -239,7 +268,7 @@ describe('USP in the server', () => {
         provider: createDemoSalonProvider(),
         baseUrl: BASE,
         bookingPage: false,
-        usp: { consent: 'commit' },
+        usp: { consent: 'commit', platformProfiles: profiles },
       }),
     ).not.toThrow();
   });

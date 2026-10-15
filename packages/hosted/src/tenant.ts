@@ -47,7 +47,11 @@ import {
   type BusySource,
 } from '@openbooking-sh/provider-memory';
 import { StripePayments } from '@openbooking-sh/payments-stripe';
-import { scopeUspState, type UspStateStore } from '@openbooking-sh/adapter-usp';
+import {
+  scopeUspState,
+  type ProfileFetcher,
+  type UspStateStore,
+} from '@openbooking-sh/adapter-usp';
 import { createOpenBookingApp, type OpenBookingApp } from '@openbooking-sh/server';
 import {
   createStudio,
@@ -73,6 +77,8 @@ export interface TenantDeps {
   calendarLinks: CalendarLinkStore;
   /** Shared by every business; each gets its own scope of it. */
   uspState: UspStateStore;
+  /** One fetcher for every business, so platform profiles are cached once. */
+  uspPlatformProfiles: ProfileFetcher | false;
   allowedHosts: string[];
   /** Owners must confirm their email before the business is listed in the OpenBooking app. */
   requireVerifiedEmail?: boolean;
@@ -434,6 +440,7 @@ export class Tenant {
               consent: usp === 'instant' ? 'commit' : 'action',
               state: this.#uspState,
               businessId: this.id,
+              platformProfiles: this.#deps.uspPlatformProfiles,
             },
       studio: false,
       bookingPage: {

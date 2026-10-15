@@ -67,7 +67,12 @@ import { setupHtml } from './setup';
 import { posthogSnippet, withHeadSnippet, type Analytics } from './analytics';
 import { slackEscape, type OpsNotifier } from './slack';
 import { signupHtml } from './signup';
-import { MemoryUspState, type UspStateStore } from '@openbooking-sh/adapter-usp';
+import {
+  createProfileFetcher,
+  MemoryUspState,
+  type ProfileFetcher,
+  type UspStateStore,
+} from '@openbooking-sh/adapter-usp';
 import { Tenant, type TenantDeps } from './tenant';
 
 export interface HostedOptions {
@@ -86,6 +91,11 @@ export interface HostedOptions {
    * by default; with more than one instance, or serverless, pass `postgresStores(db).usp`.
    */
   uspState?: UspStateStore;
+  /**
+   * How USP platform profiles are fetched, shared by every business so its cache is too. Default:
+   * a hardened fetcher that only reaches the public internet. `false` skips fetching (tests).
+   */
+  uspPlatformProfiles?: ProfileFetcher | false;
   activityFor?: (businessId: string) => ActivityLog;
   clock?: Clock;
   /**
@@ -226,6 +236,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ...(options.stripeFetch ? { stripeFetch: options.stripeFetch } : {}),
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
     uspState: options.uspState ?? new MemoryUspState(() => clock.now().getTime()),
+    uspPlatformProfiles: options.uspPlatformProfiles ?? createProfileFetcher(),
     allowedHosts,
     requireVerifiedEmail,
     ...(options.onEvent || options.analytics || options.ops
