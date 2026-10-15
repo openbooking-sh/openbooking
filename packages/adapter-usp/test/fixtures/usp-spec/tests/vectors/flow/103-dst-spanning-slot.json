@@ -1,0 +1,88 @@
+{
+  "id": "103-dst-spanning-slot",
+  "section": "4.1",
+  "requirement": "instant-arithmetic",
+  "kind": "flow",
+  "expect": "accept",
+  "notes": "THE LOAD-BEARING CASE FOR INSTANT ARITHMETIC. Two slots straddle a US Eastern DST transition. In both, the local wall-clock difference between start and end is wrong, in opposite directions: fall-back reads 30 minutes for a 90-minute service, spring-forward reads 2 hours for a 60-minute service. Any implementation that computes duration, overlap, or reminder offsets by subtracting local clock labels produces a double-booked or short-changed appointment. Subtracting the RFC 3339 instants gives the right answer in both cases with no DST-specific code.",
+  "given": {
+    "business_timezone": "America/New_York",
+    "services": [
+      {
+        "id": "svc_massage_090",
+        "type": "appointment",
+        "duration": { "fixed": 90 },
+        "requires_payment": false
+      },
+      {
+        "id": "svc_consult_060",
+        "type": "appointment",
+        "duration": { "fixed": 60 },
+        "requires_payment": false
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case": "fall-back: offset changes -04:00 to -05:00 mid-slot",
+      "service_id": "svc_massage_090",
+      "slot": {
+        "id": "slot_20261101_0100",
+        "start": "2026-11-01T01:00:00-04:00",
+        "end": "2026-11-01T01:30:00-05:00",
+        "state": "available"
+      },
+      "start_utc": "2026-11-01T05:00:00Z",
+      "end_utc": "2026-11-01T06:30:00Z",
+      "true_duration_minutes": 90,
+      "naive_wall_clock_minutes": 30,
+      "why_it_breaks": "01:00 to 01:30 looks like 30 minutes. The hour 01:00-02:00 local occurs twice on this date, so the label 01:30 is ambiguous and only the offset disambiguates it."
+    },
+    {
+      "case": "spring-forward: offset changes -05:00 to -04:00 mid-slot",
+      "service_id": "svc_consult_060",
+      "slot": {
+        "id": "slot_20260308_0130",
+        "start": "2026-03-08T01:30:00-05:00",
+        "end": "2026-03-08T03:30:00-04:00",
+        "state": "available"
+      },
+      "start_utc": "2026-03-08T06:30:00Z",
+      "end_utc": "2026-03-08T07:30:00Z",
+      "true_duration_minutes": 60,
+      "naive_wall_clock_minutes": 120,
+      "why_it_breaks": "01:30 to 03:30 looks like 2 hours. The hour 02:00-03:00 local does not exist on this date, so no slot may start inside it."
+    }
+  ],
+  "then": {
+    "slots_returned": true,
+    "duration_source": "end minus start as instants",
+    "offset_required_on_every_timestamp": true,
+    "overlap_rule": "Two slots overlap if and only if their UTC instant ranges intersect. Wall-clock comparison is never sufficient.",
+    "reminder_offsets": "A reminder N minutes before the appointment is start_utc minus N minutes, not a local-clock subtraction.",
+    "nonexistent_local_times_are_not_emitted": true,
+    "equal_instants_compare_equal": "2026-11-01T05:00:00Z and 2026-11-01T01:00:00-04:00 are the same slot boundary and MUST compare equal."
+  },
+  "wrong_answers": [
+    {
+      "behaviour": "compute duration by subtracting local clock labels",
+      "violates": "1.4 and 4.1",
+      "why": "Yields 30 minutes for a 90-minute massage and 2 hours for a 60-minute consult. The first double-books the practitioner for the hour it thinks is free; the second blocks an hour that is actually available."
+    },
+    {
+      "behaviour": "emit timestamps without an offset and rely on the business timezone",
+      "violates": "1.4 instants, not local clock labels",
+      "why": "2026-11-01T01:30:00 in America/New_York is ambiguous: it names two distinct instants an hour apart."
+    },
+    {
+      "behaviour": "emit a slot starting at 2026-03-08T02:30:00 local",
+      "violates": "4.1",
+      "why": "That local time does not exist. Clocks jump from 02:00 EST to 03:00 EDT."
+    },
+    {
+      "behaviour": "normalize every timestamp to a fixed offset for the whole day",
+      "violates": "4.1",
+      "why": "The offset changes within the day, so one of the two boundaries will be wrong by an hour."
+    }
+  ]
+}

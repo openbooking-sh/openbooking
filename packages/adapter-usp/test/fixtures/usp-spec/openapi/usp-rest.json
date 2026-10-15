@@ -1,0 +1,4595 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Universal Scheduling Protocol (USP) REST API",
+    "version": "2026-08-20",
+    "description": "The Universal Scheduling Protocol (USP) enables consumer platforms and AI agents to discover, check availability of, and book time-based services from businesses. This OpenAPI specification defines the REST binding for all USP operations.",
+    "contact": {
+      "url": "https://usp-protocol.dev"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://business.example.com/usp/v1",
+      "description": "Business USP endpoint (from /.well-known/usp)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Services",
+      "description": "Service catalog operations"
+    },
+    {
+      "name": "Availability",
+      "description": "Availability query and optional hold operations. Hold and release endpoints require the business to advertise holds: true in the dev.usp-protocol.services.availability capability."
+    },
+    {
+      "name": "Bookings",
+      "description": "Booking lifecycle operations"
+    },
+    {
+      "name": "Waitlist",
+      "description": "Waitlist management operations"
+    },
+    {
+      "name": "Registry",
+      "description": "Discovery registry operations (optional)"
+    }
+  ],
+  "components": {
+    "parameters": {
+      "USP-Agent": {
+        "name": "USP-Agent",
+        "in": "header",
+        "description": "Platform profile URI for capability negotiation (Standalone Mode). RFC 8941 Dictionary Structured Field syntax. The business fetches this URI to determine the capability intersection. Required in Standalone Mode; omit in UCP-Native Mode.",
+        "schema": {
+          "type": "string",
+          "example": "profile=\"https://agent.example/profiles/scheduling-agent.json\""
+        },
+        "required": true
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "description": "UUID v4 for idempotency of state-modifying operations.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "description": "OPTIONAL conditional-write precondition. Carries the opaque `revision` the platform last observed for this resource. When present, the business MUST apply the write only if the resource's current revision matches, and MUST return 412 otherwise rather than applying it - this is what stops two agents holding the same booking_scoped_credential from silently clobbering each other's changes. Omit it to write unconditionally. A business that does not return `revision` on this resource type does not support conditional writes and ignores this header. Interaction with Idempotency-Key: an idempotent REPLAY returns the stored original response WITHOUT re-evaluating this precondition, since the revision the caller sent was current at the time the original request succeeded and re-checking it would fail a retry of an already-successful call.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "USPCorrelationId": {
+        "name": "USP-Correlation-Id",
+        "in": "header",
+        "description": "OPTIONAL non-normative money-path correlation join id (specification.md Section 9.7). Opaque, non-PII token; a UUID is sufficient. Recipients that do not participate ignore this header without failing the request. Not a substitute for booking_id or payment identifiers.",
+        "schema": {
+          "type": "string",
+          "example": "7f3c2b1a-9e4d-4a8b-8c1f-2d5e6f7a8b9c"
+        }
+      }
+    },
+    "headers": {
+      "Allow": {
+        "description": "RFC 9110 Section 10.2.1 list of the methods the target path supports. REQUIRED on every 405 response.",
+        "schema": {
+          "type": "string",
+          "example": "POST"
+        }
+      },
+      "USPCorrelationId": {
+        "description": "OPTIONAL non-normative money-path correlation join id echoed on error (and optionally success) responses per specification.md Section 9.7. Caller-safe reference; not a substitute for Problem Details type or code.",
+        "schema": {
+          "type": "string",
+          "example": "7f3c2b1a-9e4d-4a8b-8c1f-2d5e6f7a8b9c"
+        }
+      }
+    },
+    "schemas": {
+      "USPEnvelope": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/USPEnvelope"
+      },
+      "BookingScopedCredential": {
+        "$ref": "https://usp-protocol.dev/schemas/profile.json#/$defs/BookingScopedCredential"
+      },
+      "ConfirmationKey": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/ConfirmationKey"
+      },
+      "PopProofJwt": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/PopProofJwt"
+      },
+      "PaginationRequest": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/PaginationRequest"
+      },
+      "Pagination": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/Pagination"
+      },
+      "Service": {
+        "$ref": "https://usp-protocol.dev/schemas/services/catalog.json#/$defs/Service"
+      },
+      "FeedSubscription": {
+        "$ref": "https://usp-protocol.dev/schemas/rest_common.json#/$defs/FeedSubscription"
+      },
+      "TimeSlot": {
+        "$ref": "https://usp-protocol.dev/schemas/services/availability.json#/$defs/TimeSlot"
+      },
+      "Hold": {
+        "$ref": "https://usp-protocol.dev/schemas/services/availability.json#/$defs/Hold"
+      },
+      "Buyer": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/Buyer"
+      },
+      "BuyerConsent": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/BuyerConsent"
+      },
+      "DeliveryAddress": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/DeliveryAddress"
+      },
+      "Booking": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/Booking"
+      },
+      "BookingPayment": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/BookingPayment"
+      },
+      "Action": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/Action"
+      },
+      "Dispute": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/Dispute"
+      },
+      "Message": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/Message"
+      },
+      "PaymentContext": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/PaymentContext"
+      },
+      "PostPaymentReturnRequest": {
+        "$ref": "https://usp-protocol.dev/schemas/services/booking.json#/$defs/PostPaymentReturnRequest"
+      },
+      "WaitlistEntry": {
+        "$ref": "https://usp-protocol.dev/schemas/services/waitlist.json#/$defs/WaitlistEntry"
+      },
+      "ProblemDetails": {
+        "$ref": "https://usp-protocol.dev/schemas/rest_common.json#/$defs/ProblemDetails"
+      },
+      "SigningKey": {
+        "$ref": "https://usp-protocol.dev/schemas/profile.json#/$defs/SigningKey"
+      },
+      "ServiceBinding": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/ServiceBinding"
+      },
+      "CapabilityEntry": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/CapabilityEntry"
+      },
+      "ProfileCapabilityEntry": {
+        "$ref": "https://usp-protocol.dev/schemas/usp.json#/$defs/ProfileCapabilityEntry"
+      },
+      "BusinessProfile": {
+        "$ref": "https://usp-protocol.dev/schemas/profile.json#/$defs/BusinessProfile"
+      },
+      "PlatformProfile": {
+        "$ref": "https://usp-protocol.dev/schemas/profile.json#/$defs/PlatformProfile"
+      },
+      "RegistryContext": {
+        "$ref": "https://usp-protocol.dev/schemas/services/registry.json#/$defs/RegistryContext"
+      },
+      "RegistryEntry": {
+        "$ref": "https://usp-protocol.dev/schemas/services/registry.json#/$defs/RegistryEntry"
+      },
+      "BusinessSearchRequest": {
+        "$ref": "https://usp-protocol.dev/schemas/services/registry.json#/$defs/BusinessSearchRequest"
+      },
+      "ServiceSearchRequest": {
+        "$ref": "https://usp-protocol.dev/schemas/services/registry.json#/$defs/ServiceSearchRequest"
+      },
+      "ServiceSearchResult": {
+        "$ref": "https://usp-protocol.dev/schemas/services/registry.json#/$defs/ServiceSearchResult"
+      },
+      "BusyBlock": {
+        "$ref": "https://usp-protocol.dev/schemas/platform/calendar_freebusy.json#/$defs/BusyBlock"
+      },
+      "BuyerFreeBusy": {
+        "$ref": "https://usp-protocol.dev/schemas/platform/calendar_freebusy.json#/$defs/BuyerFreeBusy"
+      },
+      "RegistrationRequest": {
+        "$ref": "https://usp-protocol.dev/schemas/services/registry.json#/$defs/RegistrationRequest"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Protocol error: malformed request, or a signature the verifier cannot evaluate (digest_mismatch, algorithm_unsupported).",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "invalid_request": {
+                "summary": "Malformed request",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/invalid-request",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "Malformed JSON or missing required fields"
+                }
+              },
+              "algorithm_unsupported": {
+                "summary": "Signature algorithm not supported by the verifier",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/algorithm-unsupported",
+                  "title": "Algorithm Unsupported",
+                  "status": 400,
+                  "detail": "The algorithm of the resolved signing key is not supported; ES256 is the baseline every verifier supports"
+                }
+              },
+              "digest_mismatch": {
+                "summary": "Content-Digest does not match body",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/digest-mismatch",
+                  "title": "Digest Mismatch",
+                  "status": 400,
+                  "detail": "Content-Digest header does not match the computed digest of the request body"
+                }
+              },
+              "invalid_profile_url": {
+                "summary": "Profile URL malformed, non-HTTPS, or unresolvable",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/invalid-profile-url",
+                  "title": "Invalid Profile URL",
+                  "status": 400,
+                  "detail": "The supplied profile URL is malformed, uses a non-HTTPS scheme, or cannot be resolved"
+                }
+              },
+              "cursor_expired": {
+                "summary": "Pagination cursor no longer honored",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/cursor-expired",
+                  "title": "Cursor Expired",
+                  "status": 400,
+                  "detail": "The supplied pagination cursor is no longer honored; restart from the first page"
+                }
+              },
+              "range_too_wide": {
+                "summary": "Availability range exceeds the supported limit",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/range-too-wide",
+                  "title": "Range Too Wide",
+                  "status": 400,
+                  "detail": "The requested availability range exceeds the business's supported limit"
+                }
+              },
+              "version_unsupported": {
+                "summary": "Requested USP version is not supported",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/version-unsupported",
+                  "title": "Version Unsupported",
+                  "status": 400,
+                  "detail": "The requested USP version is not supported by this business"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Protocol error: authentication required or signature verification failed. Signature error codes: signature_missing (no Signature/Signature-Input headers), signature_invalid (verification failed), key_not_found (keyid not in signer profile keys/signing_keys), signature_expired (the RFC 9421 'created' signature parameter is outside a freshness window the verifier enforces; note that 'created' is OPTIONAL on request signatures, where replay protection is the signed Idempotency-Key, so this code applies chiefly to webhooks). digest_mismatch and algorithm_unsupported are 400-class; see BadRequest. Responses SHOULD carry WWW-Authenticate naming the mechanisms the business would have accepted (specification.md Section 10.1.6). Proof-of-possession error codes (Section 10.1.6): pop_proof_missing (a required platform_key_pop proof is absent, or a credential carrying cnf was presented without one - a business MUST return this rather than accept the credential as a bearer token), pop_proof_invalid (proof failed to parse or verify, or htm/htu/ath did not match), pop_key_mismatch (the RFC 7638 thumbprint of the proof header jwk does not equal the recorded cnf.jkt - the cross-key replay case), pop_proof_replayed (jti already seen inside the freshness window), and proof_nonce_required (the business requires a nonce; the response carries it and the platform retries with a fresh proof). All are 401 and all are reported through the same Problem Details shape as the signature_* codes above.",
+        "headers": {
+          "WWW-Authenticate": {
+            "description": "SHOULD be present. Names the authentication mechanisms the business would have accepted for this operation, per RFC 9110 and the business's published AuthorizationPolicy. Note that 'signature' is not an IANA-registered auth scheme; HTTP Message Signature support is advertised authoritatively via the profile's authorization policy.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer realm=\"usp\", error=\"invalid_token\""
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "authentication_required": {
+                "summary": "Missing or invalid credentials",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/authentication-required",
+                  "title": "Unauthorized",
+                  "status": 401,
+                  "detail": "Authentication credentials are missing or invalid"
+                }
+              },
+              "signature_missing": {
+                "summary": "Missing Signature/Signature-Input headers",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/signature-missing",
+                  "title": "Signature Missing",
+                  "status": 401,
+                  "detail": "Request does not include required Signature and Signature-Input headers"
+                }
+              },
+              "signature_invalid": {
+                "summary": "Signature verification failed",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/signature-invalid",
+                  "title": "Signature Invalid",
+                  "status": 401,
+                  "detail": "Signature verification failed"
+                }
+              },
+              "key_not_found": {
+                "summary": "Signing key not found in profile",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/key-not-found",
+                  "title": "Key Not Found",
+                  "status": 401,
+                  "detail": "The keyid in Signature-Input does not match any key in the signer's profile"
+                }
+              },
+              "signature_expired": {
+                "summary": "Signature 'created' parameter outside the verifier's freshness window",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/signature-expired",
+                  "title": "Signature Expired",
+                  "status": 401,
+                  "detail": "The 'created' signature parameter is outside the acceptable window"
+                }
+              },
+              "pop_proof_missing": {
+                "summary": "Proof of possession missing",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/pop-proof-missing",
+                  "title": "Proof of possession missing",
+                  "status": 401,
+                  "detail": "The presented booking_scoped_credential carries a cnf confirmation key and is sender-constrained. Present it as 'Authorization: DPoP <credential>' together with a DPoP proof header over the bound key; it MUST NOT be sent as a bearer token."
+                }
+              },
+              "pop_key_mismatch": {
+                "summary": "Proof key does not match the credential binding",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/pop-key-mismatch",
+                  "title": "Proof key does not match the credential binding",
+                  "status": 401,
+                  "detail": "The RFC 7638 thumbprint of the jwk in the DPoP proof header does not match the cnf.jkt this credential was issued against. The credential is bound to a different key."
+                }
+              },
+              "pop_proof_replayed": {
+                "summary": "Proof replayed",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/pop-proof-replayed",
+                  "title": "Proof replayed",
+                  "status": 401,
+                  "detail": "The jti in the DPoP proof has already been seen within the freshness window. Build a fresh proof for each request."
+                }
+              },
+              "pop_proof_required": {
+                "summary": "Sender-constrained credential presented without a proof",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/pop-proof-required",
+                  "title": "Proof of possession required",
+                  "status": 401,
+                  "detail": "A sender-constrained credential was presented without a valid proof of possession"
+                }
+              },
+              "pop_proof_invalid": {
+                "summary": "Proof failed to parse or verify",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/pop-proof-invalid",
+                  "title": "Proof invalid",
+                  "status": 401,
+                  "detail": "The proof failed to parse or verify: bad typ, rejected alg, signature failure, or a mismatched htm/htu, usp_m/aud/usp_p, or ath"
+                }
+              },
+              "proof_nonce_required": {
+                "summary": "Business requires a nonce in the proof",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/proof-nonce-required",
+                  "title": "Proof nonce required",
+                  "status": 401,
+                  "detail": "The business requires a nonce. Retry with a fresh proof carrying the nonce supplied in this response."
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Protocol error: the resource addressed by the request path does not exist or is not visible to the caller. Path-addressed operations MUST return 404 rather than a 200 with a messages[] entry, so that a missing resource is distinguishable from a successful read. See specification.md Section 9.4.1.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "booking_not_found": {
+                "summary": "Booking in the request path does not exist",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/booking-not-found",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "The requested booking does not exist or is not visible to the caller"
+                }
+              },
+              "entry_not_found": {
+                "summary": "Waitlist entry in the request path does not exist",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/entry-not-found",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "The requested waitlist entry does not exist or is not visible to the caller"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceNotFound": {
+        "description": "Protocol error service_not_found: the service identified in the request path does not exist or is not visible to the caller. Service identifiers are opaque, so this applies to any segment the business does not recognize as one of its service identifiers, whatever its format; it is never a 400 or a 500. See specification.md Sections 3.12.3 and 9.4.3.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/service-not-found",
+              "title": "Not Found",
+              "status": 404,
+              "detail": "The requested service does not exist or is not visible to the caller"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "Protocol error: the path exists but the binding does not define the request method for it (for example GET /services/list). Uses the RFC 9457 about:blank type, so clients branch on status. The Allow header is REQUIRED. See specification.md Sections 3.13 and 9.1.",
+        "headers": {
+          "Allow": {
+            "$ref": "#/components/headers/Allow"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "about:blank",
+              "title": "Method Not Allowed",
+              "status": 405,
+              "detail": "GET is not supported on /services/list; use POST"
+            }
+          }
+        }
+      },
+      "NotImplemented": {
+        "description": "Protocol error: the operation is optional (SHOULD or MAY) in the specification and this deployment does not implement it. Not retryable. Uses the RFC 9457 about:blank type, so clients branch on status. See specification.md Sections 3.13 and 9.1.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "about:blank",
+              "title": "Not Implemented",
+              "status": 501,
+              "detail": "This business does not implement GET /services/feed; use POST /services/list to read the catalog"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Idempotency key conflict",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/idempotency-conflict",
+              "title": "Conflict",
+              "status": 409,
+              "detail": "Idempotency key was previously used with different parameters"
+            }
+          }
+        }
+      },
+      "ConfirmPaymentConflict": {
+        "description": "Protocol error at 409 Conflict on confirm-payment: idempotency_conflict, payment_unverifiable (no price to verify the payment against), or confirmation_failed (payment accepted, booking did not reach its post-payment status). For the last two the booking is not confirmed, the platform MUST NOT report it as confirmed, and SHOULD reverse or refund the payment. Clients branch on the Problem type. See specification.md Sections 5.3.7 and 9.4.3.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "idempotency_conflict": {
+                "summary": "Idempotency key reused with different parameters",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/idempotency-conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "Idempotency key was previously used with different parameters"
+                }
+              },
+              "payment_unverifiable": {
+                "summary": "No price to verify the payment against",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/payment-unverifiable",
+                  "title": "Payment unverifiable",
+                  "status": 409,
+                  "detail": "The payment could not be verified against a price for this booking. The booking was not confirmed; reverse the payment."
+                }
+              },
+              "confirmation_failed": {
+                "summary": "Payment accepted, booking not confirmed",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/confirmation-failed",
+                  "title": "Confirmation failed",
+                  "status": 409,
+                  "detail": "The payment was accepted but the booking was not confirmed. Reverse the payment."
+                }
+              }
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Protocol error: the request was well-formed but failed validation (validation_error), or a referenced profile document failed schema validation (profile_malformed). See specification.md Section 9.4.3.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "validation_error": {
+                "summary": "Request fields failed validation",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/validation-error",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "One or more request fields failed validation"
+                }
+              },
+              "profile_malformed": {
+                "summary": "Profile document fails schema validation",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/profile-malformed",
+                  "title": "Profile Malformed",
+                  "status": 422,
+                  "detail": "The profile document is not valid JSON or fails schema validation against schemas/profile.json"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Profile not trusted",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/profile-not-trusted",
+              "title": "Forbidden",
+              "status": 403,
+              "detail": "The platform profile URL is not in the business's pre-approved allowlist"
+            }
+          }
+        }
+      },
+      "FailedDependency": {
+        "description": "Profile unreachable",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/profile-unreachable",
+              "title": "Failed Dependency",
+              "status": 424,
+              "detail": "Business profile could not be fetched"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Protocol error: the caller exceeded the applicable request rate (rate_limited), or the buyer already holds the maximum number of concurrent holds the business permits (hold_limit_exceeded). See specification.md Sections 9.4.3 and 10.1.2.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "rate_limited": {
+                "summary": "Request rate exceeded",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/rate-limited",
+                  "title": "Too Many Requests",
+                  "status": 429,
+                  "detail": "Rate limit exceeded"
+                }
+              },
+              "hold_limit_exceeded": {
+                "summary": "Buyer already at the concurrent hold limit",
+                "value": {
+                  "type": "https://usp-protocol.dev/errors/hold-limit-exceeded",
+                  "title": "Hold Limit Exceeded",
+                  "status": 429,
+                  "detail": "The buyer already holds the maximum number of concurrent holds permitted for this service. Release an existing hold before requesting another."
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Server error",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/server-error",
+              "title": "Internal Server Error",
+              "status": 500,
+              "detail": "An unexpected error occurred"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Service temporarily unavailable. The business is temporarily unable to handle requests.",
+        "headers": {
+          "Retry-After": {
+            "description": "Number of seconds to wait before retrying.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/service-unavailable",
+              "title": "Service Unavailable",
+              "status": 503,
+              "detail": "The business is temporarily unable to handle requests"
+            }
+          }
+        }
+      },
+      "PreconditionFailed": {
+        "description": "Conditional-write precondition failed: the If-Match revision is stale, so the resource changed since the platform last observed it. Distinct from 409, which this API uses for idempotency-key conflicts. Re-read the resource, reconcile, and retry with the new revision.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "example": {
+              "type": "https://usp-protocol.dev/errors/revision-mismatch",
+              "title": "Precondition Failed",
+              "status": 412,
+              "detail": "The If-Match revision is stale; the booking changed since it was read. Re-read the booking and retry with the current revision."
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "HttpMessageSignature": {
+        "type": "http",
+        "scheme": "signature",
+        "description": "RFC 9421 HTTP Message Signatures, keyed off the keys (or transition signing_keys alias; verifiers resolve keys first) published in the platform profile referenced by the USP-Agent/UCP-Agent header. RECOMMENDED default mechanism: requires no pre-established credential, so a personal single-user agent can authenticate solely by publishing a profile. Covered components are UCP's REST set so one signature satisfies both verifiers: @method, @authority and @path are always covered, plus @query, usp-agent (or ucp-agent), idempotency-key, content-digest and content-type when present. @target-uri MAY be covered additionally but MUST NOT replace @authority and @path. The 'created' parameter is OPTIONAL; request replay protection is the signed Idempotency-Key. ECDSA signature values use fixed-width raw r||s encoding, not DER, and verifiers MUST support ES256. See specification.md Section 9.1.4 and Section 10.1.6. Note: 'signature' is not an IANA-registered HTTP auth scheme; this entry documents USP's use of RFC 9421 rather than asserting WWW-Authenticate scheme registration. Mechanism identifier shared with schemas/profile.json#/$defs/AuthorizationMechanism and with openrpc/usp-mcp.json components.x-usp-securitySchemes; that identifier set is open, and consumers ignore unrecognized mechanisms rather than treating them as accepted.",
+        "x-usp-mechanism": "http_message_signature"
+      },
+      "PlatformKeyPop": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "DPoP",
+        "description": "Platform key proof-of-possession, carried as an RFC 9449 dpop+jwt proof on the DPoP request header. The caller generates an ephemeral key, never transmits the private half, and proves possession on each privileged request by presenting a compact JWS whose header carries the bare public JWK; the business computes the RFC 7638 thumbprint (jkt), records it as the platform identifier, and binds it to the USP-Agent profile URI on first contact. Permissionless: no registration, no token endpoint, no pre-established credential, and no published or rotated platform keys - the platform profile stays keyless. Modelled as apiKey/header/DPoP rather than http/DPoP deliberately: on a resource-creating call there is NO Authorization header at all, and the proof header is itself the credential, so an http scheme would misdescribe the wire form at issuance. At issuance the proof carries no ath and the business records the thumbprint. At presentation it carries ath over the credential value and the business compares the thumbprint against the recorded cnf.jkt; that case appears in a security requirement object ANDed with BookingScopedCredential, since both must be satisfied together. Off-the-shelf DPoP libraries apply, and DPoP is an IANA-registered authentication scheme - unlike 'signature' above. The MCP binding carries the proof in _meta.usp.authorization.proof on both its transports instead; see openrpc/usp-mcp.json. See specification.md Section 10.1.6 and schemas/usp.json#/$defs/PopProofJwt. Mechanism identifier shared with schemas/profile.json#/$defs/AuthorizationMechanism and with openrpc/usp-mcp.json components.x-usp-securitySchemes; that identifier set is open, and consumers ignore unrecognized mechanisms rather than treating them as accepted.",
+        "x-usp-mechanism": "platform_key_pop"
+      },
+      "BookingScopedCredential": {
+        "type": "http",
+        "scheme": "DPoP",
+        "description": "Resource-scoped capability credential issued at creation, authorizing get/update/cancel/reschedule/PII-bearing operations on that single resource independent of platform identity. It does not authorize confirm. The resource is a booking, a waitlist entry, or a feed subscription. Registry registrations are NOT in this set: they are authorized at platform tier against the registering platform's bound jkt, since a registry entry has exactly one owner and needs no separate credential type. Transmitted as 'Authorization: DPoP <bsc_...>'. Shape defined at schemas/profile.json#/$defs/BookingScopedCredential and returned by the creation responses. The DPoP scheme replaces Bearer for two reasons. It removes this credential from the Authorization: Bearer slot it previously shared with OAuth2Bearer and ApiKey, where a server could not tell from the request alone which scheme the caller intended. And it stops a business silently accepting a sender-constrained credential as a plain bearer token. When the credential carries a cnf confirmation key it is sender-constrained and MUST be presented together with a PlatformKeyPop proof over the bound key - the requirement object listing both is that case, and OpenAPI cannot express the 'only when cnf is present' condition, so the credential-alone alternative remains listed for unbound legacy credentials while the MUST is carried in specification.md Section 10.1.6. A business that issued a cnf-bearing credential MUST NOT accept it without a proof, whatever mechanism the caller declares. Mechanism identifier shared with schemas/profile.json#/$defs/AuthorizationMechanism and with openrpc/usp-mcp.json components.x-usp-securitySchemes.",
+        "x-usp-mechanism": "booking_scoped_credential"
+      },
+      "OAuth2Bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "OAuth 2.0 Bearer token (RFC 6749 client_credentials grant for platform-to-business auth, or RFC 6750 for token transmission). Pre-established host-platform credential. See specification.md Section 10.1.6 and Section 10.2.3. Mechanism identifier shared with schemas/profile.json#/$defs/AuthorizationMechanism and with openrpc/usp-mcp.json components.x-usp-securitySchemes.",
+        "x-usp-mechanism": "oauth2_bearer"
+      },
+      "ApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Pre-shared API key transmitted as 'Authorization: Bearer <key>'. Pre-established host-platform credential suited to simple integrations. See specification.md Section 10.1.6 and Section 10.2.3. Mechanism identifier shared with schemas/profile.json#/$defs/AuthorizationMechanism and with openrpc/usp-mcp.json components.x-usp-securitySchemes.",
+        "x-usp-mechanism": "api_key"
+      },
+      "MutualTLS": {
+        "type": "mutualTLS",
+        "description": "Client-certificate authentication for high-security environments. Pre-established host-platform credential. See specification.md Section 10.1.6 and Section 10.2.3. Mechanism identifier shared with schemas/profile.json#/$defs/AuthorizationMechanism and with openrpc/usp-mcp.json components.x-usp-securitySchemes.",
+        "x-usp-mechanism": "mtls"
+      }
+    }
+  },
+  "paths": {
+    "/services/list": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "List Services",
+        "operationId": "listServices",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Free-text search query across service names, descriptions, and categories. When present, the business SHOULD rank results by relevance. Businesses that do not support search MUST ignore this field (not return an error). Aligns with UCP catalog_search."
+                  },
+                  "filters": {
+                    "type": "object",
+                    "description": "Filter criteria to narrow results. All specified filters combine with AND logic.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Service vertical to filter by (e.g., appointment, group, reservation)."
+                      },
+                      "category_id": {
+                        "type": "string",
+                        "description": "Single category ID to filter by. Shorthand for categories with one value. If both category_id and categories are provided, categories takes precedence. Matches the primary categories[] entry's id, and MAY match any entry's id."
+                      },
+                      "categories": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Category IDs to filter by (OR logic - matches services in any listed category). Aligns with UCP catalog_search filters. Match rule: primary entry id, and MAY match any entry's id."
+                      },
+                      "location_id": {
+                        "type": "string",
+                        "description": "Location ID to filter by (for multi-location businesses)."
+                      },
+                      "price": {
+                        "type": "object",
+                        "description": "Price range filter in minor currency units. Currency determined by context.currency or the business's default currency.",
+                        "properties": {
+                          "min": {
+                            "type": ["integer", "string"],
+                            "pattern": "^-?[0-9]+$",
+                            "description": "Minimum price in minor currency units (e.g., 5000 = $50.00)."
+                          },
+                          "max": {
+                            "type": ["integer", "string"],
+                            "pattern": "^-?[0-9]+$",
+                            "description": "Maximum price in minor currency units (e.g., 15000 = $150.00)."
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "description": "Buyer locale and intent signals for relevance, localization, and personalization. Aligns with UCP context pattern. Businesses SHOULD use context when available and MUST ignore unrecognized fields without error.",
+                    "properties": {
+                      "address_country": {
+                        "type": "string",
+                        "description": "Buyer's country (ISO 3166-1 alpha-2, e.g., US). Hint for market context."
+                      },
+                      "address_region": {
+                        "type": "string",
+                        "description": "Region within the country (e.g., California). Optional localization hint."
+                      },
+                      "postal_code": {
+                        "type": "string",
+                        "description": "Postal code (e.g., 94043). Optional regional refinement hint."
+                      },
+                      "coordinates": {
+                        "type": "object",
+                        "description": "Buyer's geographic coordinates for proximity-based ranking. Higher-resolution than postal code; location_id filter supersedes for multi-location businesses.",
+                        "required": [
+                          "latitude",
+                          "longitude"
+                        ],
+                        "properties": {
+                          "latitude": {
+                            "type": "number",
+                            "minimum": -90,
+                            "maximum": 90,
+                            "description": "Latitude in WGS 84 decimal degrees."
+                          },
+                          "longitude": {
+                            "type": "number",
+                            "minimum": -180,
+                            "maximum": 180,
+                            "description": "Longitude in WGS 84 decimal degrees."
+                          }
+                        }
+                      },
+                      "language": {
+                        "type": "string",
+                        "description": "Preferred language (IETF BCP 47, e.g., en, fr-CA). Business MAY return content in a different language if unavailable."
+                      },
+                      "currency": {
+                        "type": "string",
+                        "description": "Preferred currency (ISO 4217, e.g., USD, EUR). Used as denomination for price filter values. Response prices include explicit currency."
+                      },
+                      "intent": {
+                        "type": "string",
+                        "description": "Free-text description of the buyer's intent (e.g., 'looking for a relaxing spa treatment'). Informs relevance and recommendations."
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "pagination": {
+                    "$ref": "#/components/schemas/PaginationRequest"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "List of services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "services",
+                        "pagination"
+                      ],
+                      "properties": {
+                        "services": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Service"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Optional errors, warnings, or informational messages about the response (e.g., partial results, filter feedback, service-level notices)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/services/{service_id}": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Get Service",
+        "operationId": "getService",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "name": "service_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "service"
+                      ],
+                      "properties": {
+                        "service": {
+                          "$ref": "#/components/schemas/Service"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Optional errors, warnings, or informational messages about the service (e.g., temporarily suspended, pricing provisional)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/ServiceNotFound"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/services/lookup": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Lookup Services",
+        "operationId": "lookupServices",
+        "description": "Returns full service objects for a batch of service IDs. Analogous to UCP catalog_lookup. Designed for hydrating multiple service references in a single request.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "description": "Service IDs to look up. Businesses MUST accept at least 50 IDs. Duplicates are silently deduplicated."
+                  },
+                  "context": {
+                    "type": "object",
+                    "description": "Buyer locale and intent signals for localization of returned service content. Same definition as on POST /services/list. Businesses MUST ignore unrecognized fields without error.",
+                    "properties": {
+                      "address_country": {
+                        "type": "string",
+                        "description": "Buyer's country (ISO 3166-1 alpha-2, e.g., US)."
+                      },
+                      "address_region": {
+                        "type": "string",
+                        "description": "Region within the country (e.g., California)."
+                      },
+                      "postal_code": {
+                        "type": "string",
+                        "description": "Postal code (e.g., 94043)."
+                      },
+                      "coordinates": {
+                        "type": "object",
+                        "description": "Buyer's geographic coordinates for proximity context.",
+                        "required": [
+                          "latitude",
+                          "longitude"
+                        ],
+                        "properties": {
+                          "latitude": {
+                            "type": "number",
+                            "minimum": -90,
+                            "maximum": 90,
+                            "description": "Latitude in WGS 84 decimal degrees."
+                          },
+                          "longitude": {
+                            "type": "number",
+                            "minimum": -180,
+                            "maximum": 180,
+                            "description": "Longitude in WGS 84 decimal degrees."
+                          }
+                        }
+                      },
+                      "language": {
+                        "type": "string",
+                        "description": "Preferred language (IETF BCP 47, e.g., en, fr-CA)."
+                      },
+                      "currency": {
+                        "type": "string",
+                        "description": "Preferred currency (ISO 4217, e.g., USD, EUR)."
+                      },
+                      "intent": {
+                        "type": "string",
+                        "description": "Free-text buyer intent."
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lookup results. May contain fewer services than requested IDs if some IDs were not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "services"
+                      ],
+                      "properties": {
+                        "services": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Service"
+                          },
+                          "description": "Services matching the requested IDs. May contain fewer items than requested if some IDs were not found. Unordered."
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Errors, warnings, or informational messages about the lookup (e.g., service_unresolved for unresolved IDs; see specification.md Section 3.12.4)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/services/feed": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Service Feed",
+        "operationId": "getServiceFeed",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from a previous feed response's pagination.next_cursor field, passed back verbatim. Omit on the first request to read the feed from the beginning. Clients MUST NOT parse or construct this value, and MUST NOT substitute a timestamp.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feed page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "items",
+                        "pagination",
+                        "feed_meta"
+                      ],
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "state",
+                              "modified_at",
+                              "data"
+                            ],
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "updated",
+                                  "deleted"
+                                ]
+                              },
+                              "modified_at": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "data": {
+                                "type": "object",
+                                "description": "Full service object for updated state; object containing only id for deleted state."
+                              }
+                            }
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "required": [
+                            "next_cursor",
+                            "has_more"
+                          ],
+                          "properties": {
+                            "next_cursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "Opaque cursor to pass as the cursor query parameter on the next request. Null when no more pages. Encodes a position in (modified_at, id) order; clients MUST NOT parse or construct it. See specification Section 3.1."
+                            },
+                            "has_more": {
+                              "type": "boolean"
+                            }
+                          }
+                        },
+                        "feed_meta": {
+                          "type": "object",
+                          "required": [
+                            "feed_generated_at",
+                            "total_services",
+                            "feed_status"
+                          ],
+                          "properties": {
+                            "feed_generated_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "total_services": {
+                              "type": "integer"
+                            },
+                            "feed_status": {
+                              "enum": [
+                                "healthy",
+                                "degraded",
+                                "rebuilding"
+                              ]
+                            }
+                          }
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Optional errors, warnings, or informational messages about the feed response (e.g., partial results due to degraded feed status)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/services/feed/subscriptions": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Create Feed Subscription",
+        "operationId": "createFeedSubscription",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "callback_url"
+                ],
+                "properties": {
+                  "callback_url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "categories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "service.created",
+                        "service.updated",
+                        "service.deleted",
+                        "service.suspended"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "201": {
+            "description": "Subscription created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "subscription"
+                      ],
+                      "properties": {
+                        "subscription": {
+                          "$ref": "#/components/schemas/FeedSubscription"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/services/feed/subscriptions/{subscription_id}": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Get Feed Subscription",
+        "operationId": "getFeedSubscription",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "subscription"
+                      ],
+                      "properties": {
+                        "subscription": {
+                          "$ref": "#/components/schemas/FeedSubscription"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Cancel Feed Subscription",
+        "operationId": "cancelFeedSubscription",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription canceled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/services/feed/subscriptions/{subscription_id}/pause": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Pause Feed Subscription",
+        "operationId": "pauseFeedSubscription",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "subscription"
+                      ],
+                      "properties": {
+                        "subscription": {
+                          "$ref": "#/components/schemas/FeedSubscription"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/services/feed/subscriptions/{subscription_id}/resume": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Resume Feed Subscription",
+        "operationId": "resumeFeedSubscription",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription resumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "subscription"
+                      ],
+                      "properties": {
+                        "subscription": {
+                          "$ref": "#/components/schemas/FeedSubscription"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/availability/query": {
+      "post": {
+        "tags": [
+          "Availability"
+        ],
+        "summary": "Query Availability",
+        "description": "Returns available time slots for a service within a date range. Platforms SHOULD query at most 7 calendar days per request. Businesses MAY reject wider ranges with HTTP 422 and error code range_too_wide. Slots are returned in ascending start order. See Section 9.1.2 of the specification for pagination semantics.",
+        "operationId": "queryAvailability",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "service_id",
+                  "start_date",
+                  "end_date"
+                ],
+                "properties": {
+                  "service_id": {
+                    "type": "string",
+                    "description": "The service to query."
+                  },
+                  "start_date": {
+                    "type": "string",
+                    "description": "Start of range: an RFC 3339 full-date (2026-03-15) or date-time with offset (2026-03-15T13:00:00Z). A date means 00:00 on that day in the applied date-bounds timezone (date_bounds_timezone, or the business timezone when omitted)."
+                  },
+                  "end_date": {
+                    "type": "string",
+                    "description": "End of range, in the same forms as start_date. A date includes that whole day in the applied date-bounds timezone."
+                  },
+                  "date_bounds_timezone": {
+                    "type": "string",
+                    "description": "IANA timezone whose calendar the business uses to turn date-only start_date and end_date into instants (e.g., Europe/London to ask for 2026-03-15 as a London buyer counts it). Omit it to get the business's own days, including when the business timezone is unknown; the business then applies business_timezone. Has no effect on date-time bounds. The zone applied is echoed in the response applied_date_bounds_timezone. See Section 4.3.1 of the specification."
+                  },
+                  "resource_id": {
+                    "type": "string",
+                    "description": "Preferred resource. If provided, only slots where this resource is available are returned."
+                  },
+                  "party_size": {
+                    "type": "integer",
+                    "default": 1,
+                    "description": "Number of participants. For group/reservation types, only slots with sufficient remaining capacity are returned."
+                  },
+                  "location_id": {
+                    "type": "string",
+                    "description": "Location filter. Only slots at this location are returned. Applies to multi-location businesses."
+                  },
+                  "locale": {
+                    "type": "string",
+                    "description": "BCP 47 language tag (e.g., en-US). When provided, the business SHOULD return human-readable content (resource names, slot labels, opening_hours day names) in the requested locale."
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "description": "Opaque pagination cursor from a previous response. Omit on the first request. See Section 9.1.2 of the specification."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Requested page size. Businesses MAY apply a lower or upper cap."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Available slots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "service_id",
+                        "applied_date_bounds_timezone",
+                        "business_timezone",
+                        "slots"
+                      ],
+                      "properties": {
+                        "service_id": {
+                          "type": "string"
+                        },
+                        "applied_date_bounds_timezone": {
+                          "type": "string",
+                          "description": "IANA timezone the business applied to date-only bounds: the request date_bounds_timezone when sent (e.g., Europe/London), otherwise business_timezone. Use it to confirm how date-only bounds were read and to request the adjacent window in the same zone. Do not use it to name the business's clock; use business_timezone. Slot start and end keep their own RFC 3339 offsets; this field does not replace them."
+                        },
+                        "business_timezone": {
+                          "type": "string",
+                          "description": "The business's own IANA timezone (e.g., America/New_York), equal to business.timezone on its USP profile, whatever the request carried. Use it to show slot times on the business's clock, to compare that clock with the buyer's, and to read opening_hours. Equal to applied_date_bounds_timezone when the request omitted date_bounds_timezone."
+                        },
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TimeSlot"
+                          }
+                        },
+                        "opening_hours": {
+                          "type": "array",
+                          "description": "Regular business hours for the queried period. Special closures are reflected by the absence of slots, not by this field.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "day_of_week",
+                              "opens",
+                              "closes"
+                            ],
+                            "properties": {
+                              "day_of_week": {
+                                "type": "array",
+                                "description": "Days this entry applies to. Lowercase English day names: monday, tuesday, wednesday, thursday, friday, saturday, sunday.",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "monday",
+                                    "tuesday",
+                                    "wednesday",
+                                    "thursday",
+                                    "friday",
+                                    "saturday",
+                                    "sunday"
+                                  ]
+                                }
+                              },
+                              "opens": {
+                                "type": "string",
+                                "description": "Opening time in HH:MM 24-hour format, local time in business_timezone."
+                              },
+                              "closes": {
+                                "type": "string",
+                                "description": "Closing time in HH:MM 24-hour format, local time in business_timezone. 00:00 or 24:00 indicates midnight (end of day)."
+                              }
+                            }
+                          }
+                        },
+                        "messages": {
+                          "type": "array",
+                          "description": "Optional informational or warning messages about the result set (e.g., reduced availability due to staff absence, holiday hours in effect).",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/availability/holds": {
+      "post": {
+        "tags": [
+          "Availability"
+        ],
+        "summary": "Hold Slot",
+        "description": "Creates a temporary hold on a time slot. Requires the business to advertise holds: true in the dev.usp-protocol.services.availability capability.",
+        "operationId": "holdSlot",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "slot_id",
+                  "service_id"
+                ],
+                "properties": {
+                  "slot_id": {
+                    "type": "string",
+                    "description": "The slot to hold."
+                  },
+                  "service_id": {
+                    "type": "string",
+                    "description": "The service."
+                  },
+                  "spots": {
+                    "type": "integer",
+                    "default": 1,
+                    "description": "Number of spots to hold. For group/reservation types."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "201": {
+            "description": "Hold created or business outcome error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "hold": {
+                          "$ref": "#/components/schemas/Hold"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        },
+                        "booking_scoped_credential": {
+                          "$ref": "#/components/schemas/BookingScopedCredential",
+                          "description": "CONDITIONAL. Sender-constrained capability credential authorizing continuation operations on the resource just created. Returned on the creation response only, never on reads, and never as a member of the created resource object itself: it is a bearer secret with its own lifetime, and a platform that persists it into the booking it re-displays has widened the leak surface the cnf binding exists to close. Present when the business accepts the booking_scoped_credential mechanism. When the caller authenticated with platform_key_pop this carries cnf.jkt and is sender-constrained; the platform SHOULD verify cnf.jkt matches its own key and MUST NOT treat a credential returned without cnf as sender-constrained."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/availability/holds/{hold_id}": {
+      "delete": {
+        "tags": [
+          "Availability"
+        ],
+        "summary": "Release Slot",
+        "description": "Explicitly releases a hold before it expires. Requires the business to advertise holds: true in the dev.usp-protocol.services.availability capability.",
+        "operationId": "releaseSlot",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "hold_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hold released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "hold"
+                      ],
+                      "properties": {
+                        "hold": {
+                          "$ref": "#/components/schemas/Hold"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/bookings": {
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Create Booking",
+        "operationId": "createBooking",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/USPCorrelationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "service_id",
+                  "slot_id",
+                  "buyer"
+                ],
+                "properties": {
+                  "service_id": {
+                    "type": "string"
+                  },
+                  "slot_id": {
+                    "type": "string"
+                  },
+                  "hold_id": {
+                    "type": "string",
+                    "description": "Hold ID from a prior hold operation. Present only when the business supports holds (holds: true on the availability capability). When provided, the business converts the hold to a booking."
+                  },
+                  "buyer": {
+                    "$ref": "#/components/schemas/Buyer"
+                  },
+                  "recipient": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Buyer"
+                      }
+                    ],
+                    "description": "The person receiving the service, when different from the buyer. When absent, the buyer is the recipient."
+                  },
+                  "party_size": {
+                    "type": "integer",
+                    "default": 1
+                  },
+                  "resource_id": {
+                    "type": "string",
+                    "description": "Preferred resource (e.g. specific staff member)."
+                  },
+                  "delivery_address": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/DeliveryAddress"
+                      }
+                    ],
+                    "description": "The buyer's service delivery address. REQUIRED when the service's channel.type is at_buyer_location. Echoed back on the Booking object."
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "Buyer-provided special requests or notes."
+                  },
+                  "post_payment_return_request": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PostPaymentReturnRequest"
+                      }
+                    ],
+                    "description": "Applicable when checkout_systems: redirect is in use. The platform SHOULD always include this field on the redirect checkout path — without it, the platform has no way to predict where the buyer will land after payment or cancellation."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "201": {
+            "description": "Booking created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        },
+                        "booking_scoped_credential": {
+                          "$ref": "#/components/schemas/BookingScopedCredential",
+                          "description": "CONDITIONAL. Sender-constrained capability credential authorizing continuation operations on the resource just created. Returned on the creation response only, never on reads, and never as a member of the created resource object itself: it is a bearer secret with its own lifetime, and a platform that persists it into the booking it re-displays has widened the leak surface the cnf binding exists to close. Present when the business accepts the booking_scoped_credential mechanism. When the caller authenticated with platform_key_pop this carries cnf.jkt and is sender-constrained; the platform SHOULD verify cnf.jkt matches its own key and MUST NOT treat a credential returned without cnf as sender-constrained."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/bookings/{booking_id}": {
+      "get": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Get Booking",
+        "operationId": "getBooking",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Update Booking",
+        "operationId": "updateBooking",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "buyer": {
+                    "$ref": "#/components/schemas/Buyer"
+                  },
+                  "recipient": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Buyer"
+                      }
+                    ],
+                    "description": "The person receiving the service, when different from the buyer."
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Booking updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/bookings/{booking_id}/confirm": {
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Confirm Booking",
+        "description": "Business-initiated confirmation for manual-mode bookings (specification.md Section 5.3.4). Not a platform continuation method: a platform principal and a booking_scoped_credential MUST NOT authorize this call. Authentication of the business caller is deployment-defined and is not a platform AuthorizationPolicy mechanism. Auto-mode bookings that are not already confirmed MUST be rejected with invalid_transition at HTTP 200 in messages[].",
+        "operationId": "confirmBooking",
+        "x-usp-access": "business_only",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/USPCorrelationId"
+          },
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/bookings/{booking_id}/cancel": {
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Cancel Booking",
+        "operationId": "cancelBooking",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Cancellation reason."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Booking canceled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/bookings/{booking_id}/reschedule": {
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Reschedule Booking",
+        "operationId": "rescheduleBooking",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "slot_id"
+                ],
+                "properties": {
+                  "slot_id": {
+                    "type": "string",
+                    "description": "The new slot to reschedule to."
+                  },
+                  "hold_id": {
+                    "type": "string",
+                    "description": "Hold ID for the new slot. Present only when the business supports holds (holds: true on the availability capability)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Booking rescheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/bookings/{booking_id}/confirm-payment": {
+      "post": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Confirm Payment",
+        "operationId": "confirmPayment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/USPCorrelationId"
+          },
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "payment_result"
+                ],
+                "properties": {
+                  "payment_result": {
+                    "type": "object",
+                    "required": [
+                      "status",
+                      "transaction_id",
+                      "amount_paid",
+                      "currency"
+                    ],
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "paid",
+                          "deposit_paid"
+                        ],
+                        "description": "Payment outcome."
+                      },
+                      "provider": {
+                        "type": "string",
+                        "description": "Payment provider identifier (e.g. stripe, adyen, paypal). Informational."
+                      },
+                      "transaction_id": {
+                        "type": "string",
+                        "description": "Transaction identifier from the payment provider."
+                      },
+                      "amount_paid": {
+                        "type": ["integer", "string"],
+                        "pattern": "^-?[0-9]+$",
+                        "description": "Amount paid in minor currency units."
+                      },
+                      "currency": {
+                        "type": "string",
+                        "description": "ISO 4217 currency code."
+                      },
+                      "order_reference": {
+                        "type": "string",
+                        "description": "External order identifier from the checkout system."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "booking"
+                      ],
+                      "properties": {
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConfirmPaymentConflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/waitlist": {
+      "post": {
+        "tags": [
+          "Waitlist"
+        ],
+        "summary": "Join Waitlist",
+        "operationId": "joinWaitlist",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "service_id",
+                  "buyer"
+                ],
+                "properties": {
+                  "service_id": {
+                    "type": "string"
+                  },
+                  "slot_id": {
+                    "type": "string",
+                    "description": "Specific slot to waitlist for, if applicable."
+                  },
+                  "buyer": {
+                    "$ref": "#/components/schemas/Buyer"
+                  },
+                  "preferred_slots": {
+                    "type": "array",
+                    "description": "Preferred time windows. If omitted, the buyer accepts any available slot.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "start_date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "end_date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "time_of_day": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "201": {
+            "description": "Waitlist entry created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "entry"
+                      ],
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/WaitlistEntry"
+                        },
+                        "booking_scoped_credential": {
+                          "$ref": "#/components/schemas/BookingScopedCredential",
+                          "description": "CONDITIONAL. Sender-constrained capability credential authorizing continuation operations on the resource just created. Returned on the creation response only, never on reads, and never as a member of the created resource object itself: it is a bearer secret with its own lifetime, and a platform that persists it into the booking it re-displays has widened the leak surface the cnf binding exists to close. Present when the business accepts the booking_scoped_credential mechanism. When the caller authenticated with platform_key_pop this carries cnf.jkt and is sender-constrained; the platform SHOULD verify cnf.jkt matches its own key and MUST NOT treat a credential returned without cnf as sender-constrained."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/waitlist/list": {
+      "post": {
+        "tags": [
+          "Waitlist"
+        ],
+        "summary": "List Waitlist Entries",
+        "operationId": "listWaitlistEntries",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "service_id": {
+                    "type": "string",
+                    "description": "Filter entries by service. If omitted, entries for all services are returned."
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "waiting",
+                      "offered",
+                      "accepted",
+                      "expired",
+                      "declined",
+                      "removed"
+                    ],
+                    "description": "Filter by waitlist status."
+                  },
+                  "pagination": {
+                    "type": "object",
+                    "properties": {
+                      "cursor": {
+                        "type": "string",
+                        "description": "Cursor from a previous response for pagination."
+                      },
+                      "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Maximum number of entries to return. Default is implementation-defined."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Waitlist entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "entries"
+                      ],
+                      "properties": {
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WaitlistEntry"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "properties": {
+                            "next_cursor": {
+                              "type": "string",
+                              "description": "Cursor for the next page. Absent when no more results."
+                            },
+                            "total": {
+                              "type": "integer",
+                              "description": "Total number of matching entries, if known."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/waitlist/{entry_id}": {
+      "get": {
+        "tags": [
+          "Waitlist"
+        ],
+        "summary": "Get Waitlist Entry",
+        "operationId": "getWaitlistEntry",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Waitlist entry details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "entry"
+                      ],
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/WaitlistEntry"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Waitlist"
+        ],
+        "summary": "Leave Waitlist",
+        "operationId": "leaveWaitlist",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Left waitlist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/waitlist/{entry_id}/accept": {
+      "post": {
+        "tags": [
+          "Waitlist"
+        ],
+        "summary": "Accept Waitlist Offer",
+        "operationId": "acceptWaitlistOffer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hold_id": {
+                    "type": "string",
+                    "description": "Hold ID for the offered slot, if already held."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Offer accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/WaitlistEntry"
+                        },
+                        "booking": {
+                          "$ref": "#/components/schemas/Booking"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/waitlist/{entry_id}/decline": {
+      "post": {
+        "tags": [
+          "Waitlist"
+        ],
+        "summary": "Decline Waitlist Offer",
+        "operationId": "declineWaitlistOffer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Offer declined",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/WaitlistEntry"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "424": {
+            "$ref": "#/components/responses/FailedDependency"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": [],
+            "PlatformKeyPop": []
+          },
+          {
+            "BookingScopedCredential": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/registry/businesses": {
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Register Business",
+        "operationId": "registerBusiness",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "201": {
+            "description": "Business registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "registration"
+                      ],
+                      "properties": {
+                        "registration": {
+                          "$ref": "#/components/schemas/RegistryEntry"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Optional informational messages (Section 9.4)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/registry/search_business": {
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Search Businesses",
+        "operationId": "searchBusinesses",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/USPCorrelationId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "businesses",
+                        "pagination"
+                      ],
+                      "properties": {
+                        "businesses": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RegistryEntry"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Optional messages (Section 9.4)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/registry/search_services": {
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Search Services",
+        "operationId": "searchServices",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/USP-Agent"
+          },
+          {
+            "$ref": "#/components/parameters/USPCorrelationId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "services",
+                        "pagination"
+                      ],
+                      "properties": {
+                        "services": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ServiceSearchResult"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          },
+                          "description": "Optional messages (Section 9.4)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/registry/businesses/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Registration identifier."
+        },
+        {
+          "$ref": "#/components/parameters/USP-Agent"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Get Registration",
+        "operationId": "getRegistryRegistration",
+        "responses": {
+          "200": {
+            "description": "Registration found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "registration"
+                      ],
+                      "properties": {
+                        "registration": {
+                          "$ref": "#/components/schemas/RegistryEntry"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      },
+      "put": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Update Registration",
+        "operationId": "updateRegistryRegistration",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "profile_url",
+                  "deployment_mode",
+                  "name",
+                  "verticals",
+                  "categories",
+                  "timezone"
+                ],
+                "properties": {
+                  "profile_url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "deployment_mode": {
+                    "type": "string",
+                    "enum": [
+                      "standalone",
+                      "ucp_native"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "verticals": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "categories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "location": {
+                    "type": "object",
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "coordinates": {
+                        "type": "object",
+                        "properties": {
+                          "lat": {
+                            "type": "number"
+                          },
+                          "lng": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registration updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/USPEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "registration"
+                      ],
+                      "properties": {
+                        "registration": {
+                          "$ref": "#/components/schemas/RegistryEntry"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Delete Registration",
+        "operationId": "deleteRegistryRegistration",
+        "responses": {
+          "204": {
+            "description": "Registration deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "HttpMessageSignature": []
+          },
+          {
+            "PlatformKeyPop": []
+          },
+          {
+            "OAuth2Bearer": []
+          },
+          {
+            "ApiKey": []
+          },
+          {
+            "MutualTLS": []
+          }
+        ]
+      }
+    },
+    "/.well-known/usp": {
+      "get": {
+        "summary": "Get business profile",
+        "operationId": "getBusinessProfile",
+        "description": "Returns the USP business profile document. Published at the well-known URI path. Platforms fetch this document to discover endpoints, negotiate capabilities, determine supported checkout systems, and obtain webhook verification keys. MUST be served over HTTPS with Cache-Control: public, max-age>=60 and no redirects.",
+        "tags": [
+          "Discovery"
+        ],
+        "responses": {
+          "200": {
+            "description": "Business profile document.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "MUST include public and max-age>=60. Example: public, max-age=300"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessProfile"
+                },
+                "example": {
+                  "usp": {
+                    "version": "2026-08-20",
+                    "services": {
+                      "dev.usp-protocol.services": [
+                        {
+                          "version": "2026-08-20",
+                          "transport": "rest",
+                          "endpoint": "https://business.example.com/usp/v1",
+                          "spec": "https://usp-protocol.dev/specification",
+                          "schema": "https://usp-protocol.dev/schemas/openapi/usp-rest.json"
+                        }
+                      ]
+                    },
+                    "capabilities": {
+                      "dev.usp-protocol.services.catalog": [
+                        {
+                          "version": "2026-08-20",
+                          "spec": "https://usp-protocol.dev/specification#3-service-catalog",
+                          "schema": "https://usp-protocol.dev/schemas/services/catalog.json"
+                        }
+                      ],
+                      "dev.usp-protocol.services.availability": [
+                        {
+                          "version": "2026-08-20",
+                          "spec": "https://usp-protocol.dev/specification#4-availability",
+                          "schema": "https://usp-protocol.dev/schemas/services/availability.json"
+                        }
+                      ],
+                      "dev.usp-protocol.services.bookings": [
+                        {
+                          "version": "2026-08-20",
+                          "spec": "https://usp-protocol.dev/specification#5-booking-lifecycle",
+                          "schema": "https://usp-protocol.dev/schemas/services/booking.json"
+                        }
+                      ]
+                    },
+                    "checkout_systems": [
+                      "acp",
+                      "redirect"
+                    ],
+                    "business": {
+                      "name": "Sunrise Wellness Studio",
+                      "timezone": "America/New_York",
+                      "currency": "USD"
+                    }
+                  },
+                  "keys": [
+                    {
+                      "kid": "usp-webhook-key-2026-02",
+                      "kty": "EC",
+                      "crv": "P-256",
+                      "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+                      "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+                      "use": "sig",
+                      "alg": "ES256"
+                    }
+                  ],
+                  "signing_keys": [
+                    {
+                      "kid": "usp-webhook-key-2026-02",
+                      "kty": "EC",
+                      "crv": "P-256",
+                      "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+                      "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+                      "use": "sig",
+                      "alg": "ES256"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "webhooks": {
+    "bookingEvent": {
+      "post": {
+        "operationId": "usp_booking_webhook",
+        "summary": "Booking lifecycle webhook",
+        "description": "The business POSTs booking lifecycle events to the platform's registered webhook_url (Section 8.2.3). Payloads MUST be signed per Section 10.1.1. Not an endpoint the business exposes for inbound client calls — describes the shape of outbound POST requests from business to platform.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "https://usp-protocol.dev/schemas/services/webhook_event.json#/$defs/BookingEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event received and acknowledged"
+          }
+        }
+      }
+    },
+    "catalogEvent": {
+      "post": {
+        "operationId": "usp_catalog_webhook",
+        "summary": "Catalog change webhook",
+        "description": "The business POSTs catalog change events to the platform webhook when using feed subscriptions. Payloads MUST be signed per Section 10.1.1.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "https://usp-protocol.dev/schemas/services/webhook_event.json#/$defs/CatalogEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event received and acknowledged"
+          }
+        }
+      }
+    },
+    "waitlistEvent": {
+      "post": {
+        "operationId": "usp_waitlist_webhook",
+        "summary": "Waitlist lifecycle webhook",
+        "description": "The business POSTs waitlist lifecycle events to the platform's registered webhook_url (Section 8.2.3) when the dev.usp-protocol.services.waitlist capability is in use. Payloads MUST be signed per Section 10.1.1. Not an endpoint the business exposes for inbound client calls — describes the shape of outbound POST requests from business to platform.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "https://usp-protocol.dev/schemas/services/webhook_event.json#/$defs/WaitlistEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event received and acknowledged"
+          }
+        }
+      }
+    }
+  }
+}

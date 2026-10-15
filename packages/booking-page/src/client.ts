@@ -1,5 +1,5 @@
 /**
- * Browser scripts for the booking page and the manage page. Plain ES5-ish JS, no build step.
+ * Browser scripts for the booking page, the manage page and the confirm page. Plain ES5-ish JS, no build step.
  * They live in String.raw template literals, so they must not contain backticks or the
  * dollar-brace sequence. Server data arrives via the JSON in #ob-data and is HTML-escaped before
  * it is rendered.
@@ -444,5 +444,96 @@ export const MANAGE_SCRIPT = String.raw`
       .then(function () { $('cancel').disabled = false; });
   };
   load();
+})();
+`;
+
+export const CONFIRM_SCRIPT = String.raw`
+(function () {
+  var D = JSON.parse(document.getElementById('ob-data').textContent);
+  var API = D.api_path;
+  var TZ = D.venue.timezone;
+  var id = decodeURIComponent(location.pathname.split('/').pop() || '');
+  function $(x) { return document.getElementById(x); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function money(m) { return m ? (m.amount / 100).toFixed(m.amount % 100 ? 2 : 0) + ' ' + m.currency : ''; }
+  function when(iso) {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  }
+  function clock(iso) {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  }
+  function api(path, body) {
+    var opts = { headers: { 'content-type': 'application/json' } };
+    if (body) { opts.method = 'POST'; opts.body = JSON.stringify(body); }
+    return fetch(API + '/api' + path, opts).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || j.error) { var e = new Error((j.error && j.error.message) || 'Something went wrong.'); e.payload = j.error; throw e; }
+        return j;
+      });
+    });
+  }
+  function rows(list) {
+    $('body').classList.remove('muted');
+    $('body').innerHTML = '<dl class="kv">' + list.filter(Boolean).map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>';
+  }
+  function summary(b) {
+    return [
+      ['When', esc(when(b.start))],
+      ['Service', esc(b.offering.name)],
+      b.resource ? ['With', esc(b.resource)] : null,
+      b.party_size > 1 ? ['Guests', esc(b.party_size)] : null,
+      b.customer ? ['Name', esc(b.customer.first_name + ' ' + b.customer.last_name)] : null,
+      b.price ? ['Price', esc(money(b.price)) + ' (paid at the business)'] : null,
+      ['Cancellation', esc(b.cancellation_policy.description)]
+    ];
+  }
+  function gone(text) {
+    $('title').textContent = 'This booking can not be confirmed';
+    $('lead').classList.add('hidden');
+    $('body').textContent = text;
+    $('confirm').classList.add('hidden');
+  }
+  function render(b) {
+    if (b.status === 'confirmed') {
+      $('title').textContent = 'This booking is confirmed';
+      $('lead').classList.add('hidden');
+      rows(summary(b));
+      $('confirm').classList.add('hidden');
+    } else if (b.status !== 'held') {
+      gone(b.status === 'expired' ? 'The reservation ran out before it was confirmed. Ask the assistant to find a time again, or book on the business page.' : 'This booking was cancelled.');
+    } else if (b.deposit && b.deposit.due === 'at_confirmation') {
+      gone('This booking needs a deposit. Please book it on the business page instead.');
+    } else {
+      rows(summary(b).concat([['Held until', esc(clock(b.expires_at))]]));
+      $('confirm').classList.remove('hidden');
+    }
+  }
+  var key = 'confirm-page-' + id;
+  $('confirm').onclick = function () {
+    $('err').textContent = '';
+    $('confirm').disabled = true;
+    // The button press is the person's explicit approval of the terms shown above.
+    api('/confirm', { booking_id: id, idempotency_key: key, user_confirmed: true })
+      .then(function (r) {
+        var b = r.booking;
+        $('title').textContent = 'You\'re booked';
+        $('title').className = 'ok';
+        $('lead').classList.add('hidden');
+        rows(summary(b).concat([['Code', '<span style="font-family:var(--mono)">' + esc(b.confirmation_code || '') + '</span>']]));
+        $('confirm').classList.add('hidden');
+        if (b.manage_url) {
+          $('terms').classList.remove('hidden');
+          $('terms').innerHTML = 'Keep this link to view or cancel the booking: <a href="' + esc(b.manage_url) + '">' + esc(b.manage_url) + '</a>';
+        }
+      })
+      .catch(function (e) { $('err').textContent = e.message; $('confirm').disabled = false; });
+  };
+  api('/holds/' + encodeURIComponent(id))
+    .then(function (r) { render(r.booking); })
+    .catch(function (e) { gone(e.payload && e.payload.code === 'not_found' ? 'We could not find this booking. Check the link you were sent.' : e.message); });
 })();
 `;

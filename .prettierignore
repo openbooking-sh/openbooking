@@ -7,3 +7,4 @@ bench/results
 .release
 llms.txt
 llms-full.txt
+packages/adapter-usp/test/fixtures

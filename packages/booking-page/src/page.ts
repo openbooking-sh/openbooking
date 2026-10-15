@@ -18,6 +18,7 @@ import { embedScript } from './embed';
 import {
   jsonLd,
   readPrefill,
+  renderConfirm,
   renderManage,
   renderPage,
   type PageProfile,
@@ -39,7 +40,7 @@ export interface BookingPageOptions {
 }
 
 export interface BookingPage {
-  /** Routes: `/`, `/manage/:id`, `/llms.txt`, `/embed.js`, `/api/*`. Mount at the path of `apiBase`. */
+  /** Routes: `/`, `/manage/:id`, `/confirm/:id`, `/llms.txt`, `/embed.js`, `/api/*`. Mount at the path of `apiBase`. */
   app: Hono;
   /** `embed.js` for the business's own website (see embed.ts). */
   embed(): Promise<string>;
@@ -47,6 +48,11 @@ export interface BookingPage {
   html(query?: Record<string, string | undefined>): Promise<string>;
   /** Link customers use to view or cancel a booking (undefined until it has a confirmation code). */
   manageUrl(booking: Booking): string | undefined;
+  /**
+   * Link where a person reviews and confirms a booking an assistant is holding for them. Safe to
+   * hand to an agent: opening it reserves nothing and confirms nothing; only the button does.
+   */
+  confirmUrl(booking: Booking): string;
   /** Canonical public URL of the page. */
   pageUrl: string;
 }
@@ -87,6 +93,8 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     b.confirmation_code
       ? `${apiBase}/manage/${encodeURIComponent(b.booking_id)}?code=${encodeURIComponent(b.confirmation_code)}`
       : undefined;
+
+  const confirmUrl = (b: Booking) => `${apiBase}/confirm/${encodeURIComponent(b.booking_id)}`;
 
   const html = async (query: Record<string, string | undefined> = {}) => {
     const [cat, prof] = await Promise.all([catalog(), profile()]);
@@ -187,6 +195,13 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     return c.html(renderManage({ venue, profile: prof, pageUrl, apiPath }));
   });
 
+  app.get('/confirm/:id', async (c) => {
+    const [venue, prof] = await Promise.all([service.resolveVenue(), profile()]);
+    c.header('Cache-Control', 'no-store');
+    c.header('Referrer-Policy', 'no-referrer');
+    return c.html(renderConfirm({ venue, profile: prof, pageUrl, apiPath }));
+  });
+
   app.get('/llms.txt', async (c) => {
     const [cat, prof] = await Promise.all([catalog(), profile()]);
     return c.text(llmsTxt({ ...cat, profile: prof, pageUrl, mcpUrl: options.mcpUrl }));
@@ -263,6 +278,34 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     }),
   );
 
+  /**
+   * What the confirm page shows: the held booking and its terms. The booking id is the key (as it
+   * is for confirming), so a booking that is already confirmed shows only that it is, never its
+   * code or the customer's name; those stay behind the confirmation code.
+   */
+  app.get('/api/holds/:id', (c) =>
+    json(c, async () => {
+      const b = await service.getBooking(c.req.param('id'));
+      if (b.status === 'confirmed') {
+        return {
+          booking: {
+            booking_id: b.booking_id,
+            status: b.status,
+            start: b.slot.start,
+            end: b.slot.end,
+            offering: b.slot.offering,
+            resource: b.slot.resource?.label ?? null,
+            party_size: b.slot.party_size.total,
+            price: b.slot.price,
+            deposit: b.slot.deposit,
+            cancellation_policy: b.slot.cancellation_policy,
+          },
+        };
+      }
+      return { booking: view(b, true) };
+    }),
+  );
+
   app.post('/api/confirm', (c) =>
     json(c, async () => {
       const b = await body(c);
@@ -327,7 +370,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     }),
   );
 
-  return { app, embed, html, manageUrl, pageUrl };
+  return { app, embed, html, manageUrl, confirmUrl, pageUrl };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,78 @@
+{
+  "id": "101-hold-expiry-during-checkout",
+  "section": "7.5",
+  "requirement": "check-before-charge",
+  "kind": "flow",
+  "expect": "reject",
+  "outcome_code": "hold_expired",
+  "notes": "THE LOAD-BEARING CASE FOR A1. The hold lapses between create_checkout and complete_checkout, but the slot itself is still free. A naive implementation charges first and discovers the stale hold afterwards, leaving a charged buyer with no booking. A1 requires the availability re-check before the PSP call, and the hold/slot split requires hold_expired rather than slot_unavailable so the platform knows it can re-hold the same slot instead of sending the buyer back to slot selection.",
+  "given": {
+    "service": {
+      "id": "svc_massage_001",
+      "type": "appointment",
+      "requires_payment": true,
+      "payment_timing": "at_booking",
+      "confirmation_mode": "auto"
+    },
+    "slot": {
+      "id": "slot_20260316_1400",
+      "start": "2026-03-16T14:00:00-04:00",
+      "end": "2026-03-16T15:00:00-04:00",
+      "capacity": { "total": 1, "remaining": 0, "held": 1 }
+    },
+    "hold": {
+      "id": "hold_xyz789",
+      "slot_id": "slot_20260316_1400",
+      "service_id": "svc_massage_001",
+      "spots": 1,
+      "expires_at": "2026-03-15T10:05:00Z",
+      "status": "active"
+    }
+  },
+  "when": [
+    {
+      "at": "2026-03-15T10:00:00Z",
+      "step": "create_checkout",
+      "with": { "hold_id": "hold_xyz789" },
+      "result": { "status": "ready_for_complete", "booking_status": "pending" }
+    },
+    {
+      "at": "2026-03-15T10:05:00Z",
+      "step": "hold_lapses",
+      "notes": "TTL elapses. The business releases the hold and restores capacity.remaining to 1. No other buyer takes the slot."
+    },
+    {
+      "at": "2026-03-15T10:06:00Z",
+      "step": "complete_checkout",
+      "with": { "payment_token": "tok_test_001" }
+    }
+  ],
+  "then": {
+    "psp_charge_attempted": false,
+    "booking_created": false,
+    "booking_status": "pending",
+    "checkout_status": "incomplete",
+    "outcome_code": "hold_expired",
+    "http_status": 200,
+    "slot_capacity_remaining": 1,
+    "platform_may_retry": true,
+    "retry_guidance": "Re-hold slot_20260316_1400 and repeat complete_checkout. Re-querying availability is not required, because the slot never became unavailable."
+  },
+  "wrong_answers": [
+    {
+      "behaviour": "charge the PSP, then fail the booking write",
+      "violates": "7.5 A1 and A2",
+      "why": "The buyer is charged for a booking that does not exist."
+    },
+    {
+      "behaviour": "return slot_unavailable",
+      "violates": "7.5 checkout expires_at and holds",
+      "why": "Tells the platform to discard a slot that is still bookable, costing the buyer their preferred time for no reason."
+    },
+    {
+      "behaviour": "honour the expired hold and book anyway",
+      "violates": "4.2.1 failure matrix",
+      "why": "Capacity was already returned to the pool; another buyer may have been offered the same slot."
+    }
+  ]
+}

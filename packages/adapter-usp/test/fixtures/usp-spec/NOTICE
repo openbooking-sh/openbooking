@@ -1,0 +1,4 @@
+Schemas, OpenAPI/OpenRPC documents and test vectors from
+https://github.com/wix/universal-scheduling-protocol at 78363d766e738efd44fb42d1d1bf93ce617187ec
+(Apache License 2.0, see LICENSE). Vendored unmodified for conformance tests; regenerate with
+"pnpm --filter @openbooking-sh/adapter-usp sync-spec <checkout>".
