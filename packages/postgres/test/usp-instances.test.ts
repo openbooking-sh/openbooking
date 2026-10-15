@@ -4,36 +4,36 @@
  * split between them: a credential issued by one unknown to the other, a replayed proof caught
  * by only one. With the shared store they behave as one server.
  */
-import { PGlite } from '@electric-sql/pglite';
-import { migrate, postgresStores } from '@openbooking-sh/postgres';
+import {
+  createPopAuthenticator,
+  createUspRouter,
+  USP_AUTHORITY,
+  type UspStateStore,
+} from '@openbooking-sh/adapter-usp';
 import { BookingService, ManualClock } from '@openbooking-sh/core';
 import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import { Hono } from 'hono';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createPopAuthenticator, createUspRouter, USP_AUTHORITY, type UspStateStore } from '../src';
-import { b64, ORIGIN, platform } from './platform';
+import { describe, expect, it } from 'vitest';
+import { platform, b64, ORIGIN } from '../../adapter-usp/test/platform';
+import { postgresStores, type Db } from '../src';
+import { freshDb, target } from './helpers';
 
 const BUYER = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 const type = (slug: string) => `${USP_AUTHORITY}/errors/${slug}`;
 
 const clock = new ManualClock('2026-10-01T08:00:00Z');
-const lite = new PGlite();
-afterAll(() => lite.close());
-beforeAll(async () => {
-  await migrate(lite);
-}, 60_000);
 
 /** One server instance on the shared database. */
-function instance() {
+function instance(db: Db) {
   const now = () => clock.now().getTime();
-  const stores = postgresStores(lite, { idempotency: { now }, usp: { now } });
+  const stores = postgresStores(db, { idempotency: { now }, usp: { now } });
   const service = new BookingService({
     provider: createDemoSalonProvider({ store: stores.bookings }),
     clock,
     idempotencyStore: stores.idempotency,
   });
-  // Assigning to the adapter's interface is the compatibility check the postgres package cannot
-  // make itself (it must not depend on the adapter).
+  // Assigning to the adapter's interface is the compatibility check this package cannot make in
+  // its own source (it must not depend on the adapter there).
   const state: UspStateStore = stores.usp;
   const auth = createPopAuthenticator({ baseUrl: ORIGIN, state, clock });
   return new Hono().route(
@@ -43,8 +43,8 @@ function instance() {
 }
 
 /** Both instances behind one address; a header picks which one answers. */
-function cluster() {
-  const instances = { a: instance(), b: instance() };
+function cluster(db: Db) {
+  const instances = { a: instance(db), b: instance(db) };
   const app = new Hono().all('*', (c) => {
     const which = c.req.header('x-instance') === 'b' ? 'b' : 'a';
     return instances[which].fetch(c.req.raw);
@@ -82,9 +82,9 @@ const create = (
     { headers: { 'idempotency-key': key, ...extra } },
   );
 
-describe('USP state shared through Postgres', () => {
+describe(`USP state shared through Postgres (${target})`, () => {
   it('knows on one instance the credential another issued, and its owner', async () => {
-    const w = cluster();
+    const w = cluster(await freshDb());
     const p = await platform(w);
     const slot = await firstSlot(w, '2026-10-16');
     const made = await create(p, slot, 'pg-create-0001'); // instance A
@@ -104,7 +104,7 @@ describe('USP state shared through Postgres', () => {
   });
 
   it('catches a proof replayed against the other instance', async () => {
-    const w = cluster();
+    const w = cluster(await freshDb());
     const p = await platform(w);
     const slot = await firstSlot(w, '2026-10-16');
     const made = await create(p, slot, 'pg-create-0002');
@@ -131,7 +131,7 @@ describe('USP state shared through Postgres', () => {
   });
 
   it('keeps a key tied to the profile it first presented, whichever instance sees it', async () => {
-    const w = cluster();
+    const w = cluster(await freshDb());
     const p = await platform(w, 'https://agent.example/one.json');
     const slot = await firstSlot(w, '2026-10-16');
     const body = { slot_id: slot.id, service_id: 'haircut' };
@@ -144,7 +144,7 @@ describe('USP state shared through Postgres', () => {
   });
 
   it('applies the same request-key rules across instances', async () => {
-    const w = cluster();
+    const w = cluster(await freshDb());
     const p = await platform(w);
     const slot = await firstSlot(w, '2026-10-16');
     const first = await create(p, slot, 'pg-create-0003'); // A
@@ -163,7 +163,7 @@ describe('USP state shared through Postgres', () => {
   });
 
   it('shares the slot itself: a hold on one instance blocks the other', async () => {
-    const w = cluster();
+    const w = cluster(await freshDb());
     const a = await platform(w, 'https://a.example/p.json');
     const b = await platform(w, 'https://b.example/p.json');
     const slot = await firstSlot(w, '2026-10-17');
@@ -175,7 +175,8 @@ describe('USP state shared through Postgres', () => {
   });
 
   it('survives a restart: new instances on the same database still honour the credential', async () => {
-    const before = cluster();
+    const db = await freshDb();
+    const before = cluster(db);
     const p = await platform(before);
     const slot = await firstSlot(before, '2026-10-20');
     const made = await create(p, slot, 'pg-create-0004');
@@ -184,7 +185,7 @@ describe('USP state shared through Postgres', () => {
     expect(b64(cred)).toBeTruthy();
 
     // Brand-new instances, as after a deploy or a cold start.
-    const after = cluster();
+    const after = cluster(db);
     p.use(after);
     const read = await p.call('GET', `/bookings/${id}`, undefined, { credential: cred });
     expect(read.status).toBe(200);

@@ -327,18 +327,12 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
-      '@electric-sql/pglite':
-        specifier: ^0.5.8
-        version: 0.5.8
       '@hono/node-server':
         specifier: ^2.1.3
         version: 2.1.3(hono@4.13.12)
       '@openbooking-sh/booking-page':
         specifier: workspace:^
         version: link:../booking-page
-      '@openbooking-sh/postgres':
-        specifier: workspace:^
-        version: link:../postgres
       '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
@@ -481,6 +475,9 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.8
         version: 0.5.8
+      '@openbooking-sh/adapter-usp':
+        specifier: workspace:^
+        version: link:../adapter-usp
       '@openbooking-sh/google-calendar':
         specifier: workspace:^
         version: link:../google-calendar
@@ -493,6 +490,9 @@ importers:
       '@openbooking-sh/provider-calcom':
         specifier: workspace:^
         version: link:../provider-calcom
+      hono:
+        specifier: ^4.13.12
+        version: 4.13.12
 
   packages/provider-calcom:
     dependencies:
