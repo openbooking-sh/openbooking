@@ -11,6 +11,7 @@ import type { Hono } from 'hono';
 import type { UspBusinessAuth } from './auth';
 import type { ConsentMode } from './booking-mapping';
 import { createPopAuthenticator } from './pop-auth';
+import { createProfileFetcher, type ProfileFetcher } from './profile-fetch';
 import { buildUspProfileFor } from './profile';
 import { createUspRouter } from './router';
 import { MemoryUspState, type UspStateStore } from './state';
@@ -35,6 +36,13 @@ export interface UspOptions {
   /** Owners, credentials, replay memory. Default in memory: use Postgres across instances. */
   state?: UspStateStore;
   businessAuth?: UspBusinessAuth;
+  /**
+   * How platform profiles are fetched (spec 8.2.3). Default: a hardened fetcher that only reaches
+   * the public internet (see `createProfileFetcher`). Pass your own to share its cache between
+   * businesses, or `false` to not fetch profiles at all (no capability negotiation: for local
+   * development and tests).
+   */
+  platformProfiles?: ProfileFetcher | false;
   /** Display name in the profile. Default: the booking system's name. */
   name?: string;
 }
@@ -57,6 +65,9 @@ export function createUsp(options: UspOptions): Usp {
     baseUrl: base,
     state,
     clock: service.clock,
+    ...(options.platformProfiles === false
+      ? {}
+      : { fetchProfile: options.platformProfiles ?? createProfileFetcher() }),
     // The URL a platform signed is the public one; a proxy may have stripped a prefix from the
     // request we see (hosted serves each business under /b/<id>), so build it from `baseUrl`.
     htu: (request) => `${base}${new URL(request.url).pathname}`,

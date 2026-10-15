@@ -5,11 +5,15 @@
  * The router fails closed: without an authenticator every privileged operation answers 401. The
  * adapter ships no "trust everyone" default.
  */
+import type { PlatformProfile } from './profile-fetch';
+
 export interface UspPrincipal {
   /** Stable identity of the calling platform (for example the thumbprint of its proof key). */
   id: string;
   /** Set when the request presented a booking-scoped credential: what it may act on. */
   credential?: { scope: readonly string[] };
+  /** The platform's profile, when profiles are fetched: what it says it can use. */
+  platform?: PlatformProfile;
 }
 
 /** A booking-scoped credential as it goes on the wire (`profile.json#BookingScopedCredential`). */

@@ -52,6 +52,8 @@ const PROTOCOL_STATUS = {
   profile_not_trusted: 403,
   invalid_profile_url: 400,
   profile_unreachable: 424,
+  profile_malformed: 422,
+  version_unsupported: 400,
   service_not_found: 404,
   booking_not_found: 404,
   idempotency_conflict: 409,
@@ -80,6 +82,8 @@ export class ProtocolError extends Error {
     message: string,
     readonly nextAction?: string,
     readonly headers?: Record<string, string>,
+    /** Extra members for the problem body, e.g. `messages` naming the latest supported version. */
+    readonly extra?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -88,7 +92,12 @@ export class ProtocolError extends Error {
 export function problemResponse(
   status: number,
   detail: string,
-  options: { code?: ProtocolCode; nextAction?: string; headers?: Record<string, string> } = {},
+  options: {
+    code?: ProtocolCode;
+    nextAction?: string;
+    headers?: Record<string, string>;
+    extra?: Record<string, unknown>;
+  } = {},
 ): Response {
   const body = {
     // `about:blank` is for conditions HTTP already names (405, 501); everything else is a
@@ -100,6 +109,7 @@ export function problemResponse(
     status,
     detail,
     ...(options.nextAction ? { [OB_NEXT_ACTION]: options.nextAction } : {}),
+    ...options.extra,
   };
   return new Response(JSON.stringify(body), {
     status,
@@ -117,6 +127,7 @@ export function failure(e: unknown): Response {
       code: e.code,
       ...(e.nextAction ? { nextAction: e.nextAction } : {}),
       ...(e.headers ? { headers: e.headers } : {}),
+      ...(e.extra ? { extra: e.extra } : {}),
     });
   }
   const payload: ErrorPayload = toErrorPayload(e);

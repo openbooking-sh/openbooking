@@ -52,3 +52,6 @@ export const problemErrors = (data: unknown) =>
 
 export const serviceErrors = (data: unknown) =>
   check('https://usp-protocol.dev/schemas/services/catalog.json#/$defs/Service', data);
+
+export const messageErrors = (data: unknown) =>
+  check('https://usp-protocol.dev/schemas/services/booking.json#/$defs/Message', data);

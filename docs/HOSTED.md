@@ -139,7 +139,7 @@ The business's profile is at `/b/{id}/.well-known/usp` (there is no profile at t
 the root is not one business). Businesses saved before the setting existed have no `assistants`
 block and count as off. For several instances or serverless, pass `uspState` (`postgresStores(db).usp`,
 which the Vercel entry does when `DATABASE_URL` is set): it holds owners, credentials and replay
-protection, shared by every instance and kept apart per business. Protocol details are in
+protection, shared by every instance and kept apart per business. When a platform calls, hosted fetches the platform's own profile (public internet only, cached, shared by all businesses) and uses only what both sides support. Protocol details are in
 [SPEC-NOTES.md](SPEC-NOTES.md#6-usp-universal-scheduling-protocol-draft).
 
 ## Emails
