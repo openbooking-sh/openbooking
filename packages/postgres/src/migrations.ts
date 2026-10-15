@@ -110,6 +110,56 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       alter table ob_migrations enable row level security;
     `,
   },
+  {
+    version: 4,
+    name: 'usp-state',
+    // What the USP adapter must remember between requests and across server instances: who owns
+    // which hold or booking, booking-scoped credentials (by hash, never the value), proofs already
+    // seen (replay defence), which platform key came with which profile, and what request an
+    // Idempotency-Key was first used for. No customer names, emails or phone numbers live here.
+    sql: `
+      create table ob_usp_owners (
+        booking_id text primary key,
+        principal  text not null,
+        -- Set once a booking was created from the hold: reads then count as a booking.
+        is_booking boolean not null default false,
+        created_at timestamptz not null default now()
+      );
+
+      create table ob_usp_credentials (
+        hash       text primary key,
+        jkt        text,
+        scope      jsonb not null,
+        expires_at timestamptz not null
+      );
+      create index ob_usp_credentials_expires on ob_usp_credentials (expires_at);
+
+      create table ob_usp_proofs (
+        jti        text primary key,
+        expires_at timestamptz not null
+      );
+      create index ob_usp_proofs_expires on ob_usp_proofs (expires_at);
+
+      create table ob_usp_profile_bindings (
+        jkt         text primary key,
+        profile_uri text not null,
+        created_at  timestamptz not null default now()
+      );
+
+      create table ob_usp_request_keys (
+        scoped_key  text primary key,
+        fingerprint text not null,
+        expires_at  timestamptz not null
+      );
+      create index ob_usp_request_keys_expires on ob_usp_request_keys (expires_at);
+
+      alter table ob_usp_owners enable row level security;
+      alter table ob_usp_credentials enable row level security;
+      alter table ob_usp_proofs enable row level security;
+      alter table ob_usp_profile_bindings enable row level security;
+      alter table ob_usp_request_keys enable row level security;
+    `,
+  },
 ];
 
 /**

@@ -47,6 +47,7 @@ import {
   type BusySource,
 } from '@openbooking-sh/provider-memory';
 import { StripePayments } from '@openbooking-sh/payments-stripe';
+import { scopeUspState, type UspStateStore } from '@openbooking-sh/adapter-usp';
 import { createOpenBookingApp, type OpenBookingApp } from '@openbooking-sh/server';
 import {
   createStudio,
@@ -70,6 +71,8 @@ export interface TenantDeps {
   notificationLog: NotificationLog;
   google?: GoogleCredentials & { fetch?: typeof fetch };
   calendarLinks: CalendarLinkStore;
+  /** Shared by every business; each gets its own scope of it. */
+  uspState: UspStateStore;
   allowedHosts: string[];
   /** Owners must confirm their email before the business is listed in the OpenBooking app. */
   requireVerifiedEmail?: boolean;
@@ -94,6 +97,8 @@ export class Tenant {
   #googleBusy: BusySource | undefined;
   #stripe: { key: string; payments: StripePayments } | undefined;
   readonly #deps: TenantDeps;
+  /** This business's slice of the shared USP state, kept across app rebuilds. */
+  readonly #uspState: UspStateStore;
   /**
    * Always handed to the engine, so a deposit is never taken on trust. It forwards to the owner's
    * Stripe account as it is now (the key can change without rebuilding the service).
@@ -108,6 +113,7 @@ export class Tenant {
     this.id = business.id;
     this.#business = business;
     this.#deps = deps;
+    this.#uspState = scopeUspState(deps.uspState, business.id);
     this.provider = new TenantProvider(business, deps.bookings, this.pageUrl, (q) =>
       this.#googleBusy ? this.#googleBusy(q) : Promise.resolve([]),
     );
@@ -261,6 +267,15 @@ export class Tenant {
         { label: 'Book me through ChatGPT', url: `https://chatgpt.com/?q=${ask}` },
         { label: 'Book me through Claude', url: `https://claude.ai/new?q=${ask}` },
         { label: 'MCP server', url: `${this.pageUrl}/mcp`, hint: 'for AI apps and developers' },
+        ...(this.#uspMode() === 'off'
+          ? []
+          : [
+              {
+                label: 'USP profile',
+                url: `${this.pageUrl}/.well-known/usp`,
+                hint: 'for AI platforms that book through USP',
+              },
+            ]),
       ],
       integrations: {
         google: {
@@ -396,8 +411,14 @@ export class Tenant {
     this.#google = { key, client, sync };
   }
 
+  /** How assistants may book through USP. Businesses saved before the setting have no block. */
+  #uspMode(): 'off' | 'confirm' | 'instant' {
+    return this.#business.settings.assistants?.usp ?? 'off';
+  }
+
   #createApp(): OpenBookingApp {
     const b = this.#business;
+    const usp = this.#uspMode();
     return createOpenBookingApp({
       service: this.service,
       baseUrl: this.pageUrl,
@@ -405,6 +426,15 @@ export class Tenant {
       ...(b.settings.profile.description ? { description: b.settings.profile.description } : {}),
       organization: { organization: 'OpenBooking', url: 'https://openbooking.sh' },
       allowedHosts: this.#deps.allowedHosts,
+      usp:
+        usp === 'off'
+          ? false
+          : {
+              // "confirm": the assistant only holds the time and the customer confirms on the page.
+              consent: usp === 'instant' ? 'commit' : 'action',
+              state: this.#uspState,
+              businessId: this.id,
+            },
       studio: false,
       bookingPage: {
         pageUrl: this.pageUrl,

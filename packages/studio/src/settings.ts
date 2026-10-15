@@ -112,6 +112,16 @@ export const BusinessSettingsSchema = z
     }),
     /** Listed in the OpenBooking app (find_business) for every AI assistant. */
     listed: z.boolean().default(true),
+    /**
+     * How AI assistants may book through USP (a draft standard that lets any assistant or
+     * platform book you). `off`: not offered. `confirm`: the assistant holds a time and the
+     * customer confirms on your booking page. `instant`: the assistant's request books it, which
+     * trusts that it asked the customer first. Businesses saved before this existed have no block
+     * and count as `off`: read it as `settings.assistants?.usp ?? 'off'`.
+     */
+    assistants: z
+      .object({ usp: z.enum(['off', 'confirm', 'instant']).default('off') })
+      .default({ usp: 'off' }),
   })
   .superRefine((s, ctx) => {
     const staff = new Set(s.staff.map((p) => p.id));

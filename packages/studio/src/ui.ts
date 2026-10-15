@@ -726,7 +726,12 @@ export const STUDIO_HTML = `<!doctype html>
       }
       h += '</div>';
     }
-    h += '<div class="card"><h2>AI assistants</h2>' + check('s-listed', s.listed, 'List me in the OpenBooking app, so ChatGPT, Claude and other assistants can find and book me') + '</div>';
+    var uspNow = (s.assistants && s.assistants.usp) || 'off';
+    var uspOpt = function (value, label) { return '<option value="' + value + '"' + (uspNow === value ? ' selected' : '') + '>' + label + '</option>'; };
+    h += '<div class="card"><h2>AI assistants</h2>' + check('s-listed', s.listed, 'List me in the OpenBooking app, so ChatGPT, Claude and other assistants can find and book me') +
+      '<div class="field" style="max-width:560px;margin-top:14px"><label for="s-usp">Let assistants and platforms book me directly (USP)</label><select id="s-usp">' +
+      uspOpt('off', 'Off') + uspOpt('confirm', 'On: the customer confirms on a page (recommended)') + uspOpt('instant', 'On: the assistant books immediately') + '</select></div>' +
+      '<p class="hint">USP is a draft standard from Wix and Stripe that lets any assistant or platform book you, signing in with its own key. With the page, the assistant holds a time and the customer approves the time, price and cancellation terms before anything is booked. Immediately means the assistant is trusted to have asked first. Save changes to apply.</p></div>';
     if (dataRights) {
       h += '<div class="card"><h2>Customer data</h2><p class="hint">A customer asks what you hold about them, or asks you to delete it. Enter their email address or phone number. Deleting removes name, contact details and notes from their bookings; the bookings themselves stay in your calendar history. Upcoming bookings are kept: cancel them first.</p>' +
         '<div class="two-f">' + field('Email', 'cd-email', '', 'type="email"') + field('Phone', 'cd-phone', '', 'placeholder="+47..."') + '</div>' +
@@ -856,6 +861,7 @@ export const STUDIO_HTML = `<!doctype html>
     s.payments = { deposit_percent: $('pay-dep') ? num('pay-dep', 0) : ((s.payments && s.payments.deposit_percent) || 0) };
     s.notifications = { owner_email: v('n-owner'), email_owner: $('n-eowner').checked, email_customers: $('n-ecust').checked };
     s.listed = $('s-listed').checked;
+    s.assistants = { usp: $('s-usp') ? $('s-usp').value : ((s.assistants && s.assistants.usp) || 'off') };
     $('set-err').textContent = err;
     return !err;
   }

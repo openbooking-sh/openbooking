@@ -161,3 +161,14 @@ Each offer reuses the `stay` shape (`id`, `stay_dates`, `accommodation_type`, `r
 - UCP issue #858: accommodation type discriminator and tool naming.
 - UCP issues #317, #479 and #303: appointment and availability capabilities. These could replace `sh.openbooking.availability` and `time_slot`.
 - Lodging booking shipping in a tagged UCP release: re-pin `UCP_VERSION`.
+
+## 6. USP (Universal Scheduling Protocol, draft)
+
+`@openbooking-sh/adapter-usp` follows the USP draft (version `2026-08-20`, validated offline against the schemas, OpenAPI document and test vectors vendored from wix/universal-scheduling-protocol at the commit in `USP_SPEC_COMMIT`; the spec has changed without a version bump, so the commit is the pin). Choices that are ours:
+
+- **Consent.** USP has no "the buyer approved" flag, and forbids a platform from claiming acceptance the business cannot verify. So each business picks how a booking becomes real. `consent: 'action'` (default): creating a booking holds the slot and returns `requires_action` with an action of type `sh.openbooking.confirmation` whose `continue_url` is the booking page's confirm page; the booking is confirmed only when the customer presses the button there. `consent: 'commit'`: creating the booking confirms it, trusting the platform to have asked its user (the same trust the MCP tools place in `user_confirmed`). Free cancellations always work; in `action` mode a cancellation that costs a fee, and any reschedule, are left to the customer, and the catalog advertises rescheduling only in `commit` mode.
+- **Authentication.** `platform_key_pop`: the platform makes its own Ed25519 key and signs an RFC 9449 DPoP proof on every privileged request; the key's thumbprint is its identity. The proof must be for the **public** URL (`baseUrl` plus route), not the one a proxy forwards. Booking-scoped credentials are bound to that key (`cnf.jkt`), kept only as a hash, and never accepted as bearer tokens. A platform can only reach holds and bookings it created. A key is tied to the profile it first presented (trust on first use, per business).
+- **Extensions on USP's open objects:** `sh.openbooking.suggested_next_action` on messages and problem details, and `sh.openbooking.cancellation_terms` on a booking (what cancelling costs right now).
+- **Deposits are not offered.** Slots that need an online deposit are left out of availability and refused on booking: the payment flow is not built, and a platform must not be led into a dead end.
+- **Gaps:** the platform profile is recorded but not fetched; no MCP binding, HTTP message signatures, nonce challenge or ES256 yet.
+- **Open upstream:** `range_too_wide` is 400 in the error registry (9.4.3) but 422 in the availability prose (we follow the registry); no code for an unknown hold id on release (we use `booking_not_found`).

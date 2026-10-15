@@ -58,7 +58,8 @@ export class MemoryUspState implements UspStateStore {
     return this.#bookings.has(bookingId);
   }
   async saveCredential(credential: PopCredential) {
-    this.#credentials.set(credential.hash, credential);
+    // Never overwrite: a stored credential's scope and key binding must not be changeable.
+    if (!this.#credentials.has(credential.hash)) this.#credentials.set(credential.hash, credential);
   }
   async findCredential(hash: string) {
     return this.#credentials.get(hash);
@@ -84,4 +85,24 @@ export class MemoryUspState implements UspStateStore {
     this.#keys.set(scopedKey, fingerprint);
     return true;
   }
+}
+
+/**
+ * One state store shared by several businesses (hosted OpenBooking), kept apart: a platform that
+ * reuses an Idempotency-Key or a proof id at two businesses must not collide, and each business
+ * does its own trust-on-first-use of a platform's key. Booking ids and credential hashes are
+ * random and unique already, so owners and credentials need no scoping.
+ */
+export function scopeUspState(state: UspStateStore, scope: string): UspStateStore {
+  return {
+    claim: (id, principal) => state.claim(id, principal),
+    ownerOf: (id) => state.ownerOf(id),
+    markBooking: (id) => state.markBooking(id),
+    isBooking: (id) => state.isBooking(id),
+    checkKey: (key, fingerprint) => state.checkKey(`${scope}:${key}`, fingerprint),
+    saveCredential: (credential) => state.saveCredential(credential),
+    findCredential: (hash) => state.findCredential(hash),
+    seenJti: (jti, ttlMs) => state.seenJti(`${scope}:${jti}`, ttlMs),
+    bindProfile: (jkt, profileUri) => state.bindProfile(`${scope}:${jkt}`, profileUri),
+  };
 }

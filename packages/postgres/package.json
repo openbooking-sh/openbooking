@@ -76,9 +76,11 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@openbooking-sh/provider-calcom": "workspace:^",
-    "@openbooking-sh/hosted": "workspace:^",
+    "@openbooking-sh/adapter-usp": "workspace:^",
     "@openbooking-sh/google-calendar": "workspace:^",
-    "@openbooking-sh/notifications": "workspace:^"
+    "@openbooking-sh/hosted": "workspace:^",
+    "@openbooking-sh/notifications": "workspace:^",
+    "@openbooking-sh/provider-calcom": "workspace:^",
+    "hono": "^4.13.12"
   }
 }

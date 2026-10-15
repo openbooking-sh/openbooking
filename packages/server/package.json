@@ -51,16 +51,18 @@
     "@openbooking-sh/adapter-a2a": "workspace:^",
     "@openbooking-sh/adapter-mcp": "workspace:^",
     "@openbooking-sh/adapter-ucp": "workspace:^",
+    "@openbooking-sh/adapter-usp": "workspace:^",
+    "@openbooking-sh/booking-page": "workspace:^",
     "@openbooking-sh/core": "workspace:^",
-    "hono": "^4.13.12",
     "@openbooking-sh/studio": "workspace:^",
-    "@openbooking-sh/booking-page": "workspace:^"
+    "hono": "^4.13.12"
   },
   "publishConfig": {
     "access": "public"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "@openbooking-sh/provider-memory": "workspace:^"
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "jose": "^6.2.12"
   }
 }

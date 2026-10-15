@@ -1,7 +1,7 @@
 /**
  * Best-effort identification of which AI assistant is calling, from what clients report about
  * themselves: MCP `clientInfo.name` (every request in the 2026-07-28 era via `_meta`, only on
- * `initialize` in the 2025 era), the HTTP `User-Agent`, or a UCP `UCP-Agent` profile URL.
+ * `initialize` in the 2025 era), the HTTP `User-Agent`, a UCP `UCP-Agent` or USP `USP-Agent` profile URL.
  *
  * This is self-reported and spoofable: fine for analytics, never for authorization.
  */
@@ -43,7 +43,7 @@ function mcpClientName(body: unknown): string | undefined {
   return undefined;
 }
 
-function ucpAgentHost(header: string | null): string | undefined {
+function agentProfileHost(header: string | null): string | undefined {
   const m = header?.match(/profile="([^"]+)"/);
   if (!m?.[1]) return undefined;
   try {
@@ -64,7 +64,8 @@ export async function actorFromRequest(req: Request, protocol: Actor['protocol']
       // not JSON; fall back to headers
     }
   }
-  if (protocol === 'ucp') client = ucpAgentHost(req.headers.get('ucp-agent'));
+  if (protocol === 'ucp') client = agentProfileHost(req.headers.get('ucp-agent'));
+  if (protocol === 'usp') client = agentProfileHost(req.headers.get('usp-agent'));
   const raw = client ?? ua;
   const ip = clientIpFromHeaders(req.headers);
   return {

@@ -4,6 +4,7 @@ export { toService, toTimeSlot, openingHours, isoDuration, type ServiceDetails }
 export * from './constants';
 export type { UspAuthenticator, UspBusinessAuth, UspIssuedCredential, UspPrincipal } from './auth';
 export { createPopAuthenticator, parseAgentHeader, type PopAuthenticatorOptions } from './pop-auth';
-export { MemoryUspState, type UspStateStore } from './state';
+export { MemoryUspState, scopeUspState, type UspStateStore } from './state';
+export { createUsp, type Usp, type UspOptions, type UspProfile } from './usp';
 export { ProtocolError } from './protocol';
 export { CONFIRMATION_ACTION, type ConsentMode } from './booking-mapping';

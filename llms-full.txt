@@ -362,19 +362,19 @@ await listen(app, { port: 3000 });
 // MCP at /mcp · booking page at /book · Studio at /studio · UCP at /.well-known/ucp
 ```
 
-| Package                                                                                                                             | What it is                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`@openbooking-sh/core`](packages/core)                                                                                             | The engine and the `BookingProvider` interface                           |
-| [`@openbooking-sh/server`](packages/server)                                                                                         | One app for MCP, UCP, A2A, booking page and Studio                       |
-| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                       | Configured provider (services, staff, hours, rules) on a pluggable store |
-| [`@openbooking-sh/postgres`](packages/postgres)                                                                                     | Postgres storage for everything                                          |
-| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                             | Booking page, embed snippet and WebMCP                                   |
-| [`@openbooking-sh/studio`](packages/studio)                                                                                         | Dashboard for the business                                               |
-| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
-| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                       | Cal.com connector (beta)                                                 |
-| [`@openbooking-sh/conformance`](packages/conformance)                                                                               | Test suite that proves your `BookingProvider` never double-books         |
-| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
-| [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
+| Package                                                                                                                                                                    | What it is                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`@openbooking-sh/core`](packages/core)                                                                                                                                    | The engine and the `BookingProvider` interface                           |
+| [`@openbooking-sh/server`](packages/server)                                                                                                                                | One app for MCP, UCP, A2A, booking page and Studio                       |
+| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                                                              | Configured provider (services, staff, hours, rules) on a pluggable store |
+| [`@openbooking-sh/postgres`](packages/postgres)                                                                                                                            | Postgres storage for everything                                          |
+| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                                                                    | Booking page, embed snippet and WebMCP                                   |
+| [`@openbooking-sh/studio`](packages/studio)                                                                                                                                | Dashboard for the business                                               |
+| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-usp`](packages/adapter-usp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
+| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                                                              | Cal.com connector (beta)                                                 |
+| [`@openbooking-sh/conformance`](packages/conformance)                                                                                                                      | Test suite that proves your `BookingProvider` never double-books         |
+| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                                                                   | Emails with .ics, Google Calendar sync                                   |
+| [`@openbooking-sh/hosted`](packages/hosted)                                                                                                                                | Multi-business hosting (what runs app.openbooking.sh)                    |
 
 **More:** [recipes](docs/RECIPES.md) (Postgres, Vercel, website snippet, your own booking system) · [docs for AI coding tools](llms.txt) · [contributing](CONTRIBUTING.md)
 
@@ -635,6 +635,7 @@ packages/
   create-openbooking/  npx create-openbooking: a ready-to-run booking backend
   adapter-mcp/      MCP tools (Streamable HTTP + stdio)
   adapter-ucp/      UCP discovery + booking sessions (draft)
+  adapter-usp/      USP profile, catalog, availability, holds and bookings (draft)
   adapter-a2a/      A2A Agent Card + SendMessage endpoint
   studio/           OpenBooking Studio dashboard (/studio), incl. business settings
   booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
@@ -762,6 +763,43 @@ Apache-2.0
 
 ---
 
+<!-- @openbooking-sh/adapter-usp (packages/adapter-usp/README.md) -->
+
+# @openbooking-sh/adapter-usp
+
+**Universal Scheduling Protocol (draft).** Exposes a `BookingService` over the Universal Scheduling Protocol (USP), the draft standard from Wix and Stripe that lets any platform or AI assistant discover and book a business: the profile at `/.well-known/usp`, the catalog, availability, holds and bookings over REST. Platforms sign in with a key they make themselves (no accounts), and each business chooses how a booking becomes real: the customer confirms on a page (default), or the assistant books immediately. Follows a draft spec and may change with it. Most apps use it through `@openbooking-sh/server` (`usp: {}`) or hosted OpenBooking.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/adapter-usp
+```
+
+## Usage
+
+```ts
+import { createUsp } from '@openbooking-sh/adapter-usp';
+
+const usp = createUsp({
+  service,
+  baseUrl: 'https://bistro.example.com', // the public address platforms sign
+  continueUrl: (b) => bookingPage.confirmUrl(b), // where the customer confirms a held booking
+  state: postgresStores(db).usp, // shared by every instance when you run more than one
+});
+
+app.route(usp.path, usp.router);
+app.get('/.well-known/usp', async (c) => c.json(await usp.profile()));
+```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
 <!-- @openbooking-sh/booking-page (packages/booking-page/README.md) -->
 
 # @openbooking-sh/booking-page
@@ -853,8 +891,14 @@ import { BookingService } from '@openbooking-sh/core';
 
 const service = new BookingService({ provider: myProvider });
 
-const { slots } = await service.searchAvailability({ date: '2026-10-09', party_size: { total: 1 } });
-const hold = await service.hold({ slot_id: slots[0].slot_id, idempotency_key: crypto.randomUUID() });
+const { slots } = await service.searchAvailability({
+  date: '2026-10-09',
+  party_size: { total: 1 },
+});
+const hold = await service.hold({
+  slot_id: slots[0].slot_id,
+  idempotency_key: crypto.randomUUID(),
+});
 const booking = await service.confirm({
   booking_id: hold.booking_id,
   idempotency_key: crypto.randomUUID(),
@@ -922,7 +966,12 @@ npm install @openbooking-sh/google-calendar
 ## Usage
 
 ```ts
-import { googleAuthUrl, exchangeCode, attachCalendarSync, googleBusySource } from '@openbooking-sh/google-calendar';
+import {
+  googleAuthUrl,
+  exchangeCode,
+  attachCalendarSync,
+  googleBusySource,
+} from '@openbooking-sh/google-calendar';
 ```
 
 See `@openbooking-sh/hosted` for a complete wiring.
@@ -1315,6 +1364,7 @@ The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mappin
 
 - **Postgres.** `@openbooking-sh/postgres` makes everything durable and safe across instances. `PostgresBookingStore` reserves under a transaction-scoped advisory lock per venue resource (check overlap, then insert), so overlapping holds can never both commit. Updates take the same lock, and a confirm that turns blocking re-checks for overlaps: a late confirm whose hold lapsed and was re-booked fails with `hold_expired` instead of double-booking. Expiry is applied on read, so no sweeper job is needed. Run `migrate(db)` on start (idempotent, lock-serialised).
 - **Idempotency store.** `PostgresIdempotencyStore` (or your own `IdempotencyStore` on Redis/SQL) as `serviceOptions.idempotencyStore`. The in-flight dedupe is per process. Across instances, two simultaneous first calls with one key can both run; inventory stays safe through the atomic store, and the later record wins.
+- **USP state.** The USP adapter (`@openbooking-sh/adapter-usp`, in progress) remembers who owns each hold, booking credentials (by hash), proofs it has already seen, and what request each `Idempotency-Key` was first used for. In memory by default, which is fine for one process. With more than one instance (serverless), pass `postgresStores(db).usp` as `createUspRouter({ state })`: otherwise a credential issued by one instance is unknown to the others and a replayed proof is caught by only one. Each check-and-record is one atomic statement, so two instances racing on the same proof or key cannot both win.
 - **Clock.** Inject a `Clock` for tests and simulations (`ManualClock`, the bench's `OffsetClock`).
 - **MCP.** `createMcpHandler` is stateless, so any instance can serve any request. Set `allowedHosts` to your public hostnames.
 
@@ -1343,17 +1393,18 @@ pnpm dev:hosted     # seeds "Studio Nord"; Studio login demo@openbooking.sh / op
 
 ## Routes
 
-| Path                                                          | What                                                                                                         |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 7-day signed session token, revoked by logout or a password reset) |
-| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                                    |
-| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id`             |
-| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                                |
-| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                                   |
-| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), `llms.txt`                                  |
-| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                              |
-| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                                        |
-| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                                   |
+| Path                                                          | What                                                                                                                   |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET /signup`, `POST /api/signup`, `POST /api/login`          | Owner accounts (email + password, scrypt; 7-day signed session token, revoked by logout or a password reset)           |
+| `GET /studio`, `/studio/api/*`                                | Studio for the logged-in business, including **Settings**                                                              |
+| `ALL /mcp`                                                    | **The OpenBooking app**: `find_business` plus the seven booking tools, each taking `business_id`                       |
+| `/b/{id}`                                                     | The business: booking page for browsers, JSON index otherwise                                                          |
+| `/b/{id}/mcp`, `/b/{id}/ucp/*`, `/b/{id}/.well-known/*`       | Per-business MCP, UCP and A2A card (same as a self-hosted single business)                                             |
+| `/b/{id}/book/*`                                              | Booking page API, manage links (`/book/manage/{booking}?code=`), confirm links (`/book/confirm/{booking}`), `llms.txt` |
+| `/b/{id}/usp/*`, `/b/{id}/.well-known/usp`                    | USP, when the owner turned it on (see below)                                                                           |
+| `GET /b/{id}/embed.js`                                        | The website snippet (see below)                                                                                        |
+| `GET /reset`, `POST /api/password/*`, `GET /api/verify-email` | Password reset and email confirmation                                                                                  |
+| `GET /oauth/google/callback`                                  | Google Calendar connection                                                                                             |
 
 `{id}` is the business's URL name (`studio-nord`), fixed at sign-up, and is also its
 `business_id` and the venue id on its bookings.
@@ -1455,6 +1506,25 @@ only ever shows its last four characters.
 
 The Stripe key sits in the business record as-is, like the Google tokens (not exported, not shown).
 
+## Assistants booking through USP
+
+USP is a draft standard from Wix and Stripe that lets any assistant or platform discover and book a
+business, signing in with a key it makes itself (no accounts). It is **off** for every business until the
+owner turns it on in Studio → Settings → AI assistants, where they also choose how bookings happen:
+
+- **The customer confirms on a page** (recommended): the assistant holds a time and gets a link to
+  `/b/{id}/book/confirm/{booking}`. The customer sees the time, price and cancellation terms and
+  confirms there; nothing is booked before.
+- **The assistant books immediately:** its request confirms the booking, trusting that it asked the
+  customer first.
+
+The business's profile is at `/b/{id}/.well-known/usp` (there is no profile at the root, because
+the root is not one business). Businesses saved before the setting existed have no `assistants`
+block and count as off. For several instances or serverless, pass `uspState` (`postgresStores(db).usp`,
+which the Vercel entry does when `DATABASE_URL` is set): it holds owners, credentials and replay
+protection, shared by every instance and kept apart per business. Protocol details are in
+[SPEC-NOTES.md](SPEC-NOTES.md#6-usp-universal-scheduling-protocol-draft).
+
 ## Emails
 
 Set `RESEND_API_KEY` (and `MAIL_FROM`, default `bookings@openbooking.sh`, which must be a verified
@@ -1482,15 +1552,16 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 Everything stateful sits behind an interface with an in-memory default, and `@openbooking-sh/postgres`
 implements all of them. `postgresStores(db)` returns them ready to pass to `createHostedApp`:
 
-| Option            | Interface             | Postgres                    | Notes                                                  |
-| ----------------- | --------------------- | --------------------------- | ------------------------------------------------------ |
-| `businesses`      | `BusinessStore`       | `PostgresBusinessStore`     | JSON record; unique id and lower-cased owner email.    |
-| `bookings`        | `BookingRecordStore`  | `PostgresBookingStore`      | One store for all businesses (venue id = business id). |
-| `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.     |
-| `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                              |
-| `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.          |
-| `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                             |
-| `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                |
+| Option            | Interface             | Postgres                    | Notes                                                        |
+| ----------------- | --------------------- | --------------------------- | ------------------------------------------------------------ |
+| `businesses`      | `BusinessStore`       | `PostgresBusinessStore`     | JSON record; unique id and lower-cased owner email.          |
+| `bookings`        | `BookingRecordStore`  | `PostgresBookingStore`      | One store for all businesses (venue id = business id).       |
+| `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.           |
+| `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                                    |
+| `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.                |
+| `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                                   |
+| `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                      |
+| `uspState`        | `UspStateStore`       | `PostgresUspState`          | USP owners, credentials, replay memory; scoped per business. |
 
 With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) and `pnpm dev:hosted` use all
 of them and create the tables on start.

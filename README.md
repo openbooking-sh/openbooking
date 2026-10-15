@@ -45,19 +45,19 @@ await listen(app, { port: 3000 });
 // MCP at /mcp · booking page at /book · Studio at /studio · UCP at /.well-known/ucp
 ```
 
-| Package                                                                                                                             | What it is                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`@openbooking-sh/core`](packages/core)                                                                                             | The engine and the `BookingProvider` interface                           |
-| [`@openbooking-sh/server`](packages/server)                                                                                         | One app for MCP, UCP, A2A, booking page and Studio                       |
-| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                       | Configured provider (services, staff, hours, rules) on a pluggable store |
-| [`@openbooking-sh/postgres`](packages/postgres)                                                                                     | Postgres storage for everything                                          |
-| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                             | Booking page, embed snippet and WebMCP                                   |
-| [`@openbooking-sh/studio`](packages/studio)                                                                                         | Dashboard for the business                                               |
-| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
-| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                       | Cal.com connector (beta)                                                 |
-| [`@openbooking-sh/conformance`](packages/conformance)                                                                               | Test suite that proves your `BookingProvider` never double-books         |
-| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                            | Emails with .ics, Google Calendar sync                                   |
-| [`@openbooking-sh/hosted`](packages/hosted)                                                                                         | Multi-business hosting (what runs app.openbooking.sh)                    |
+| Package                                                                                                                                                                    | What it is                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`@openbooking-sh/core`](packages/core)                                                                                                                                    | The engine and the `BookingProvider` interface                           |
+| [`@openbooking-sh/server`](packages/server)                                                                                                                                | One app for MCP, UCP, A2A, booking page and Studio                       |
+| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                                                              | Configured provider (services, staff, hours, rules) on a pluggable store |
+| [`@openbooking-sh/postgres`](packages/postgres)                                                                                                                            | Postgres storage for everything                                          |
+| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                                                                    | Booking page, embed snippet and WebMCP                                   |
+| [`@openbooking-sh/studio`](packages/studio)                                                                                                                                | Dashboard for the business                                               |
+| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-usp`](packages/adapter-usp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
+| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                                                              | Cal.com connector (beta)                                                 |
+| [`@openbooking-sh/conformance`](packages/conformance)                                                                                                                      | Test suite that proves your `BookingProvider` never double-books         |
+| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                                                                   | Emails with .ics, Google Calendar sync                                   |
+| [`@openbooking-sh/hosted`](packages/hosted)                                                                                                                                | Multi-business hosting (what runs app.openbooking.sh)                    |
 
 **More:** [recipes](docs/RECIPES.md) (Postgres, Vercel, website snippet, your own booking system) · [docs for AI coding tools](llms.txt) · [contributing](CONTRIBUTING.md)
 
@@ -318,6 +318,7 @@ packages/
   create-openbooking/  npx create-openbooking: a ready-to-run booking backend
   adapter-mcp/      MCP tools (Streamable HTTP + stdio)
   adapter-ucp/      UCP discovery + booking sessions (draft)
+  adapter-usp/      USP profile, catalog, availability, holds and bookings (draft)
   adapter-a2a/      A2A Agent Card + SendMessage endpoint
   studio/           OpenBooking Studio dashboard (/studio), incl. business settings
   booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
