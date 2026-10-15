@@ -426,3 +426,93 @@ describe('embed.js (website snippet)', () => {
     expect(pre.headers.get('access-control-allow-headers')).toContain('x-openbooking-agent');
   });
 });
+
+describe('confirm page (a booking an assistant is holding)', () => {
+  async function held(t: ReturnType<typeof setup>) {
+    const { body } = await t.get(`/api/availability?date=${DATE}&service=haircut&staff=maria`);
+    const hold = await t.post('/api/hold', {
+      slot_id: body.slots[0].slot_id,
+      idempotency_key: 'assistant-hold-1',
+    });
+    return hold.body.booking as { booking_id: string };
+  }
+
+  it('serves a private page and links to it', async () => {
+    const t = setup();
+    const b = await held(t);
+    const res = await t.page.app.request(`/confirm/${b.booking_id}`);
+    const html = await res.text();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(html).toContain('noindex');
+    expect(html).toContain('Nothing is booked until you confirm it here');
+
+    const booking = await t.service.getBooking(b.booking_id);
+    expect(t.page.confirmUrl(booking)).toBe(`${BASE}/book/confirm/${b.booking_id}`);
+  });
+
+  it('shows the terms of a hold, and opening the page or the API confirms nothing', async () => {
+    const t = setup();
+    const b = await held(t);
+    await t.page.app.request(`/confirm/${b.booking_id}`);
+    const res = await t.get(`/api/holds/${b.booking_id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.booking).toMatchObject({
+      booking_id: b.booking_id,
+      status: 'held',
+      offering: { id: 'haircut' },
+      cancellation_policy: { description: expect.any(String) },
+    });
+    expect(res.body.booking.expires_at).toBeTruthy();
+    // Looking is not consent: the booking is still only held.
+    expect((await t.service.getBooking(b.booking_id)).status).toBe('held');
+  });
+
+  it('confirms only through the explicit consent call, then reveals no code or name', async () => {
+    const t = setup();
+    const b = await held(t);
+    // Customer details come from whoever created the hold (here: a USP buyer).
+    await t.service.update({ booking_id: b.booking_id, idempotency_key: 'details-1', customer });
+
+    const refused = await t.post('/api/confirm', {
+      booking_id: b.booking_id,
+      idempotency_key: 'confirm-page-1',
+    });
+    expect(refused.body.error.code).toBe('user_confirmation_required');
+    expect((await t.service.getBooking(b.booking_id)).status).toBe('held');
+
+    const ok = await t.post('/api/confirm', {
+      booking_id: b.booking_id,
+      idempotency_key: 'confirm-page-1',
+      user_confirmed: true,
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.body.booking.status).toBe('confirmed');
+    expect(ok.body.booking.confirmation_code).toBeTruthy();
+
+    const after = await t.get(`/api/holds/${b.booking_id}`);
+    expect(after.body.booking.status).toBe('confirmed');
+    expect(JSON.stringify(after.body)).not.toContain(ok.body.booking.confirmation_code);
+    expect(JSON.stringify(after.body)).not.toContain('Ada');
+  });
+
+  it('reports a hold that ran out, and an unknown id', async () => {
+    const t = setup();
+    const b = await held(t);
+    t.clock.advance(60 * 60 * 1000);
+    const expired = await t.get(`/api/holds/${b.booking_id}`);
+    expect(expired.body.booking.status).toBe('expired');
+
+    const unknown = await t.get('/api/holds/bk_doesnotexist');
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error.code).toBe('not_found');
+  });
+
+  it('ships a client script that parses', async () => {
+    const { CONFIRM_SCRIPT } = await import('../src/client');
+    expect(() => new Function(CONFIRM_SCRIPT)).not.toThrow();
+    expect(CONFIRM_SCRIPT).not.toContain('`');
+    expect(CONFIRM_SCRIPT).not.toContain('${');
+  });
+});

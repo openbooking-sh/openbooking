@@ -1,10 +1,10 @@
 /**
- * Server-side HTML for the booking page and the manage page. Every dynamic value is HTML-escaped
+ * Server-side HTML for the booking page, the manage page and the confirm page. Every dynamic value is HTML-escaped
  * (business names and descriptions are user-entered); data for the client script is injected as
  * JSON with `<` escaped so it can never close the script element.
  */
 import type { Offering, Venue } from '@openbooking-sh/core';
-import { MANAGE_SCRIPT, PAGE_SCRIPT } from './client';
+import { CONFIRM_SCRIPT, MANAGE_SCRIPT, PAGE_SCRIPT } from './client';
 
 export interface PageProfile {
   /** e.g. 'hair_salon' | 'barber' | 'physiotherapist' | 'therapist' | 'personal_trainer' | 'tutor', or free text. */
@@ -385,6 +385,39 @@ ${venueHeader(v, m.profile)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
 <script>${MANAGE_SCRIPT}</script>
+</body>
+</html>`;
+}
+
+/**
+ * The page a person lands on from an assistant's "confirm" link: it shows a booking an assistant
+ * reserved (the hold, with its terms) and confirms it only when the person presses the button.
+ */
+export function renderConfirm(m: {
+  venue: Venue;
+  profile: PageProfile;
+  pageUrl: string;
+  apiPath: string;
+}): string {
+  const v = m.venue;
+  const data = { api_path: m.apiPath, page_url: m.pageUrl, venue: { timezone: v.timezone } };
+  return `${head(`Confirm your booking · ${v.name}`, `Review and confirm a booking at ${v.name}.`, m.pageUrl, '<meta name="robots" content="noindex" />')}
+<body>
+<div class="wrap">
+${venueHeader(v, m.profile)}
+<section class="card">
+  <h2 id="title">Confirm your booking</h2>
+  <p class="muted" id="lead">An assistant reserved this time for you. Nothing is booked until you confirm it here.</p>
+  <div id="body" class="muted">Loading…</div>
+  <div class="warn hidden" id="terms"></div>
+  <div class="err" id="err" role="alert"></div>
+  <button class="btn btn-primary hidden" id="confirm">Confirm booking</button>
+</section>
+<p style="margin-top:16px"><a href="${esc(m.pageUrl)}" style="color:var(--royal)">Make a new booking</a></p>
+<footer>Bookings by <a href="https://openbooking.sh" target="_blank" rel="noopener">OpenBooking</a></footer>
+</div>
+<script type="application/json" id="ob-data">${scriptJson(data)}</script>
+<script>${CONFIRM_SCRIPT}</script>
 </body>
 </html>`;
 }
