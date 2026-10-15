@@ -6,7 +6,10 @@ const root = new URL('..', import.meta.url);
 const read = (p) => readFileSync(new URL(p, root), 'utf8').trim();
 const raw = 'https://raw.githubusercontent.com/openbooking-sh/openbooking/main';
 const gh = 'https://github.com/openbooking-sh/openbooking/blob/main';
-const packages = readdirSync(new URL('packages', root)).sort();
+// Private packages are not on npm, so AI tools have nothing to install: leave them out.
+const packages = readdirSync(new URL('packages', root))
+  .sort()
+  .filter((p) => !JSON.parse(read(`packages/${p}/package.json`)).private);
 
 const summary =
   '> OpenBooking is an open-source TypeScript SDK and booking backend that makes any website or booking platform bookable by AI assistants (Claude, ChatGPT, Gemini, AI browsers) through MCP, WebMCP and UCP. It enforces agent safety: holds that expire, idempotent retries that never double-book, explicit customer consent, and cancellation terms shown before booking. Packages are published on npm as @openbooking-sh/*.';

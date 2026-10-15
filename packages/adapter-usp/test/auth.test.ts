@@ -2,8 +2,6 @@
  * Platform authentication over REST with real keys: Ed25519 DPoP proofs, booking-scoped
  * credentials bound to the caller's key, replay defence and the key-to-profile binding.
  */
-import { createHash } from 'node:crypto';
-import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { describe, expect, it } from 'vitest';
 import { BookingService, ManualClock } from '@openbooking-sh/core';
 import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
@@ -15,11 +13,11 @@ import {
   MemoryUspState,
   USP_AUTHORITY,
 } from '../src';
+import { b64, ORIGIN, platform, type Platform, type World } from './platform';
 import { problemErrors, profileErrors } from './spec';
 
 const NOW = '2026-10-01T08:00:00Z';
 const FAR = '2026-10-16';
-const ORIGIN = 'https://studio.example';
 const BUYER = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 const type = (slug: string) => `${USP_AUTHORITY}/errors/${slug}`;
 
@@ -45,86 +43,6 @@ function setup(options: { checkProfile?: (uri: string) => Promise<void> } = {}) 
   );
   return { clock, service, state, auth, app };
 }
-
-type World = ReturnType<typeof setup>;
-
-const b64 = (s: string) => createHash('sha256').update(s).digest('base64url');
-
-/** A platform: its own key pair, its profile URL, and a way to make signed requests. */
-async function platform(w: World, profile = 'https://agent.example/profile.json') {
-  const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
-    crv: 'Ed25519',
-    extractable: true,
-  });
-  const jwk = await exportJWK(publicKey);
-  const jkt = await calculateJwkThumbprint(jwk);
-  let n = 0;
-
-  /** A proof for this exact request; every field can be overridden to build a bad one. */
-  const proof = async (
-    method: string,
-    path: string,
-    extra: {
-      credential?: string;
-      iat?: number;
-      jti?: string;
-      htm?: string;
-      htu?: string;
-      ath?: string;
-      key?: Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
-      jwk?: typeof jwk;
-    } = {},
-  ) =>
-    new SignJWT({
-      htm: extra.htm ?? method,
-      htu: extra.htu ?? `${ORIGIN}${path}`,
-      iat: extra.iat ?? Math.floor(w.clock.now().getTime() / 1000),
-      jti: extra.jti ?? `jti-${jkt.slice(0, 6)}-${++n}`,
-      ...(extra.credential !== undefined || extra.ath
-        ? { ath: extra.ath ?? b64(extra.credential!) }
-        : {}),
-    })
-      .setProtectedHeader({ alg: 'EdDSA', typ: 'dpop+jwt', jwk: extra.jwk ?? jwk })
-      .sign(extra.key ?? privateKey);
-
-  const call = async (
-    method: string,
-    path: string,
-    body?: unknown,
-    opts: {
-      credential?: string;
-      scheme?: string;
-      headers?: Record<string, string>;
-      proofOptions?: Parameters<typeof proof>[2];
-      noProof?: boolean;
-      noAgent?: boolean;
-    } = {},
-  ) => {
-    const full = `/usp${path}`;
-    const headers: Record<string, string> = {
-      'content-type': 'application/json',
-      ...(opts.noAgent ? {} : { 'usp-agent': `profile="${profile}"` }),
-      ...(opts.credential ? { authorization: `${opts.scheme ?? 'DPoP'} ${opts.credential}` } : {}),
-      ...opts.headers,
-    };
-    if (!opts.noProof) {
-      headers.dpop = await proof(method, full, {
-        ...(opts.credential ? { credential: opts.credential } : {}),
-        ...opts.proofOptions,
-      });
-    }
-    const res = await w.app.request(full, {
-      method,
-      headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    return { status: res.status, headers: res.headers, json: (await res.json()) as any };
-  };
-
-  return { jkt, jwk, privateKey, proof, call };
-}
-
-type Platform = Awaited<ReturnType<typeof platform>>;
 
 async function firstSlot(w: World, date = FAR) {
   const res = await w.app.request('/usp/availability/query', {

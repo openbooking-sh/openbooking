@@ -58,7 +58,8 @@ export class MemoryUspState implements UspStateStore {
     return this.#bookings.has(bookingId);
   }
   async saveCredential(credential: PopCredential) {
-    this.#credentials.set(credential.hash, credential);
+    // Never overwrite: a stored credential's scope and key binding must not be changeable.
+    if (!this.#credentials.has(credential.hash)) this.#credentials.set(credential.hash, credential);
   }
   async findCredential(hash: string) {
     return this.#credentials.get(hash);
