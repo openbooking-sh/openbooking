@@ -1,0 +1,30 @@
+{
+  "id": "011-crv-substitution",
+  "section": "10.1.6",
+  "requirement": "identity-canonicalization",
+  "binding": [
+    "rest",
+    "mcp"
+  ],
+  "expect": "reject",
+  "reject_code": "pop_proof_invalid",
+  "http_status": 401,
+  "notes": "K1's own key bytes, re-labelled crv: X448. The signature is genuine and verifies against the header jwk, so a verifier that checks alg, x and the signature accepts it — but the RFC 7638 thumbprint covers crv, so this presents as jkt LSW0kh4cLacreaP4NBygAooc93xMkuIWsIpSItExAkQ while the same key at 004-proof-issuance-no-ath presents as UDDReOZl1ipXAfp9wYsm13sDBMK5og--QWdBjzuf6o4. Since the thumbprint IS the platform identifier, that hands one key several identities: a principal already rejected by the trust-on-first-use binding re-presents under another crv and binds cleanly as a first contact, and any per-jkt flag or rate limit is escaped by editing one header member. Reject on the curve, before the thumbprint is computed. X25519 and X448 are also key-agreement keys, which RFC 8037 Section 3.1 forbids for signing. Widely used JOSE libraries accept an OKP jwk whose crv is any of Ed25519, Ed448, X25519 or X448 without checking x's length against it, which is what makes this reachable rather than theoretical; a library strict enough to refuse at parse also passes this vector, since the outcome is the same rejection.",
+  "key": {
+    "jwk": {
+      "crv": "X448",
+      "kty": "OKP",
+      "x": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w"
+    },
+    "jkt": "LSW0kh4cLacreaP4NBygAooc93xMkuIWsIpSItExAkQ",
+    "private_key_d": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+  },
+  "proof": "eyJhbGciOiJFZERTQSIsImp3ayI6eyJjcnYiOiJYNDQ4Iiwia3R5IjoiT0tQIiwieCI6ImlvamozWFFKOFpYOVV0c3RQTHBkY3NwbkNiOGRsQkliODNTSUFiUVBiMXcifSwidHlwIjoidXNwLXBvcCtqd3QifQ.eyJhdWQiOiJodHRwczovL2J1c2luZXNzLmV4YW1wbGUuY29tLy53ZWxsLWtub3duL3VzcCIsImlhdCI6MTc4OTIwMDAwMCwianRpIjoiMDFIWlhLOVQ0UjhRVzJWTjZZME0zUEI1Q0ciLCJ1c3BfbSI6InVzcF9ib29raW5nc19jcmVhdGUiLCJ1c3BfcCI6IldEeFNmUDQ4UjhlbTRrOE90dFVJbEhvZXNoSkFmX3ZMWmhmNGgzVFJPQ28ifQ.PfD4xIvbaSZzqQWWQe_OHBZA3MTT_kj1LVHXD0AMo0AlkJ9ni9fmyzW4dk1kKWI6lBiOf8aof7iyb1fe-qMTDw",
+  "expected_claims": {
+    "usp_m": "usp_bookings_create",
+    "aud": "https://business.example.com/.well-known/usp",
+    "usp_p": "WDxSfP48R8em4k8OttUIlHoeshJAf_vLZhf4h3TROCo",
+    "iat": 1789200000,
+    "jti": "01HZXK9T4R8QW2VN6Y0M3PB5CG"
+  }
+}

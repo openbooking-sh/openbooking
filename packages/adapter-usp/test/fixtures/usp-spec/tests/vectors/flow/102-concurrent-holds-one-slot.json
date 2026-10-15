@@ -1,0 +1,85 @@
+{
+  "id": "102-concurrent-holds-one-slot",
+  "section": "4.2",
+  "requirement": "hold-concurrency",
+  "kind": "flow",
+  "expect": "reject",
+  "outcome_code": "slot_unavailable",
+  "notes": "Two platforms race for the last capacity unit of a group slot. capacity.remaining is 1 and each requests spots: 1, so both requests look individually satisfiable against a stale read. The rule that makes this decidable is that capacity.remaining decrements at hold creation, not at booking creation, so the second hold has nothing left to reserve. An implementation that decrements only on booking accepts both holds and oversells the slot.",
+  "given": {
+    "service": {
+      "id": "svc_yoga_002",
+      "type": "group",
+      "requires_payment": false,
+      "confirmation_mode": "auto",
+      "capacity": { "max": 12 }
+    },
+    "slot": {
+      "id": "slot_20260320_0900",
+      "start": "2026-03-20T09:00:00-04:00",
+      "end": "2026-03-20T10:00:00-04:00",
+      "capacity": { "total": 12, "remaining": 1, "held": 0 }
+    }
+  },
+  "when": [
+    {
+      "at": "2026-03-19T12:00:00.000Z",
+      "step": "hold_slot",
+      "actor": "platform_a",
+      "with": { "slot_id": "slot_20260320_0900", "spots": 1 },
+      "result": {
+        "accepted": true,
+        "hold_id": "hold_a",
+        "status": "active",
+        "slot_capacity_remaining_after": 0
+      }
+    },
+    {
+      "at": "2026-03-19T12:00:00.010Z",
+      "step": "hold_slot",
+      "actor": "platform_b",
+      "with": { "slot_id": "slot_20260320_0900", "spots": 1 },
+      "notes": "Platform B read capacity.remaining as 1 before platform A's hold landed."
+    }
+  ],
+  "then": {
+    "accepted": false,
+    "outcome_code": "slot_unavailable",
+    "http_status": 200,
+    "hold_created": false,
+    "slot_capacity_remaining": 0,
+    "held": 1,
+    "active_holds": ["hold_a"],
+    "platform_may_retry": false,
+    "retry_guidance": "Re-query availability. The slot is full while hold_a is active; it becomes bookable again only if hold_a expires or is released."
+  },
+  "variants": [
+    {
+      "case": "appointment type, second hold on the same slot",
+      "outcome_code": "slot_unavailable",
+      "why": "An appointment slot is a single bookable unit, so at most one active hold exists regardless of capacity fields."
+    },
+    {
+      "case": "platform_b requests spots: 2 while remaining is 3",
+      "accepted": true,
+      "why": "group and reservation types permit concurrent holds up to remaining capacity."
+    },
+    {
+      "case": "hold_a expires, then platform_b retries",
+      "accepted": true,
+      "why": "Expiry restores capacity.remaining to 1."
+    }
+  ],
+  "wrong_answers": [
+    {
+      "behaviour": "accept both holds and reject the second booking instead",
+      "violates": "4.2 concurrent holds",
+      "why": "Defers the conflict to after the buyer has entered details or payment, which is precisely what holds exist to prevent."
+    },
+    {
+      "behaviour": "return capacity_exceeded",
+      "violates": "4.2 concurrent holds",
+      "why": "capacity_exceeded means the request asked for more spots than the hold or slot allows. Here the request was for one spot and the slot had none left, which is slot_unavailable."
+    }
+  ]
+}

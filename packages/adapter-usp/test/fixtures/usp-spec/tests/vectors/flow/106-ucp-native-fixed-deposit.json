@@ -1,0 +1,115 @@
+{
+  "id": "106-ucp-native-fixed-deposit",
+  "section": "7.6.1",
+  "requirement": "ucp-native-fixed-deposit-terms",
+  "kind": "flow",
+  "expect": "accept",
+  "deposit_kind": "fixed",
+  "notes": "A UCP-Native deposit_required checkout with a fixed deposit. The business returns the full checkout total, exactly one selected term, one immediate schedule for the deposit, and a balance due at slot start. complete_checkout collects only the immediate amount. The order carries the same accepted term. Platforms MUST NOT compute the deposit from catalog.pricing.deposit and MUST NOT send split_payments.",
+  "catalog_deposit": {
+    "type": "fixed",
+    "value": 1000
+  },
+  "checkout": {
+    "id": "checkout_fixed_deposit_001",
+    "status": "ready_for_complete",
+    "currency": "USD",
+    "totals": [
+      { "type": "subtotal", "amount": 10000 },
+      { "type": "total", "amount": 10000 }
+    ],
+    "payment": {
+      "selected_term_id": "pt_fixed_deposit",
+      "terms": [
+        {
+          "id": "pt_fixed_deposit",
+          "title": "Deposit now, balance at the appointment",
+          "schedules": [
+            {
+              "id": "sched_deposit",
+              "type": "immediate",
+              "description": {
+                "plain": "1000 USD cents due now to hold the appointment."
+              },
+              "amount": 1000
+            },
+            {
+              "id": "sched_balance",
+              "type": "at_service",
+              "description": {
+                "plain": "9000 USD cents due at your appointment on 14 October 2026 at 10:00 AM EDT."
+              },
+              "due_at": "2026-10-14T10:00:00-04:00",
+              "amount": 9000
+            }
+          ]
+        }
+      ]
+    },
+    "booking": {
+      "service_id": "svc_install_deposit",
+      "service_type": "appointment",
+      "slot": {
+        "id": "slot_20261014_1000",
+        "start": "2026-10-14T10:00:00-04:00",
+        "end": "2026-10-14T11:00:00-04:00",
+        "duration": "PT1H"
+      }
+    }
+  },
+  "order": {
+    "id": "ord_fixed_deposit_001",
+    "checkout_id": "checkout_fixed_deposit_001",
+    "permalink_url": "https://business.example.com/orders/ord_fixed_deposit_001",
+    "currency": "USD",
+    "totals": [
+      { "type": "total", "amount": 10000 }
+    ],
+    "payment": {
+      "accepted_term": {
+        "id": "pt_fixed_deposit",
+        "title": "Deposit now, balance at the appointment",
+        "schedules": [
+          {
+            "id": "sched_deposit",
+            "type": "immediate",
+            "description": {
+              "plain": "1000 USD cents due now to hold the appointment."
+            },
+            "amount": 1000
+          },
+          {
+            "id": "sched_balance",
+            "type": "at_service",
+            "description": {
+              "plain": "9000 USD cents due at your appointment on 14 October 2026 at 10:00 AM EDT."
+            },
+            "due_at": "2026-10-14T10:00:00-04:00",
+            "amount": 9000
+          }
+        ]
+      }
+    }
+  },
+  "then": {
+    "collected_now": 1000,
+    "checkout_total": 10000,
+    "immediate_only": true,
+    "accepted_term_id": "pt_fixed_deposit",
+    "split_payments": false
+  },
+  "wrong_answers": [
+    {
+      "wrong": "Charge checkout.totals total instead of the immediate schedule.",
+      "harm": "The buyer is charged the remaining in-person obligation online."
+    },
+    {
+      "wrong": "Derive 1000 from catalog.pricing.deposit instead of the selected term.",
+      "harm": "A later catalog rewrite or percentage policy silently desyncs from the checkout the buyer approved."
+    },
+    {
+      "wrong": "Send split_payments or a second instrument for the balance.",
+      "harm": "UCP payment terms already model the remainder; inventing a split charges a path the business did not offer."
+    }
+  ]
+}

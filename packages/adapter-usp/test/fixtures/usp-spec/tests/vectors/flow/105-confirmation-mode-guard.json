@@ -1,0 +1,103 @@
+{
+  "id": "105-confirmation-mode-guard",
+  "section": "5.1.1",
+  "requirement": "confirm-pending-manual-only",
+  "kind": "flow",
+  "expect": "reject",
+  "outcome_code": "invalid_transition",
+  "notes": "THE LOAD-BEARING CASE FOR SECTION 5.1.1 AND 5.3.4. An auto-mode booking left pending because UCP-Native checkout never completed is not confirmable. confirm is business-initiated and legal from pending only when confirmation_mode is manual. A business MUST reject auto-mode pending confirm with invalid_transition at HTTP 200 in messages[], and MUST NOT change the booking. A booking_scoped_credential MUST NOT authorize the call.",
+  "given": {
+    "deployment_mode": "ucp_native",
+    "service": {
+      "id": "svc_massage_001",
+      "type": "appointment",
+      "requires_payment": true,
+      "payment_timing": "at_booking",
+      "confirmation_mode": "auto"
+    },
+    "booking": {
+      "id": "bkg_abc123",
+      "status": "pending",
+      "confirmation_mode": "auto",
+      "payment_field": "absent",
+      "actions": []
+    }
+  },
+  "when": [
+    {
+      "at": "2026-03-15T10:00:00Z",
+      "step": "create_checkout",
+      "result": {
+        "status": "ready_for_complete",
+        "booking_status": "pending",
+        "booking_id": "bkg_abc123"
+      }
+    },
+    {
+      "at": "2026-03-15T10:06:00Z",
+      "step": "confirm_booking",
+      "actor": "business",
+      "with": { "booking_id": "bkg_abc123" }
+    }
+  ],
+  "then": {
+    "accepted": false,
+    "outcome_code": "invalid_transition",
+    "http_status": 200,
+    "confirm_carried_in": "messages[]",
+    "booking_status": "pending",
+    "booking_unchanged": true
+  },
+  "variants": [
+    {
+      "case": "manual confirmation_mode, pending booking, business confirm",
+      "expect": "accept",
+      "given": {
+        "booking": {
+          "id": "bkg_manual_001",
+          "status": "pending",
+          "confirmation_mode": "manual"
+        }
+      },
+      "then": {
+        "accepted": true,
+        "booking_status": "confirmed"
+      },
+      "why": "Section 5.3.4: confirm from pending is Yes only for manual mode."
+    },
+    {
+      "case": "auto confirmation_mode, already confirmed, business confirm",
+      "expect": "accept",
+      "given": {
+        "booking": {
+          "id": "bkg_auto_confirmed",
+          "status": "confirmed",
+          "confirmation_mode": "auto"
+        }
+      },
+      "then": {
+        "accepted": true,
+        "booking_status": "confirmed",
+        "idempotent": true
+      },
+      "why": "Section 5.3.4: auto-mode already-confirmed confirm MUST return the current booking unchanged."
+    }
+  ],
+  "wrong_answers": [
+    {
+      "behaviour": "accept confirm on an auto-mode pending booking and transition it to confirmed",
+      "violates": "5.1.1 and 5.3.4",
+      "why": "Turns an unpaid UCP-Native leftover into a confirmed appointment. Confirm was never a legal operation on that booking."
+    },
+    {
+      "behaviour": "return the confirm refusal as a 4xx Problem Details response",
+      "violates": "9.4.1 error family test and 5.1.1",
+      "why": "The request was understood and processed; invalid_transition is a business outcome carried at HTTP 200 in messages[], not a protocol error."
+    },
+    {
+      "behaviour": "authorize confirm with a booking_scoped_credential presented by a platform",
+      "violates": "5.3.4, 9.2.2, and 10.1.6",
+      "why": "Confirm is business-only. A scoped credential that can confirm lets a buyer agent grant itself a free appointment on an unpaid pending booking."
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "id": "107-ucp-native-percentage-deposit",
+  "section": "7.6.1",
+  "requirement": "ucp-native-percentage-deposit-terms",
+  "kind": "flow",
+  "expect": "accept",
+  "deposit_kind": "percentage",
+  "notes": "A UCP-Native deposit_required checkout whose catalog deposit is a percentage. The business, not the platform, computes the immediate amount. The published schedule amount is 4000, which is 20 percent of the 20000 checkout total. Platforms MUST NOT recompute the percentage.",
+  "catalog_deposit": {
+    "type": "percentage",
+    "value": 20
+  },
+  "checkout": {
+    "id": "checkout_percent_deposit_001",
+    "status": "ready_for_complete",
+    "currency": "USD",
+    "catalog_deposit": {
+      "type": "percentage",
+      "value": 20
+    },
+    "totals": [
+      { "type": "subtotal", "amount": 20000 },
+      { "type": "total", "amount": 20000 }
+    ],
+    "payment": {
+      "selected_term_id": "pt_percent_deposit",
+      "terms": [
+        {
+          "id": "pt_percent_deposit",
+          "title": "20 percent deposit now, balance at the appointment",
+          "schedules": [
+            {
+              "id": "sched_deposit",
+              "type": "immediate",
+              "description": {
+                "plain": "4000 USD cents due now. This is the business-computed 20 percent deposit."
+              },
+              "amount": 4000
+            },
+            {
+              "id": "sched_balance",
+              "type": "at_service",
+              "description": {
+                "plain": "16000 USD cents due at your appointment on 14 October 2026 at 10:00 AM EDT."
+              },
+              "due_at": "2026-10-14T10:00:00-04:00",
+              "amount": 16000
+            }
+          ]
+        }
+      ]
+    },
+    "booking": {
+      "service_id": "svc_consult_deposit",
+      "service_type": "appointment",
+      "slot": {
+        "id": "slot_20261014_1000",
+        "start": "2026-10-14T10:00:00-04:00",
+        "end": "2026-10-14T11:00:00-04:00",
+        "duration": "PT1H"
+      }
+    }
+  },
+  "order": {
+    "id": "ord_percent_deposit_001",
+    "checkout_id": "checkout_percent_deposit_001",
+    "permalink_url": "https://business.example.com/orders/ord_percent_deposit_001",
+    "currency": "USD",
+    "totals": [
+      { "type": "total", "amount": 20000 }
+    ],
+    "payment": {
+      "accepted_term": {
+        "id": "pt_percent_deposit",
+        "title": "20 percent deposit now, balance at the appointment",
+        "schedules": [
+          {
+            "id": "sched_deposit",
+            "type": "immediate",
+            "description": {
+              "plain": "4000 USD cents due now. This is the business-computed 20 percent deposit."
+            },
+            "amount": 4000
+          },
+          {
+            "id": "sched_balance",
+            "type": "at_service",
+            "description": {
+              "plain": "16000 USD cents due at your appointment on 14 October 2026 at 10:00 AM EDT."
+            },
+            "due_at": "2026-10-14T10:00:00-04:00",
+            "amount": 16000
+          }
+        ]
+      }
+    }
+  },
+  "then": {
+    "collected_now": 4000,
+    "checkout_total": 20000,
+    "immediate_only": true,
+    "business_computed_immediate": true,
+    "accepted_term_id": "pt_percent_deposit",
+    "split_payments": false
+  },
+  "wrong_answers": [
+    {
+      "wrong": "Multiply catalog.pricing.deposit.value by the catalog price on the platform.",
+      "harm": "Rounding, tax, and fee inclusion belong to the business. A client-side percentage silently disagrees with the term the buyer approved."
+    },
+    {
+      "wrong": "Charge the 20000 checkout total because that is what totals[].total says.",
+      "harm": "totals is the obligation. The immediate schedule is the amount due now."
+    }
+  ]
+}

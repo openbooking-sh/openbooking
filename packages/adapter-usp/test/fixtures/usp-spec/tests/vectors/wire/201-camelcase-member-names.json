@@ -1,0 +1,132 @@
+{
+  "id": "201-camelcase-member-names",
+  "section": "1.1",
+  "requirement": "member-names-exactly-as-defined",
+  "kind": "wire",
+  "binding": ["rest", "mcp"],
+  "expect": "reject",
+  "schema": "registry.json#/$defs/ServiceSearchResult",
+  "notes": "Member names are case-sensitive and appear exactly as the schemas define them (snake_case). This hit keeps every required member in snake_case but emits three optional members in camelCase, which is what a Protocol Buffers JSON printer does by default. ServiceSearchResult allows additional properties for extensibility, so the instance is schema-valid. It still does not conform: durationMinutes, lastIndexedAt, and rankSignals are unrecognized members, not aliases of duration_minutes, last_indexed_at, and rank_signals. A consumer reading the defined names sees no duration, no freshness timestamp, and no availability ranking.",
+  "instance": {
+    "service_id": "svc_deep_tissue_60",
+    "service_name": "Deep Tissue Massage - 60 min",
+    "business": {
+      "id": "reg_sunrise_001",
+      "profile_url": "https://sunrisewellness.com/.well-known/usp",
+      "deployment_mode": "standalone",
+      "name": "Sunrise Wellness Studio"
+    },
+    "category": "Wellness",
+    "category_ids": ["cat_wellness"],
+    "durationMinutes": 60,
+    "pricing": {
+      "model": "fixed",
+      "amount": 12000,
+      "currency": "USD"
+    },
+    "timezone": "America/New_York",
+    "lastIndexedAt": "2026-03-14T08:00:00Z",
+    "rankSignals": {
+      "relevance": 0.78,
+      "coverage": null,
+      "density": 0.47,
+      "soonness": 0.92,
+      "hint_usable": true
+    }
+  },
+  "then": {
+    "conforming": false,
+    "schema_valid": true,
+    "member_name_violations": ["/durationMinutes", "/lastIndexedAt", "/rankSignals"]
+  },
+  "variants": [
+    {
+      "case": "every member camelCased, as the default Protocol Buffers JSON mapping emits",
+      "expect": "reject",
+      "instance": {
+        "serviceId": "svc_deep_tissue_60",
+        "serviceName": "Deep Tissue Massage - 60 min",
+        "business": {
+          "id": "reg_sunrise_001",
+          "profileUrl": "https://sunrisewellness.com/.well-known/usp",
+          "deploymentMode": "standalone",
+          "name": "Sunrise Wellness Studio"
+        },
+        "category": "Wellness",
+        "categoryIds": ["cat_wellness"],
+        "pricing": {
+          "model": "fixed",
+          "amount": 12000,
+          "currency": "USD"
+        },
+        "timezone": "America/New_York"
+      },
+      "then": {
+        "conforming": false,
+        "schema_valid": false,
+        "member_name_violations": [
+          "/business/deploymentMode",
+          "/business/profileUrl",
+          "/categoryIds",
+          "/serviceId",
+          "/serviceName"
+        ]
+      },
+      "why": "Here schema validation does catch the defect, but only because service_id, service_name, category_ids, profile_url, and deployment_mode are required. The primary case shows the same defect on optional members passing the schema."
+    },
+    {
+      "case": "the same hit with every member named as defined",
+      "expect": "accept",
+      "instance": {
+        "service_id": "svc_deep_tissue_60",
+        "service_name": "Deep Tissue Massage - 60 min",
+        "business": {
+          "id": "reg_sunrise_001",
+          "profile_url": "https://sunrisewellness.com/.well-known/usp",
+          "deployment_mode": "standalone",
+          "name": "Sunrise Wellness Studio"
+        },
+        "category": "Wellness",
+        "category_ids": ["cat_wellness"],
+        "duration_minutes": 60,
+        "pricing": {
+          "model": "fixed",
+          "amount": 12000,
+          "currency": "USD"
+        },
+        "timezone": "America/New_York",
+        "last_indexed_at": "2026-03-14T08:00:00Z",
+        "rank_signals": {
+          "relevance": 0.78,
+          "coverage": null,
+          "density": 0.47,
+          "soonness": 0.92,
+          "hint_usable": true
+        }
+      },
+      "then": {
+        "conforming": true,
+        "schema_valid": true,
+        "member_name_violations": []
+      },
+      "why": "Control case: the checker's member-name scan must not flag a conforming instance."
+    }
+  ],
+  "wrong_answers": [
+    {
+      "behaviour": "treat schema validation as sufficient proof of conformance",
+      "violates": "1.1 Member Names",
+      "why": "The primary instance passes the ServiceSearchResult schema. A registry tested only by schema validation ships camelCase optional members, and clients silently lose duration, freshness, and rank_signals."
+    },
+    {
+      "behaviour": "emit JSON with the default Protocol Buffers printer",
+      "violates": "1.1 Member Names, 9.1.5 item 8, and 9.2.4 item 10",
+      "why": "The default mapping converts field names to lowerCamelCase. The variant shows the result: every required snake_case member is missing and the response fails validation."
+    },
+    {
+      "behaviour": "consumer accepts serviceId as an alias for service_id",
+      "violates": "1.1 Member Names",
+      "why": "Lenient aliasing hides a non-conforming producer from its tests while other consumers that read only the defined names break against it."
+    }
+  ]
+}

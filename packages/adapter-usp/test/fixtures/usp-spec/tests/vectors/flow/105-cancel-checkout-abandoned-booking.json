@@ -1,0 +1,124 @@
+{
+  "id": "105-cancel-checkout-abandoned-booking",
+  "section": "7.5",
+  "requirement": "cancel-checkout-invariant",
+  "kind": "flow",
+  "expect": "reject",
+  "outcome_code": "invalid_transition",
+  "notes": "THE LOAD-BEARING CASE FOR THE CANCEL-CHECKOUT INVARIANT. After cancel_checkout, the USP booking resource as observed through GET /bookings/{booking_id} MUST NOT remain in a state from which Section 5.1.1 requires accepting confirm. The business's internal record is out of scope; this vector asserts the protocol surface only. canceled_at MUST be stable across reads, so a second get at a later timestamp returns the same value.",
+  "given": {
+    "service": {
+      "id": "svc_massage_001",
+      "type": "appointment",
+      "requires_payment": true,
+      "payment_timing": "at_booking",
+      "confirmation_mode": "auto"
+    },
+    "slot": {
+      "id": "slot_20260316_1400",
+      "start": "2026-03-16T14:00:00-04:00",
+      "end": "2026-03-16T15:00:00-04:00",
+      "capacity": { "total": 1, "remaining": 0, "held": 1 }
+    },
+    "hold": {
+      "id": "hold_xyz789",
+      "slot_id": "slot_20260316_1400",
+      "service_id": "svc_massage_001",
+      "spots": 1,
+      "expires_at": "2026-03-15T10:15:00Z",
+      "status": "active"
+    }
+  },
+  "when": [
+    {
+      "at": "2026-03-15T10:00:00Z",
+      "step": "create_checkout",
+      "with": { "hold_id": "hold_xyz789" },
+      "result": {
+        "status": "ready_for_complete",
+        "booking_status": "pending",
+        "booking_id": "bkg_abc123"
+      }
+    },
+    {
+      "at": "2026-03-15T10:05:00Z",
+      "step": "cancel_checkout",
+      "result": {
+        "status": "canceled",
+        "booking_object": "omitted_or_canceled"
+      }
+    },
+    {
+      "at": "2026-03-15T10:05:01Z",
+      "step": "get_booking",
+      "with": { "booking_id": "bkg_abc123" },
+      "result": {
+        "status": "canceled",
+        "cancellation": {
+          "reason_code": "checkout_abandoned",
+          "canceled_by": "system",
+          "canceled_at": "2026-03-15T10:05:00Z"
+        }
+      }
+    },
+    {
+      "at": "2026-03-15T10:06:00Z",
+      "step": "confirm_booking",
+      "with": { "booking_id": "bkg_abc123" }
+    },
+    {
+      "at": "2026-03-15T10:10:00Z",
+      "step": "get_booking",
+      "with": { "booking_id": "bkg_abc123" },
+      "notes": "Second read at a later instant. canceled_at MUST equal the value from the first get_booking."
+    }
+  ],
+  "then": {
+    "checkout_status": "canceled",
+    "booking_status_on_checkout": "canceled_or_booking_omitted",
+    "usp_visible_booking_status": "canceled",
+    "cancellation": {
+      "reason_code": "checkout_abandoned",
+      "canceled_by": "system",
+      "canceled_at": "2026-03-15T10:05:00Z"
+    },
+    "canceled_at_stable_across_reads": true,
+    "hold_released": true,
+    "confirm_outcome_code": "invalid_transition",
+    "http_status": 200,
+    "confirm_carried_in": "messages[]",
+    "slot_capacity_remaining": 1
+  },
+  "wrong_answers": [
+    {
+      "behaviour": "leave the USP-visible booking pending after cancel_checkout",
+      "violates": "7.5 cancel-checkout invariant",
+      "why": "Section 5.1.1 requires accepting confirm from pending, so the platform can confirm an unpaid booking. The record is also indistinguishable from a paid-awaiting-approval booking in manual confirmation mode, the booking-scoped credential is never invalidated, and the personal-data retention clock never fires."
+    },
+    {
+      "behaviour": "return booking_status: pending on a checkout whose status is canceled",
+      "violates": "7.5 cancel-checkout response shape",
+      "why": "Claims the checkout-scoped summary is still live while the checkout itself is terminal."
+    },
+    {
+      "behaviour": "return the confirm refusal as a 4xx Problem Details response",
+      "violates": "9.4.1 error family test and 5.1.1",
+      "why": "The request was understood and processed; invalid_transition is a business outcome carried at HTTP 200 in messages[], not a protocol error."
+    },
+    {
+      "behaviour": "derive terminality from the absence of a live checkout session",
+      "violates": "7.5 cancel-checkout invariant (false positive)",
+      "why": "An implementation that cannot observe checkout-session lifetime cannot tell an in-flight checkout from a departed one, so it reports a booking whose buyer is mid-payment as canceled and then refuses that platform's own confirm."
+    },
+    {
+      "behaviour": "stamp canceled_at with the current time on every read",
+      "violates": "7.5 canceled_at stability",
+      "why": "A later get_booking returns a different canceled_at, so platforms cannot treat the timestamp as the instant cancellation was recorded."
+    },
+    {
+      "behaviour": "key the terminal state on USP pending rather than on the specific backing state the abandoned checkout left behind",
+      "violates": "7.5 cancel-checkout invariant (false positive)",
+      "why": "A business whose status mapping folds several backing states into USP pending will also match a manual-confirmation booking that is paid and awaiting merchant approval, which is pending under Section 7.5 derivation rule 1 and must never be reported canceled. Same failure for a booking that is paid after the platform walked away. The invariant applies to the booking the canceled checkout left unpaid, not to every booking reading pending."
+    }
+  ]
+}

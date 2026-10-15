@@ -1,0 +1,102 @@
+{
+  "id": "104-charge-without-booking",
+  "section": "7.5",
+  "requirement": "no-charge-without-booking",
+  "kind": "flow",
+  "expect": "reject",
+  "outcome_code": "slot_unavailable",
+  "notes": "THE LOAD-BEARING CASE FOR A2. The PSP charge succeeds and the booking write then fails. This is the failure the old wording, 'No partial state changes are permitted', could not describe: a charge and a booking write live in different systems, so there is no transaction to roll back. A2 requires the business to either retry the write until it succeeds or reverse the charge, and forbids reporting the checkout completed until one of those settles. A business that keeps the money and returns an error is non-conformant even though its own database is perfectly consistent.",
+  "given": {
+    "service": {
+      "id": "svc_massage_001",
+      "type": "appointment",
+      "requires_payment": true,
+      "payment_timing": "at_booking",
+      "confirmation_mode": "auto"
+    },
+    "slot": {
+      "id": "slot_20260316_1400",
+      "start": "2026-03-16T14:00:00-04:00",
+      "end": "2026-03-16T15:00:00-04:00",
+      "capacity": { "total": 1, "remaining": 0, "held": 1 }
+    },
+    "hold": {
+      "id": "hold_xyz789",
+      "slot_id": "slot_20260316_1400",
+      "spots": 1,
+      "expires_at": "2026-03-15T10:10:00Z",
+      "status": "active"
+    },
+    "amount": 7500,
+    "currency": "USD"
+  },
+  "when": [
+    {
+      "at": "2026-03-15T10:00:00Z",
+      "step": "complete_checkout",
+      "with": {
+        "payment_token": "tok_test_002",
+        "idempotency_key": "idem_7f3c1a9e"
+      }
+    },
+    {
+      "at": "2026-03-15T10:00:01Z",
+      "step": "psp_charge",
+      "result": { "succeeded": true, "charge_id": "ch_test_002" }
+    },
+    {
+      "at": "2026-03-15T10:00:02Z",
+      "step": "booking_write",
+      "result": { "succeeded": false, "reason": "calendar backend rejected the write" }
+    }
+  ],
+  "then": {
+    "permitted_resolutions": [
+      {
+        "resolution": "retry the booking write until it succeeds",
+        "checkout_status": "completed",
+        "booking_status": "confirmed",
+        "charge_reversed": false,
+        "notes": "Preferred when the failure is transient. The buyer keeps the slot they paid for."
+      },
+      {
+        "resolution": "reverse the charge, then fail the checkout",
+        "checkout_status": "incomplete",
+        "booking_status": "pending",
+        "charge_reversed": true,
+        "outcome_code": "slot_unavailable",
+        "notes": "Required when the write cannot be made to succeed. Void or refund through the PSP before returning the error."
+      }
+    ],
+    "forbidden_intermediate_state": {
+      "checkout_status": "completed",
+      "booking_created": false,
+      "why": "A3 forbids reporting the checkout completed while compensation is in flight. booking_status MUST stay pending until one resolution settles."
+    },
+    "hold_disposition": "The hold is still valid at 10:00:02 and MUST NOT be released (A5), so a retry can still convert it.",
+    "idempotent_replay": "A repeat of complete_checkout with idempotency_key idem_7f3c1a9e MUST return whichever resolution settled, and MUST NOT charge or book a second time (A4).",
+    "reconciliation": "If neither resolution completes, the charge is an unmatched payment. The business MUST be able to resolve it and SHOULD refund it, correlating by order_id (A6)."
+  },
+  "wrong_answers": [
+    {
+      "behaviour": "return an error and keep the charge",
+      "violates": "7.5 A2",
+      "why": "The buyer has paid for a booking that does not exist and has no protocol-visible way to discover it. This is the single worst outcome on the money path, and it is what the old 'no partial state changes are permitted' wording failed to forbid."
+    },
+    {
+      "behaviour": "return checkout status completed with no booking, intending to repair it asynchronously",
+      "violates": "7.5 A2 and A3",
+      "why": "The platform reports a confirmed appointment to the buyer. If the repair fails there is no protocol state left that says so."
+    },
+    {
+      "behaviour": "release the hold on failure",
+      "violates": "7.5 A5",
+      "why": "Discards a still-valid reservation the buyer already paid for, so the retry may find the slot gone."
+    },
+    {
+      "behaviour": "treat the platform's retry as a new checkout",
+      "violates": "7.5 A4",
+      "why": "Charges the buyer twice for one appointment. The idempotency key exists precisely so a retry after an unknown outcome is safe."
+    }
+  ]
+}
