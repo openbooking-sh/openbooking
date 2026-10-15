@@ -403,6 +403,9 @@ importers:
       '@openbooking-sh/adapter-mcp':
         specifier: workspace:^
         version: link:../adapter-mcp
+      '@openbooking-sh/adapter-usp':
+        specifier: workspace:^
+        version: link:../adapter-usp
       '@openbooking-sh/booking-page':
         specifier: workspace:^
         version: link:../booking-page
@@ -437,6 +440,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.2.0
         version: 2.2.0
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
 
   packages/notifications:
     dependencies:
@@ -524,6 +530,9 @@ importers:
       '@openbooking-sh/adapter-ucp':
         specifier: workspace:^
         version: link:../adapter-ucp
+      '@openbooking-sh/adapter-usp':
+        specifier: workspace:^
+        version: link:../adapter-usp
       '@openbooking-sh/booking-page':
         specifier: workspace:^
         version: link:../booking-page
@@ -543,6 +552,9 @@ importers:
       '@openbooking-sh/provider-memory':
         specifier: workspace:^
         version: link:../provider-memory
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
 
   packages/studio:
     dependencies:

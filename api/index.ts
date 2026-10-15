@@ -91,6 +91,8 @@ async function boot(): Promise<Runtime> {
             businesses: stores.businesses,
             bookings: stores.bookings,
             idempotency: stores.idempotency,
+            // USP's owners, credentials and replay memory must be shared by every instance.
+            uspState: stores.usp,
             activityFor: stores.activityFor,
             calendarLinks: stores.calendarLinks,
             notificationLog: stores.notificationLog,

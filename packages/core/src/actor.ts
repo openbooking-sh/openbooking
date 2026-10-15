@@ -12,7 +12,7 @@ export interface Actor {
    * Channel the call came through. `studio` = staff using the dashboard, `web` = the public
    * booking page (a person, or a browser agent using its WebMCP tools).
    */
-  protocol: 'mcp' | 'ucp' | 'a2a' | 'studio' | 'web' | 'api';
+  protocol: 'mcp' | 'ucp' | 'usp' | 'a2a' | 'studio' | 'web' | 'api';
   /** Display name, e.g. "Claude", "ChatGPT", "MCP Inspector", "Unknown agent". */
   agent: string;
   /** Raw client identifier as reported (MCP clientInfo name, User-Agent, UCP-Agent profile). */

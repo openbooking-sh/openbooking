@@ -24,7 +24,12 @@ export interface CallResult {
 export const b64 = (s: string) => createHash('sha256').update(s).digest('base64url');
 
 /** A platform: its own key pair, its profile URL, and a way to make signed requests. */
-export async function platform(w: World, profile = 'https://agent.example/profile.json') {
+export async function platform(
+  w: World,
+  profile = 'https://agent.example/profile.json',
+  /** The public origin and path prefix platforms sign URLs for. */
+  publicBase = ORIGIN,
+) {
   const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
     crv: 'Ed25519',
     extractable: true,
@@ -52,7 +57,7 @@ export async function platform(w: World, profile = 'https://agent.example/profil
   ) =>
     new SignJWT({
       htm: extra.htm ?? method,
-      htu: extra.htu ?? `${ORIGIN}${path}`,
+      htu: extra.htu ?? `${publicBase}${path}`,
       iat: extra.iat ?? Math.floor(world.clock.now().getTime() / 1000),
       jti: extra.jti ?? `jti-${jkt.slice(0, 6)}-${++n}`,
       ...(extra.credential !== undefined || extra.ath

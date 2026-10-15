@@ -67,6 +67,7 @@ import { setupHtml } from './setup';
 import { posthogSnippet, withHeadSnippet, type Analytics } from './analytics';
 import { slackEscape, type OpsNotifier } from './slack';
 import { signupHtml } from './signup';
+import { MemoryUspState, type UspStateStore } from '@openbooking-sh/adapter-usp';
 import { Tenant, type TenantDeps } from './tenant';
 
 export interface HostedOptions {
@@ -79,6 +80,12 @@ export interface HostedOptions {
   bookings?: BookingRecordStore;
   /** Shared; keys are prefixed per business. */
   idempotency?: IdempotencyStore;
+  /**
+   * What USP remembers (who owns each hold, booking credentials, replay protection), for the
+   * businesses that turn USP on. One store for all businesses, kept apart per business. In memory
+   * by default; with more than one instance, or serverless, pass `postgresStores(db).usp`.
+   */
+  uspState?: UspStateStore;
   activityFor?: (businessId: string) => ActivityLog;
   clock?: Clock;
   /**
@@ -218,6 +225,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ...(google ? { google } : {}),
     ...(options.stripeFetch ? { stripeFetch: options.stripeFetch } : {}),
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
+    uspState: options.uspState ?? new MemoryUspState(() => clock.now().getTime()),
     allowedHosts,
     requireVerifiedEmail,
     ...(options.onEvent || options.analytics || options.ops

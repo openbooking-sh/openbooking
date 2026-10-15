@@ -12,6 +12,12 @@ import {
 } from '@openbooking-sh/booking-page';
 import { buildUcpProfile, createUcpRouter } from '@openbooking-sh/adapter-ucp';
 import {
+  createUsp,
+  type ConsentMode,
+  type UspBusinessAuth,
+  type UspStateStore,
+} from '@openbooking-sh/adapter-usp';
+import {
   BookingService,
   createWebhooks,
   runAsActor,
@@ -48,6 +54,29 @@ export interface OpenBookingServerOptions {
   mcpPath?: string | false;
   ucpPath?: string | false;
   a2aPath?: string | false;
+  /**
+   * USP (Universal Scheduling Protocol, a draft standard from Wix and Stripe): lets any platform
+   * or AI assistant discover and book this business, authenticating with its own key. Off unless
+   * you pass options (`usp: {}` for the defaults).
+   *
+   * By default a booking an assistant makes is only held: the customer confirms it on the
+   * booking page (`consent: 'action'`, needs the booking page). With `consent: 'commit'` the
+   * assistant's request confirms it, trusting that the assistant asked its user first.
+   *
+   * `state` remembers who owns what, credentials and replay protection. In memory by default;
+   * with more than one server instance pass a shared store, e.g. `postgresStores(db).usp`.
+   */
+  usp?:
+    | {
+        path?: string;
+        consent?: ConsentMode;
+        state?: UspStateStore;
+        /** Staff-only calls (confirming a booking by hand). Refused when not set. */
+        businessAuth?: UspBusinessAuth;
+        /** Stable id of the business in USP. Default: the host of `baseUrl`. */
+        businessId?: string;
+      }
+    | false;
   /**
    * Host header allow-list for the MCP endpoint (DNS-rebinding protection). Defaults to the host of
    * `baseUrl` plus localhost/127.0.0.1. Pass `false` to disable (e.g. behind a trusted proxy).
@@ -96,6 +125,8 @@ export interface OpenBookingApp {
  *   ALL  /mcp                           MCP Streamable HTTP (6 booking tools)
  *   *    /ucp/...                       UCP lodging booking-session REST (+ availability extension)
  *   GET  /.well-known/ucp               UCP business profile
+ *   *    /usp/...                       USP catalog, availability, holds, bookings (when `usp` is set)
+ *   GET  /.well-known/usp               USP business profile (when `usp` is set)
  *   GET  /.well-known/agent-card.json   A2A Agent Card
  *   POST /a2a                           A2A JSON-RPC (SendMessage)
  *   GET  /healthz
@@ -161,6 +192,15 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
               },
             }
           : {}),
+        ...(options.usp
+          ? {
+              usp: {
+                status: 'draft',
+                profile: `${baseUrl}/.well-known/usp`,
+                endpoint: `${baseUrl}${options.usp.path ?? '/usp'}`,
+              },
+            }
+          : {}),
         ...(a2aPath
           ? { a2a: { status: 'supported', agent_card: `${baseUrl}${AGENT_CARD_PATH}` } }
           : {}),
@@ -200,6 +240,36 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
     app.get('/.well-known/ucp', (c) => {
       c.header('Cache-Control', 'public, max-age=300');
       return c.json(buildUcpProfile({ baseUrl, ucpPath }));
+    });
+  }
+
+  if (options.usp) {
+    const consent = options.usp.consent ?? 'action';
+    if (consent === 'action' && !page) {
+      throw new Error(
+        "createOpenBookingApp: usp consent 'action' sends the customer to the booking page to " +
+          "confirm, so it needs the booking page. Enable it, or set usp.consent to 'commit'.",
+      );
+    }
+    const usp = createUsp({
+      service,
+      baseUrl,
+      name,
+      consent,
+      ...(options.usp.path ? { path: options.usp.path } : {}),
+      ...(options.usp.state ? { state: options.usp.state } : {}),
+      ...(options.usp.businessAuth ? { businessAuth: options.usp.businessAuth } : {}),
+      ...(options.usp.businessId ? { businessId: options.usp.businessId } : {}),
+      ...(page ? { continueUrl: page.confirmUrl, bookingUrl: page.manageUrl } : {}),
+    });
+    app.use(`${usp.path}/*`, async (c, next) =>
+      runAsActor(await actorFromRequest(c.req.raw, 'usp'), () => next()),
+    );
+    app.route(usp.path, usp.router);
+    app.get('/.well-known/usp', async (c) => {
+      // USP 8.2.2: public, cacheable for at least a minute, never no-store.
+      c.header('Cache-Control', 'public, max-age=300');
+      return c.json(await usp.profile());
     });
   }
 

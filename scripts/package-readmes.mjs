@@ -65,6 +65,24 @@ const mcp = createMcpHttpHandler({ service }); // service: a BookingService from
 app.route('/ucp', createUcpRouter({ service, baseUrl, ucpPath: '/ucp' }));
 app.get('/.well-known/ucp', (c) => c.json(buildUcpProfile({ baseUrl, ucpPath: '/ucp' })));`,
   },
+  'adapter-usp': {
+    title: 'Universal Scheduling Protocol (draft)',
+    intro:
+      'Exposes a `BookingService` over the Universal Scheduling Protocol (USP), the draft standard from Wix and Stripe that lets any platform or AI assistant discover and book a business: the profile at `/.well-known/usp`, the catalog, availability, holds and bookings over REST. Platforms sign in with a key they make themselves (no accounts), and each business chooses how a booking becomes real: the customer confirms on a page (default), or the assistant books immediately. Follows a draft spec and may change with it. Most apps use it through `' +
+      S +
+      '/server` (`usp: {}`) or hosted OpenBooking.',
+    usage: `import { createUsp } from '${S}/adapter-usp';
+
+const usp = createUsp({
+  service,
+  baseUrl: 'https://bistro.example.com', // the public address platforms sign
+  continueUrl: (b) => bookingPage.confirmUrl(b), // where the customer confirms a held booking
+  state: postgresStores(db).usp, // shared by every instance when you run more than one
+});
+
+app.route(usp.path, usp.router);
+app.get('/.well-known/usp', async (c) => c.json(await usp.profile()));`,
+  },
   'adapter-a2a': {
     title: 'A2A Agent Card',
     intro:

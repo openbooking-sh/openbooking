@@ -48,6 +48,7 @@
     "@modelcontextprotocol/hono": "^2.0.1",
     "@modelcontextprotocol/server": "^2.2.0",
     "@openbooking-sh/adapter-mcp": "workspace:^",
+    "@openbooking-sh/adapter-usp": "workspace:^",
     "@openbooking-sh/booking-page": "workspace:^",
     "@openbooking-sh/core": "workspace:^",
     "@openbooking-sh/google-calendar": "workspace:^",
@@ -60,7 +61,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "^2.2.0"
+    "@modelcontextprotocol/client": "^2.2.0",
+    "jose": "^6.2.12"
   },
   "publishConfig": {
     "access": "public"
