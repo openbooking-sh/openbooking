@@ -1,5 +1,11 @@
 # @openbooking-sh/hosted
 
+## 0.12.1
+
+### Patch Changes
+
+- 63acbd6: Fix a crash for businesses saved before online payments existed: their settings have no `payments` block, which broke their booking page after the 0.11 update.
+
 ## 0.12.0
 
 ### Minor Changes
