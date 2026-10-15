@@ -53,6 +53,9 @@ if (env.SENTRY_DSN) {
     tracesSampleRate: 0,
     // Failed emails, calendar syncs and analytics are logged with console.error; report those too.
     integrations: [Sentry.captureConsoleIntegration({ levels: ['error'] })],
+    // The Vercel runtime prints Node's own warnings (e.g. vm.USE_MAIN_CONTEXT_DEFAULT_LOADER) through
+    // console.error; they are not our failures and fire on every cold start.
+    ignoreErrors: [/ExperimentalWarning/],
   });
 }
 
