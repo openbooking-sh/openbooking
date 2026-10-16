@@ -4,6 +4,33 @@ import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
 import { Hono } from 'hono';
 import { actorFromRequest, agentName, createStudio } from '../src';
 
+describe('policy links', () => {
+  const html = async (legal?: { privacyUrl?: string; termsUrl?: string }) => {
+    const service = new BookingService({
+      provider: createDemoRestaurantProvider(),
+      clock: new ManualClock('2026-10-01T08:00:00Z'),
+    });
+    const studio = createStudio({ service, token: 'secret-token', ...(legal ? { legal } : {}) });
+    return (await studio.app.request('/')).text();
+  };
+
+  it('links the privacy policy and terms in the footer when set', async () => {
+    const page = await html({
+      privacyUrl: 'https://openbooking.sh/privacy',
+      termsUrl: 'https://openbooking.sh/terms?a=1&b="2"',
+    });
+    expect(page).toContain('href="https://openbooking.sh/privacy"');
+    // Escaped, so a configured URL can never break out of the attribute.
+    expect(page).toContain('href="https://openbooking.sh/terms?a=1&amp;b=&quot;2&quot;"');
+  });
+
+  it('shows no policy links by default, and leaves no marker behind', async () => {
+    const page = await html();
+    expect(page).not.toContain('Privacy');
+    expect(page).not.toContain('<!--legal-->');
+  });
+});
+
 function setup(opts: { token?: string; insecureNoAuth?: boolean } = { token: 'secret-token' }) {
   const clock = new ManualClock('2026-10-01T08:00:00Z');
   const service = new BookingService({ provider: createDemoRestaurantProvider(), clock });

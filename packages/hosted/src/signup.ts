@@ -3,6 +3,8 @@
  * Studio reads it, and continues to the guided setup (/setup).
  * The script avoids backticks and dollar-brace so it can live in this template literal.
  */
+import { PRIVACY_URL, TERMS_URL } from './legal';
+
 export function signupHtml(opts: {
   studioPath: string;
   setupPath: string;
@@ -41,6 +43,8 @@ export function signupHtml(opts: {
   .err { color: var(--red); font-size: 13.5px; min-height: 20px; margin-top: 10px; }
   .foot { text-align: center; color: var(--ink-3); font-size: 13.5px; margin-top: 18px; }
   .foot a { color: var(--royal); }
+  .agree { color: var(--ink-3); font-size: 12.5px; margin: 10px 0 0; text-align: center; }
+  .agree a { color: var(--royal); }
   @media (max-width: 420px) { .two { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -69,6 +73,7 @@ export function signupHtml(opts: {
     <div class="field"><label for="password">Password (at least 8 characters)</label><input id="password" type="password" required minlength="8" autocomplete="new-password" /></div>
     <button id="go" type="submit">Create my booking page</button>
     <div class="err" id="err" role="alert"></div>
+    <p class="agree">By creating an account you accept our <a href="${TERMS_URL}" target="_blank" rel="noopener">terms</a> and <a href="${PRIVACY_URL}" target="_blank" rel="noopener">privacy policy</a>.</p>
   </form>
   <div class="foot">Already have an account? <a id="login" href="#">Log in</a></div>
 </main>

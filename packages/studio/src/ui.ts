@@ -200,7 +200,7 @@ export const STUDIO_HTML = `<!doctype html>
     <button class="nav" data-view="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Insights</button>
     <button class="nav" data-view="activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Agent log</button>
     <button class="nav hidden" data-view="settings" id="nav-settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Settings</button>
-    <div class="aside-foot">Open source · <a href="https://openbooking.sh" target="_blank" rel="noopener">openbooking.sh</a><span id="logout-wrap" class="hidden"> · <a href="#" id="logout">Log out</a></span></div>
+    <div class="aside-foot">Open source · <a href="https://openbooking.sh" target="_blank" rel="noopener">openbooking.sh</a><!--legal--><span id="logout-wrap" class="hidden"> · <a href="#" id="logout">Log out</a></span></div>
   </aside>
   <main>
     <header class="top">
@@ -902,3 +902,24 @@ export const STUDIO_HTML = `<!doctype html>
 </script>
 </body>
 </html>`;
+
+/** Policies linked in the Studio footer. */
+export interface StudioLegal {
+  privacyUrl?: string;
+  termsUrl?: string;
+}
+
+/** Footer links to the hosted policies; nothing when the deployment sets none. */
+function legalLinks(legal: StudioLegal | undefined): string {
+  const link = (label: string, url: string | undefined) =>
+    url ? ` · <a href="${escapeAttr(url)}" target="_blank" rel="noopener">${label}</a>` : '';
+  return link('Privacy', legal?.privacyUrl) + link('Terms', legal?.termsUrl);
+}
+
+const escapeAttr = (v: string) =>
+  v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+/** The Studio page, with the footer links for this deployment (none by default). */
+export function studioHtml(legal?: StudioLegal): string {
+  return STUDIO_HTML.replace('<!--legal-->', legalLinks(legal));
+}

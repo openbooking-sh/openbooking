@@ -106,6 +106,8 @@ export interface OpenBookingServerOptions {
         /** Canonical public URL of the page when it isn't `baseUrl + path` (e.g. behind a rewrite). */
         pageUrl?: string;
         profile?: BookingPageOptions['profile'];
+        /** Privacy policy linked in the booking page footer. */
+        privacyUrl?: string;
       }
     | false;
   /**
@@ -171,6 +173,9 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
         ...(mcpPath ? { mcpUrl: `${baseUrl}${mcpPath}` } : {}),
         ...(options.bookingPage && options.bookingPage.profile
           ? { profile: options.bookingPage.profile }
+          : {}),
+        ...(options.bookingPage && options.bookingPage.privacyUrl
+          ? { privacyUrl: options.bookingPage.privacyUrl }
           : {}),
       })
     : undefined;

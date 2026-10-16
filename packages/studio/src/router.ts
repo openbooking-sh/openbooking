@@ -16,7 +16,7 @@ import { ActivityStore, recordActivity, type ActivityLog } from './activity';
 import { CustomerMatchSchema, type DataRightsAdapter } from './data-rights';
 import { BusinessSettingsSchema, type StudioSettingsAdapter } from './settings';
 import { computeOverview } from './stats';
-import { STUDIO_HTML } from './ui';
+import { studioHtml, type StudioLegal } from './ui';
 
 export interface StudioOptions {
   service: BookingService;
@@ -38,6 +38,8 @@ export interface StudioOptions {
   settings?: StudioSettingsAdapter;
   /** Lets the owner download or delete one customer's data from Studio. */
   dataRights?: DataRightsAdapter;
+  /** Policies linked in the Studio footer (hosted OpenBooking sets them). */
+  legal?: StudioLegal;
 }
 
 export interface Studio {
@@ -93,7 +95,8 @@ export function createStudio(options: StudioOptions): Studio {
   };
   const oneWithVia = async (b: Booking) => (await withVia([b]))[0]!;
 
-  app.get('/', (c) => c.html(STUDIO_HTML));
+  const html = studioHtml(options.legal);
+  app.get('/', (c) => c.html(html));
 
   app.use('/api/*', async (c, next) => {
     if (!authorized(c)) {

@@ -49,6 +49,34 @@ async function book(service: BookingService): Promise<Booking> {
   });
 }
 
+describe('privacy policy link', () => {
+  const PRIVACY = 'https://openbooking.sh/privacy';
+
+  it('is in the footer of customer and owner emails when configured, and absent otherwise', async () => {
+    for (const privacyUrl of [PRIVACY, undefined]) {
+      const mailer = new MemoryMailer();
+      const clock = new ManualClock('2026-10-06T07:00:00Z');
+      const service = new BookingService({ provider: createDemoSalonProvider(), clock });
+      const notifications = attachNotifications({
+        service,
+        mailer,
+        config: {
+          from: 'Studio Nord <bookings@openbooking.sh>',
+          ownerEmail: 'owner@studionord.example',
+          ...(privacyUrl ? { privacyUrl } : {}),
+        },
+      });
+      await book(service);
+      await notifications.idle();
+      expect(mailer.sent).toHaveLength(2);
+      for (const m of mailer.sent) {
+        expect(m.text.includes(PRIVACY), m.to).toBe(!!privacyUrl);
+        expect(m.html.includes(`href="${PRIVACY}"`), m.to).toBe(!!privacyUrl);
+      }
+    }
+  });
+});
+
 describe('attachNotifications', () => {
   it('emails the customer a confirmation with an invite, and tells the owner', async () => {
     const mailer = new MemoryMailer();

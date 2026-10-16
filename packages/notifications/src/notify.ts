@@ -24,6 +24,8 @@ export interface NotificationConfig {
   customerEmails?: boolean;
   /** Email the business. Default true. */
   ownerEmails?: boolean;
+  /** Privacy policy linked in the footer of every email (hosted OpenBooking sets it). */
+  privacyUrl?: string;
 }
 
 export interface NotificationOptions {
@@ -67,7 +69,12 @@ export function attachNotifications(options: NotificationOptions): NotificationH
     const customerEmail = booking.customer?.email;
     if (config.customerEmails !== false && customerEmail) {
       const method = kind === 'confirmed' ? 'REQUEST' : 'CANCEL';
-      const input = { booking, venue, ...(manageUrl ? { manageUrl } : {}) };
+      const input = {
+        booking,
+        venue,
+        ...(manageUrl ? { manageUrl } : {}),
+        ...(config.privacyUrl ? { privacyUrl: config.privacyUrl } : {}),
+      };
       const mail =
         kind === 'confirmed' ? renderConfirmationEmail(input) : renderCancellationEmail(input);
       sends.push({
@@ -103,6 +110,7 @@ export function attachNotifications(options: NotificationOptions): NotificationH
           booking,
           venue,
           channel: event.actor?.agent ?? 'Direct',
+          ...(config.privacyUrl ? { privacyUrl: config.privacyUrl } : {}),
         }),
       });
     }

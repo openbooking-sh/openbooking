@@ -62,6 +62,7 @@ import {
 } from '@openbooking-sh/studio';
 import type { Business, BusinessStore } from './business';
 import { providerConfig } from './catalog';
+import { PRIVACY_URL, TERMS_URL } from './legal';
 
 export interface TenantDeps {
   baseUrl: string;
@@ -138,6 +139,7 @@ export class Tenant {
       service: this.service,
       activity: deps.activityFor(business.id),
       insecureNoAuth: true,
+      legal: { privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL },
       settings: { get: () => this.settingsView(), update: (s) => this.#saveSettings(s) },
       dataRights: {
         exportCustomer: (who) => this.#customerBookings(who),
@@ -159,6 +161,7 @@ export class Tenant {
             ownerEmail: owner,
             ownerEmails: s.notifications.email_owner,
             customerEmails: s.notifications.email_customers,
+            privacyUrl: PRIVACY_URL,
           };
         },
         manageUrl: (b) => this.#app.bookingPage?.manageUrl(b),
@@ -445,6 +448,7 @@ export class Tenant {
       studio: false,
       bookingPage: {
         pageUrl: this.pageUrl,
+        privacyUrl: PRIVACY_URL,
         profile: () => {
           const p = this.#business.settings.profile;
           return {
