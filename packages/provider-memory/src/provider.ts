@@ -413,14 +413,22 @@ export class MemoryBookingProvider implements BookingProvider {
 
   async cancelBooking(req: CancelBookingRequest, ctx: ProviderContext): Promise<Booking> {
     const at = ctx.now.toISOString();
-    return this.#update(req.booking_id, ctx, (b) => ({
-      ...b,
-      status: 'cancelled',
-      expires_at: null,
-      cancelled_at: at,
-      updated_at: at,
-      cancellation: { reason: req.reason, fee: req.fee, refund: req.refund },
-    }));
+    return this.#update(req.booking_id, ctx, (b) => {
+      if (req.release_hold && b.status === 'confirmed') {
+        throw new BookingError('invalid_state', 'The booking was confirmed in the meantime.', {
+          suggested_next_action:
+            'Fetch the booking again. To cancel a confirmed booking, ask the user and call cancel_booking with user_confirmed=true.',
+        });
+      }
+      return {
+        ...b,
+        status: 'cancelled',
+        expires_at: null,
+        cancelled_at: at,
+        updated_at: at,
+        cancellation: { reason: req.reason, fee: req.fee, refund: req.refund },
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -503,7 +511,17 @@ export class MemoryBookingProvider implements BookingProvider {
       const open = time.minutesOfDay(p.open);
       const close = p.close === '24:00' ? 1440 : time.minutesOfDay(p.close);
       for (let m = open; m < close; m += cfg.slot_interval_minutes) {
-        const start = time.zonedToInstant(date, time.timeOfMinutes(m), cfg.venue.timezone);
+        const wall = time.timeOfMinutes(m);
+        const start = time.zonedToInstant(date, wall, cfg.venue.timezone);
+        // A wall time inside a spring-forward gap (02:30 on the night clocks jump to 03:00) does
+        // not exist: zonedToInstant lands on a real instant an hour away, which is another
+        // slot's start, so skipping it is what keeps every start unique.
+        if (
+          time.localDate(start, cfg.venue.timezone) !== date ||
+          time.localTime(start, cfg.venue.timezone) !== wall
+        ) {
+          continue;
+        }
         if (start.getTime() >= earliest) out.push(start);
       }
     }

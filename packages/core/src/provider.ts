@@ -66,6 +66,13 @@ export interface CancelBookingRequest {
   fee: Money | null;
   /** Deposit refund computed by the engine. */
   refund: Money | null;
+  /**
+   * The engine saw a hold and is releasing it without the user's consent. Cancel only if the
+   * booking is still a hold when the write happens: if it was confirmed in the meantime, fail with
+   * `invalid_state` instead of cancelling a booking the user approved. Providers that cannot check
+   * atomically may ignore this.
+   */
+  release_hold?: boolean;
 }
 
 export interface RescheduleBookingRequest {
