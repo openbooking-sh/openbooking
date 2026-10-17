@@ -36,6 +36,38 @@ function setup(provider = createDemoSalonProvider()) {
   return { service, page, events, clock, get, post };
 }
 
+describe('policy link', () => {
+  const PRIVACY = 'https://example.com/privacy';
+  const paths = ['/', '/manage/x', '/confirm/x'];
+
+  it('links the privacy policy in the footer of every page when one is set', async () => {
+    const service = new BookingService({
+      provider: createDemoSalonProvider(),
+      clock: new ManualClock('2026-10-08T08:00:00Z'),
+    });
+    const page = createBookingPage({
+      service,
+      pageUrl: BASE,
+      apiBase: `${BASE}/book`,
+      privacyUrl: PRIVACY,
+    });
+    for (const path of paths) {
+      const html = await (await page.app.request(path)).text();
+      expect(html, path).toContain(
+        `<a href="${PRIVACY}" target="_blank" rel="noopener">Privacy</a>`,
+      );
+    }
+  });
+
+  it('links nothing when none is set: a self-hosted business owns its own policy', async () => {
+    const t = setup();
+    for (const path of paths) {
+      const html = await (await t.page.app.request(path)).text();
+      expect(html, path).not.toContain('Privacy');
+    }
+  });
+});
+
 const customer = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 
 async function book(t: ReturnType<typeof setup>) {

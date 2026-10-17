@@ -44,6 +44,8 @@ export interface PageModel {
   /** Path prefix of the booking-page router, e.g. `/b/studio-nord/book`. */
   apiPath: string;
   mcpUrl?: string;
+  /** Privacy policy to link in the footer. Unset on self-hosted pages: that business owns its policy. */
+  privacyUrl?: string;
   prefill: Prefill;
 }
 
@@ -267,6 +269,13 @@ function venueHeader(v: Venue, profile: PageProfile): string {
 </header>`;
 }
 
+function footer(privacyUrl: string | undefined): string {
+  const privacy = privacyUrl
+    ? ` · <a href="${esc(privacyUrl)}" target="_blank" rel="noopener">Privacy</a>`
+    : '';
+  return `<footer>Bookings by <a href="https://openbooking.sh" target="_blank" rel="noopener">OpenBooking</a>${privacy}</footer>`;
+}
+
 export function renderPage(m: PageModel): string {
   const v = m.venue;
   const title = `Book ${v.name}`;
@@ -351,7 +360,7 @@ ${
     ? `<section class="card"><h2>Book with an AI assistant</h2><p class="muted" style="margin:0 0 8px;font-size:14px">${esc(v.name)} can be booked from ChatGPT, Claude, Gemini and other assistants. Ask yours to book ${esc(v.name)}, or connect this MCP server:</p><code>${esc(m.mcpUrl)}</code></section>`
     : ''
 }
-<footer>Bookings by <a href="https://openbooking.sh" target="_blank" rel="noopener">OpenBooking</a></footer>
+${footer(m.privacyUrl)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
 <script>${PAGE_SCRIPT}</script>
@@ -364,6 +373,7 @@ export function renderManage(m: {
   profile: PageProfile;
   pageUrl: string;
   apiPath: string;
+  privacyUrl?: string;
 }): string {
   const v = m.venue;
   const data = { api_path: m.apiPath, page_url: m.pageUrl, venue: { timezone: v.timezone } };
@@ -381,7 +391,7 @@ ${venueHeader(v, m.profile)}
   </div>
 </section>
 <p style="margin-top:16px"><a href="${esc(m.pageUrl)}" style="color:var(--royal)">Make a new booking</a></p>
-<footer>Bookings by <a href="https://openbooking.sh" target="_blank" rel="noopener">OpenBooking</a></footer>
+${footer(m.privacyUrl)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
 <script>${MANAGE_SCRIPT}</script>
@@ -398,6 +408,7 @@ export function renderConfirm(m: {
   profile: PageProfile;
   pageUrl: string;
   apiPath: string;
+  privacyUrl?: string;
 }): string {
   const v = m.venue;
   const data = { api_path: m.apiPath, page_url: m.pageUrl, venue: { timezone: v.timezone } };
@@ -414,7 +425,7 @@ ${venueHeader(v, m.profile)}
   <button class="btn btn-primary hidden" id="confirm">Confirm booking</button>
 </section>
 <p style="margin-top:16px"><a href="${esc(m.pageUrl)}" style="color:var(--royal)">Make a new booking</a></p>
-<footer>Bookings by <a href="https://openbooking.sh" target="_blank" rel="noopener">OpenBooking</a></footer>
+${footer(m.privacyUrl)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
 <script>${CONFIRM_SCRIPT}</script>

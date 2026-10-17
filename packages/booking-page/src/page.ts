@@ -37,6 +37,8 @@ export interface BookingPageOptions {
   /** MCP endpoint, shown as "book with an AI assistant". */
   mcpUrl?: string;
   profile?: () => PageProfile | Promise<PageProfile>;
+  /** Privacy policy linked in the footer of every page (hosted OpenBooking sets it). */
+  privacyUrl?: string;
 }
 
 export interface BookingPage {
@@ -78,6 +80,8 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
   const apiPath = new URL(apiBase).pathname.replace(/\/+$/, '');
   const app = new Hono();
 
+  const legal = options.privacyUrl ? { privacyUrl: options.privacyUrl } : {};
+
   const profile = async (): Promise<PageProfile> => (await options.profile?.()) ?? {};
 
   const catalog = async () => {
@@ -108,6 +112,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
       pageUrl,
       apiPath,
       ...(options.mcpUrl ? { mcpUrl: options.mcpUrl } : {}),
+      ...(options.privacyUrl ? { privacyUrl: options.privacyUrl } : {}),
       prefill: readPrefill(query, cat),
     });
   };
@@ -192,14 +197,14 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     const [venue, prof] = await Promise.all([service.resolveVenue(), profile()]);
     c.header('Cache-Control', 'no-store');
     c.header('Referrer-Policy', 'no-referrer');
-    return c.html(renderManage({ venue, profile: prof, pageUrl, apiPath }));
+    return c.html(renderManage({ venue, profile: prof, pageUrl, apiPath, ...legal }));
   });
 
   app.get('/confirm/:id', async (c) => {
     const [venue, prof] = await Promise.all([service.resolveVenue(), profile()]);
     c.header('Cache-Control', 'no-store');
     c.header('Referrer-Policy', 'no-referrer');
-    return c.html(renderConfirm({ venue, profile: prof, pageUrl, apiPath }));
+    return c.html(renderConfirm({ venue, profile: prof, pageUrl, apiPath, ...legal }));
   });
 
   app.get('/llms.txt', async (c) => {

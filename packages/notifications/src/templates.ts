@@ -16,6 +16,8 @@ export interface CustomerEmailInput {
   venue: Venue;
   /** View-or-cancel link for the customer. */
   manageUrl?: string;
+  /** Privacy policy linked in the footer. */
+  privacyUrl?: string;
 }
 
 export interface OwnerEmailInput {
@@ -24,6 +26,7 @@ export interface OwnerEmailInput {
   venue: Venue;
   /** Where the booking came from, e.g. "Claude", "Booking page". */
   channel: string;
+  privacyUrl?: string;
 }
 
 type Row = [label: string, value: string];
@@ -48,6 +51,7 @@ export function renderConfirmationEmail(input: CustomerEmailInput): RenderedEmai
     sections: [['Cancellation policy', b.slot.cancellation_policy.description]],
     venue,
     ...(input.manageUrl ? { link: [input.manageUrl, 'View or cancel your booking'] } : {}),
+    ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
   });
 }
 
@@ -70,6 +74,7 @@ export function renderCancellationEmail(input: CustomerEmailInput): RenderedEmai
     rows,
     sections: [],
     venue,
+    ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
   });
 }
 
@@ -104,6 +109,7 @@ export function renderOwnerEmail(input: OwnerEmailInput): RenderedEmail {
     sections: [],
     venue,
     footer: 'Sent by OpenBooking. Manage bookings in your Studio.',
+    ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
   });
 }
 
@@ -128,6 +134,7 @@ function compose(p: {
   venue: Venue;
   link?: [url: string, label: string];
   footer?: string;
+  privacyUrl?: string;
 }): RenderedEmail {
   const address = formatAddress(p.venue.address);
   const contact = [p.venue.name, address, p.venue.phone_number].filter(Boolean) as string[];
@@ -145,6 +152,7 @@ function compose(p: {
     ...contact,
     '',
     footer,
+    ...(p.privacyUrl ? [`Privacy policy: ${p.privacyUrl}`] : []),
   ].join('\n');
 
   const e = escapeHtml;
@@ -174,7 +182,9 @@ ${
 }
 <p style="margin:22px 0 0;font-size:13px;color:#646b80">${contact.map(e).join('<br>')}</p>
 </div>
-<p style="text-align:center;font-size:12px;color:#646b80;margin:14px 0 0">${e(footer)}</p>
+<p style="text-align:center;font-size:12px;color:#646b80;margin:14px 0 0">${e(footer)}${
+    p.privacyUrl ? ` <a href="${e(p.privacyUrl)}" style="color:#646b80">Privacy policy</a>` : ''
+  }</p>
 </body></html>`;
 
   return { subject: p.subject, text, html };

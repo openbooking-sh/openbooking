@@ -110,6 +110,34 @@ async function mcp(app: { fetch(r: Request): Response | Promise<Response> }, pat
 
 const ada = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 
+describe('policy links', () => {
+  const PRIVACY = 'https://openbooking.sh/privacy';
+  const TERMS = 'https://openbooking.sh/terms';
+
+  it('links the terms and privacy policy where people give or see their data', async () => {
+    const { req, signup } = setup();
+    const signupPage = await req('/signup');
+    expect(signupPage.text).toContain(`href="${TERMS}"`);
+    expect(signupPage.text).toContain(`href="${PRIVACY}"`);
+
+    const { business_id } = await signup();
+    const pages = [
+      `/b/${business_id}`,
+      `/b/${business_id}/book/manage/x`,
+      `/b/${business_id}/book/confirm/x`,
+    ];
+    for (const path of pages) {
+      const page = await req(path, { accept: 'text/html' });
+      expect(page.status, path).toBe(200);
+      expect(page.text, path).toContain(`href="${PRIVACY}"`);
+    }
+
+    const studio = await req('/studio');
+    expect(studio.text).toContain(`href="${PRIVACY}"`);
+    expect(studio.text).toContain(`href="${TERMS}"`);
+  });
+});
+
 describe('sign-up and login', () => {
   it('creates a bookable business with starter settings in one call', async () => {
     const { req, signup } = setup();
@@ -306,6 +334,7 @@ describe('the OpenBooking app (find_business)', () => {
     expect(toAda).toHaveLength(1);
     expect(toAda[0]!.attachments?.[0]?.content).toContain('BEGIN:VCALENDAR');
     expect(toAda[0]!.text).toContain('/b/studio-nord/book/manage/');
+    expect(toAda[0]!.text).toContain('https://openbooking.sh/privacy');
     expect(mailer.sent.some((m) => m.subject.startsWith('New booking'))).toBe(true);
   });
 

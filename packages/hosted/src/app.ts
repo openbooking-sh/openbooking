@@ -27,7 +27,7 @@ import {
 import { MemoryBookingStore, type BookingRecordStore } from '@openbooking-sh/provider-memory';
 import {
   ActivityStore,
-  STUDIO_HTML,
+  studioHtml,
   actorFromRequest,
   type ActivityLog,
 } from '@openbooking-sh/studio';
@@ -66,6 +66,7 @@ import { ImportError, importFromWebsite, type ImportOptions } from './importer';
 import { setupHtml } from './setup';
 import { posthogSnippet, withHeadSnippet, type Analytics } from './analytics';
 import { slackEscape, type OpsNotifier } from './slack';
+import { PRIVACY_URL, TERMS_URL } from './legal';
 import { signupHtml } from './signup';
 import {
   createProfileFetcher,
@@ -618,7 +619,8 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   app.get('/setup', (c) =>
     c.html(page(setupHtml({ studioPath: STUDIO_PATH, api: `${STUDIO_PATH}/api` }))),
   );
-  app.get(STUDIO_PATH, (c) => c.html(page(STUDIO_HTML)));
+  const studio = studioHtml({ privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL });
+  app.get(STUDIO_PATH, (c) => c.html(page(studio)));
   app.get(`${STUDIO_PATH}/`, (c) => c.redirect(STUDIO_PATH));
 
   // Every Studio API call: the session token decides which business's Studio answers.
