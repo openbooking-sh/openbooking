@@ -21,7 +21,8 @@ pnpm 12 workspace, Node 22 and 24, strict TypeScript, ESM.
 - `packages/provider-memory`: the configured booking system (catalog, slot rules) on a pluggable
   store.
 - `packages/postgres`: durable stores.
-- `packages/booking-page`: booking page, embed snippet and WebMCP.
+- `packages/booking-page`: booking page, embed snippet and WebMCP. Its JSON API is described once as zod schemas (`src/api.ts`); the OpenAPI document is generated from them.
+- `packages/client`: typed fetch client for that API. Its types are hand-written and checked against the schemas in its tests; keep it free of dependencies.
 - `packages/studio`: the business dashboard.
 - `packages/hosted`: multi-business hosting (app.openbooking.sh).
 - `packages/notifications`, `google-calendar`, `provider-calcom`: integrations.

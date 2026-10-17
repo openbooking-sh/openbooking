@@ -1,0 +1,56 @@
+{
+  "name": "@openbooking-sh/client",
+  "version": "0.0.0",
+  "description": "Typed fetch client for the OpenBooking booking API. Check availability, hold, confirm and cancel from a browser, an edge function or Node.",
+  "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/client"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "appointments",
+    "scheduling",
+    "api-client",
+    "openapi",
+    "typescript",
+    "fetch"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@openbooking-sh/booking-page": "workspace:^",
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/server": "workspace:^",
+    "zod": "^4.6.5"
+  }
+}

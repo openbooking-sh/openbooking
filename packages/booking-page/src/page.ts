@@ -15,6 +15,7 @@ import {
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { embedScript } from './embed';
+import { buildOpenApi } from './openapi';
 import {
   jsonLd,
   readPrefill,
@@ -210,6 +211,13 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
   app.get('/llms.txt', async (c) => {
     const [cat, prof] = await Promise.all([catalog(), profile()]);
     return c.text(llmsTxt({ ...cat, profile: prof, pageUrl, mcpUrl: options.mcpUrl }));
+  });
+
+  // The API described for tools and other languages. Short cache: it follows the business name.
+  app.get('/api/openapi.json', async (c) => {
+    const venue = await service.resolveVenue();
+    c.header('Cache-Control', 'public, max-age=300');
+    return c.json(buildOpenApi({ apiUrl: `${apiBase}/api`, name: venue.name }));
   });
 
   app.get('/api/info', (c) =>

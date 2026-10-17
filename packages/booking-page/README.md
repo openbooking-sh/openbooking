@@ -1,6 +1,6 @@
 # @openbooking-sh/booking-page
 
-**Public booking page, embed and WebMCP.** A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website.
+**Public booking page, embed and WebMCP.** A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website. Its JSON API is described by an OpenAPI 3.1 document at `/book/api/openapi.json`; call it with `@openbooking-sh/client`.
 
 Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
 

@@ -47,10 +47,12 @@
   },
   "dependencies": {
     "@openbooking-sh/core": "workspace:^",
-    "hono": "^4.13.12"
+    "hono": "^4.13.12",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@openbooking-sh/provider-memory": "workspace:^"
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@readme/openapi-parser": "^9.1.0"
   },
   "publishConfig": {
     "access": "public"
