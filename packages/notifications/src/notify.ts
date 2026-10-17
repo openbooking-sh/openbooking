@@ -26,6 +26,11 @@ export interface NotificationConfig {
   ownerEmails?: boolean;
   /** Privacy policy linked in the footer of every email (hosted OpenBooking sets it). */
   privacyUrl?: string;
+  /**
+   * Link that stops customer emails to this address (shown in the footer and sent as the
+   * List-Unsubscribe header). Must not contain the address itself.
+   */
+  unsubscribeUrl?: (customerEmail: string) => string;
 }
 
 export interface NotificationOptions {
@@ -35,6 +40,11 @@ export interface NotificationOptions {
   config: NotificationConfig | (() => NotificationConfig | Promise<NotificationConfig>);
   /** Link where the customer can view/cancel the booking (booking page manage link). */
   manageUrl?: (booking: Booking) => string | undefined;
+  /**
+   * True when this customer address has unsubscribed: nothing is sent to it. Fails closed: if
+   * the check throws, the customer email is skipped and `onError` is called.
+   */
+  isSuppressed?: (customerEmail: string) => boolean | Promise<boolean>;
   /** Dedupe across retries and instances. Default in-memory. */
   log?: NotificationLog;
   onError?: (error: unknown) => void;
@@ -67,13 +77,19 @@ export function attachNotifications(options: NotificationOptions): NotificationH
     const sends: EmailMessage[] = [];
 
     const customerEmail = booking.customer?.email;
-    if (config.customerEmails !== false && customerEmail) {
+    if (
+      config.customerEmails !== false &&
+      customerEmail &&
+      !(await options.isSuppressed?.(customerEmail))
+    ) {
+      const unsubscribeUrl = config.unsubscribeUrl?.(customerEmail);
       const method = kind === 'confirmed' ? 'REQUEST' : 'CANCEL';
       const input = {
         booking,
         venue,
         ...(manageUrl ? { manageUrl } : {}),
         ...(config.privacyUrl ? { privacyUrl: config.privacyUrl } : {}),
+        ...(unsubscribeUrl ? { unsubscribeUrl } : {}),
       };
       const mail =
         kind === 'confirmed' ? renderConfirmationEmail(input) : renderCancellationEmail(input);
@@ -82,6 +98,15 @@ export function attachNotifications(options: NotificationOptions): NotificationH
         from: config.from,
         ...(config.replyTo ? { replyTo: config.replyTo } : {}),
         ...mail,
+        ...(unsubscribeUrl
+          ? {
+              headers: {
+                // RFC 8058: lets mail clients unsubscribe with one POST, no page visit.
+                'List-Unsubscribe': `<${unsubscribeUrl}>`,
+                'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+              },
+            }
+          : {}),
         attachments: [
           {
             filename: 'booking.ics',
