@@ -52,6 +52,7 @@ await listen(app, { port: 3000 });
 | [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                                                              | Configured provider (services, staff, hours, rules) on a pluggable store |
 | [`@openbooking-sh/postgres`](packages/postgres)                                                                                                                            | Postgres storage for everything                                          |
 | [`@openbooking-sh/booking-page`](packages/booking-page)                                                                                                                    | Booking page, embed snippet and WebMCP                                   |
+| [`@openbooking-sh/client`](packages/client)                                                                                                                                | Typed fetch client for the booking API (and its OpenAPI document)        |
 | [`@openbooking-sh/studio`](packages/studio)                                                                                                                                | Dashboard for the business                                               |
 | [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-usp`](packages/adapter-usp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
 | [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                                                              | Cal.com connector (beta)                                                 |
@@ -321,7 +322,8 @@ packages/
   adapter-usp/      USP profile, catalog, availability, holds and bookings (draft)
   adapter-a2a/      A2A Agent Card + SendMessage endpoint
   studio/           OpenBooking Studio dashboard (/studio), incl. business settings
-  booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
+  booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links, OpenAPI
+  client/           Typed fetch client for the booking page API
   notifications/    Confirmation/cancellation emails with .ics invites
   google-calendar/  Google Calendar sync (busy times, bookings as events)
   server/           One Hono app mounting everything

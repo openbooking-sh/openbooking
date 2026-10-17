@@ -369,6 +369,7 @@ await listen(app, { port: 3000 });
 | [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                                                              | Configured provider (services, staff, hours, rules) on a pluggable store |
 | [`@openbooking-sh/postgres`](packages/postgres)                                                                                                                            | Postgres storage for everything                                          |
 | [`@openbooking-sh/booking-page`](packages/booking-page)                                                                                                                    | Booking page, embed snippet and WebMCP                                   |
+| [`@openbooking-sh/client`](packages/client) | Typed fetch client for the booking API (and its OpenAPI document) |
 | [`@openbooking-sh/studio`](packages/studio)                                                                                                                                | Dashboard for the business                                               |
 | [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-usp`](packages/adapter-usp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
 | [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                                                              | Cal.com connector (beta)                                                 |
@@ -638,7 +639,8 @@ packages/
   adapter-usp/      USP profile, catalog, availability, holds and bookings (draft)
   adapter-a2a/      A2A Agent Card + SendMessage endpoint
   studio/           OpenBooking Studio dashboard (/studio), incl. business settings
-  booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links
+  booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links, OpenAPI
+  client/           Typed fetch client for the booking page API
   notifications/    Confirmation/cancellation emails with .ics invites
   google-calendar/  Google Calendar sync (busy times, bookings as events)
   server/           One Hono app mounting everything
@@ -804,7 +806,7 @@ Apache-2.0
 
 # @openbooking-sh/booking-page
 
-**Public booking page, embed and WebMCP.** A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website.
+**Public booking page, embed and WebMCP.** A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website. Its JSON API is described by an OpenAPI 3.1 document at `/book/api/openapi.json`; call it with `@openbooking-sh/client`.
 
 Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
 
@@ -827,6 +829,48 @@ app.route('/book', page.app);
 // On any website:
 // <script src="https://book.example.com/book/embed.js" async></script>
 ```
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
+<!-- @openbooking-sh/client (packages/client/README.md) -->
+
+# @openbooking-sh/client
+
+**Typed client for the booking API.** A small, typed `fetch` client for the booking API of one business: read its services, find free times, hold, confirm and cancel. No dependencies; works in browsers, edge functions and Node. Every write carries an idempotency key, consent is explicit (`user_confirmed: true`), and every failure is an `OpenBookingError` with a code and what to do next. The API is described by an OpenAPI 3.1 document at `<booking page>/book/api/openapi.json`, for every other language.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/client
+```
+
+## Usage
+
+```ts
+import { createClient } from '@openbooking-sh/client';
+
+const booking = createClient({ baseUrl: 'https://app.openbooking.sh/b/studio-nord/book' });
+
+const { slots } = await booking.availability({ date: '2026-10-16', service: 'haircut' });
+const hold = await booking.hold({ slot_id: slots[0].slot_id }); // reserved for a few minutes
+
+// Show the customer the time, price and cancellation terms. Only when they say yes:
+const confirmed = await booking.confirm({
+  booking_id: hold.booking_id,
+  user_confirmed: true,
+  customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+});
+console.log(confirmed.confirmation_code);
+```
+
+Pass your own `idempotency_key` (and keep it) to retry a write safely after a network error: the same key never books twice.
 
 ## Learn more
 
@@ -1287,7 +1331,8 @@ Apache-2.0
 | `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                    | core                                                                    |
 | `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
 | `examples/demo`                   | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
-| `@openbooking-sh/booking-page`    | Public booking page and its JSON API, manage links, JSON-LD, WebMCP                                                 | core, `hono`                                                            |
+| `@openbooking-sh/booking-page`    | Public booking page and its JSON API (zod schemas, OpenAPI 3.1), manage links, JSON-LD, WebMCP                      | core, `hono`, `zod`                                                         |
+| `@openbooking-sh/client`          | Typed fetch client for the booking page API; no dependencies, runs in browsers, edge and Node                       | none                                                                    |
 | `@openbooking-sh/notifications`   | Booking emails with .ics invites (`Mailer`: Resend, console, memory)                                                | core                                                                    |
 | `@openbooking-sh/google-calendar` | Google OAuth, busy-time source, bookings → events                                                                   | core, provider-memory                                                   |
 | `@openbooking-sh/hosted`          | Many businesses: accounts, settings → catalog, per-business runtime, the OpenBooking MCP app (`find_business`)      | all of the above                                                        |

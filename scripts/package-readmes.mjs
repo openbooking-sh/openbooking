@@ -91,10 +91,32 @@ app.get('/.well-known/usp', async (c) => c.json(await usp.profile()));`,
       '/server`.',
     usage: `import { buildAgentCard, AGENT_CARD_PATH } from '${S}/adapter-a2a';`,
   },
+  client: {
+    title: 'Typed client for the booking API',
+    intro:
+      'A small, typed `fetch` client for the booking API of one business: read its services, find free times, hold, confirm and cancel. No dependencies; works in browsers, edge functions and Node. Every write carries an idempotency key, consent is explicit (`user_confirmed: true`), and every failure is an `OpenBookingError` with a code and what to do next. The API is described by an OpenAPI 3.1 document at `<booking page>/book/api/openapi.json`, for every other language.',
+    usage: `import { createClient } from '${S}/client';
+
+const booking = createClient({ baseUrl: 'https://app.openbooking.sh/b/studio-nord/book' });
+
+const { slots } = await booking.availability({ date: '2026-10-16', service: 'haircut' });
+const hold = await booking.hold({ slot_id: slots[0].slot_id }); // reserved for a few minutes
+
+// Show the customer the time, price and cancellation terms. Only when they say yes:
+const confirmed = await booking.confirm({
+  booking_id: hold.booking_id,
+  user_confirmed: true,
+  customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+});
+console.log(confirmed.confirmation_code);`,
+    more: 'Pass your own `idempotency_key` (and keep it) to retry a write safely after a network error: the same key never books twice.',
+  },
   'booking-page': {
     title: 'Public booking page, embed and WebMCP',
     intro:
-      'A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website.',
+      'A server-rendered booking page with schema.org data and pre-fill links, a manage-booking page, and `embed.js`: one line that adds a Book button, a booking popup and WebMCP booking tools to any website. Its JSON API is described by an OpenAPI 3.1 document at `/book/api/openapi.json`; call it with `' +
+      S +
+      '/client`.',
     usage: `import { createBookingPage } from '${S}/booking-page';
 
 const page = createBookingPage({
