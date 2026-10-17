@@ -1,5 +1,30 @@
 # @openbooking-sh/server
 
+## 0.13.0
+
+### Minor Changes
+
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+- db42a3d: Add `usp` to `createOpenBookingApp`: mounts USP (`/usp`, `/.well-known/usp`) for assistants and platforms that book through the Universal Scheduling Protocol. Off unless set; by default the customer confirms on the booking page (`consent: 'action'`). Calls from USP platforms are credited to their own channel in Studio.
+
+### Patch Changes
+
+- 787f01c: USP: platform profiles are now fetched (safely, public internet only) and capabilities negotiated. `usp.platformProfiles` on `createOpenBookingApp` and `uspPlatformProfiles` on `createHostedApp` take a fetcher or `false`; hosted shares one fetcher, and so one cache, across all businesses.
+- Updated dependencies [3d98490]
+- Updated dependencies [5b1fb9a]
+- Updated dependencies [92f6c50]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [787f01c]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/booking-page@0.13.0
+  - @openbooking-sh/studio@0.13.0
+  - @openbooking-sh/adapter-usp@0.13.0
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/adapter-a2a@0.13.0
+  - @openbooking-sh/adapter-mcp@0.13.0
+  - @openbooking-sh/adapter-ucp@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes
