@@ -97,6 +97,11 @@ export interface HostedOptions {
    * a hardened fetcher that only reaches the public internet. `false` skips fetching (tests).
    */
   uspPlatformProfiles?: ProfileFetcher | false;
+  /**
+   * Also serve USP's MCP binding (`<business>/usp/mcp`) for the businesses that turn USP on.
+   * Off by default: it is a second public endpoint per business, with the REST binding's rules.
+   */
+  uspMcp?: boolean;
   activityFor?: (businessId: string) => ActivityLog;
   clock?: Clock;
   /**
@@ -238,6 +243,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
     uspState: options.uspState ?? new MemoryUspState(() => clock.now().getTime()),
     uspPlatformProfiles: options.uspPlatformProfiles ?? createProfileFetcher(),
+    uspMcp: options.uspMcp === true,
     allowedHosts,
     requireVerifiedEmail,
     ...(options.onEvent || options.analytics || options.ops

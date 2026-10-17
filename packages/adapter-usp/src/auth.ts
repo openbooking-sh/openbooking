@@ -35,6 +35,12 @@ export interface UspAuthenticator {
    */
   authenticate(request: Request, rawBody: string): Promise<UspPrincipal>;
   /**
+   * Authenticate one MCP tool call (`_meta.usp` inside the arguments, spec 9.2.2). `params` is the
+   * tool's whole argument object, exactly as sent, because the proof covers it. Required to serve
+   * the MCP binding; a REST-only authenticator can leave it out.
+   */
+  authenticateMcp?(call: { method: string; params: unknown }): Promise<UspPrincipal>;
+  /**
    * Issue a credential for a hold or booking just created for `principal`. It is returned only on
    * the creation response, as a sibling of the hold or booking.
    */
