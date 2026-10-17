@@ -65,9 +65,41 @@ interface Runtime {
   idle(): Promise<void>;
 }
 
+/**
+ * Cold-start timing, one line per instance in the Vercel logs: stage names and milliseconds only
+ * (no URLs, credentials or customer data). `imports` is the time from process start until this
+ * module finished loading; `db_connect` opens the first connection, which includes TCP, TLS and a
+ * Neon compute waking from idle; `migrate` is the schema check.
+ */
+const moduleLoadedAt = performance.now();
+function bootTimer() {
+  const stages: string[] = [`imports=${Math.round(moduleLoadedAt)}ms`];
+  let last = performance.now();
+  const start = last;
+  return {
+    mark(stage: string) {
+      const now = performance.now();
+      stages.push(`${stage}=${Math.round(now - last)}ms`);
+      last = now;
+    },
+    done() {
+      stages.push(`boot=${Math.round(performance.now() - start)}ms`);
+      console.log(`[openbooking] cold start: ${stages.join(' ')}`);
+    },
+  };
+}
+
 async function boot(): Promise<Runtime> {
+  const timer = bootTimer();
   const db = env.DATABASE_URL ? connectPostgres(env.DATABASE_URL, { max: 3 }) : undefined;
-  if (db) await migrate(db);
+  if (db) {
+    // Open (and keep, in the pool) one connection so connecting is timed apart from migrating,
+    // without an extra query.
+    (await db.pool.connect()).release();
+    timer.mark('db_connect');
+    await migrate(db);
+    timer.mark('migrate');
+  }
   const stores = db ? postgresStores(db) : undefined;
   const store = stores ? { store: stores.bookings } : {};
   const allowedHosts = [
@@ -132,6 +164,8 @@ async function boot(): Promise<Runtime> {
       ...(env.CRON_SECRET ? { cronSecret: env.CRON_SECRET } : {}),
       ...(env.SENTRY_DSN ? { onError: (e: unknown) => Sentry.captureException(e) } : {}),
     });
+    timer.mark('app');
+    timer.done();
     return { fetch: (r) => hosted.app.fetch(r), idle: () => hosted.idle() };
   }
 
@@ -149,6 +183,8 @@ async function boot(): Promise<Runtime> {
     ...(stores ? { serviceOptions: { idempotencyStore: stores.idempotency } } : {}),
     allowedHosts,
   });
+  timer.mark('app');
+  timer.done();
   return {
     fetch: (r) => single.app.fetch(r),
     idle: async () => {
