@@ -1,5 +1,11 @@
 # @openbooking-sh/core
 
+## 0.13.0
+
+### Patch Changes
+
+- db42a3d: Add `usp` to the actor protocols, so bookings made through the Universal Scheduling Protocol are credited to their own channel.
+
 ## 0.12.0
 
 ### Minor Changes

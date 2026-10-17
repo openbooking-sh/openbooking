@@ -1,5 +1,26 @@
 # @openbooking-sh/postgres
 
+## 0.13.0
+
+### Minor Changes
+
+- 65bea74: Add `PostgresUspState` (also `postgresStores(db).usp`): durable state for the USP adapter, so owners, booking credentials (by hash), replay memory and request keys are shared by every server instance. Migration 4 adds five `ob_usp_*` tables, with row level security like the rest; `migrate(db)` applies it. No customer details are stored in them.
+
+### Patch Changes
+
+- Updated dependencies [92f6c50]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [787f01c]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/hosted@0.13.0
+  - @openbooking-sh/notifications@0.13.0
+  - @openbooking-sh/studio@0.13.0
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/google-calendar@0.13.0
+  - @openbooking-sh/provider-calcom@0.13.0
+  - @openbooking-sh/provider-memory@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

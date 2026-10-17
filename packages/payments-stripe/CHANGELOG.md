@@ -1,5 +1,12 @@
 # @openbooking-sh/payments-stripe
 
+## 0.13.0
+
+### Patch Changes
+
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes
