@@ -1,6 +1,6 @@
 /**
  * Webhooks: tell other systems (a CRM, an SMS sender, the integrator's own database) when a
- * booking is held, confirmed, updated or cancelled.
+ * booking is held, confirmed, updated or cancelled, or its hold expired.
  *
  * Each delivery is a signed JSON POST. The signature header is `t=<unix seconds>,v1=<hex>`, where
  * v1 is HMAC-SHA256 of `${t}.${body}` with the endpoint's secret, so receivers can check both
@@ -24,6 +24,7 @@ export const WEBHOOK_EVENT_TYPES = [
   'booking.confirmed',
   'booking.updated',
   'booking.cancelled',
+  'booking.expired',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -35,7 +36,7 @@ export interface WebhookEvent {
   created_at: string;
   data: {
     booking: Booking;
-    /** Who made the change, e.g. `{ agent: 'Claude' }` or Studio. */
+    /** Who made the change, e.g. `{ agent: 'Claude' }` or Studio. Absent on `booking.expired`: the clock did it. */
     actor?: Actor;
   };
 }
@@ -74,6 +75,8 @@ function eventType(e: BookingEvent): WebhookEventType | undefined {
       return 'booking.updated';
     case 'cancel':
       return 'booking.cancelled';
+    case 'expire':
+      return 'booking.expired';
     default:
       return undefined;
   }
