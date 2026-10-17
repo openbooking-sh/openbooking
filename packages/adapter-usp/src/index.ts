@@ -6,6 +6,7 @@ export type { UspAuthenticator, UspBusinessAuth, UspIssuedCredential, UspPrincip
 export { createPopAuthenticator, parseAgentHeader, type PopAuthenticatorOptions } from './pop-auth';
 export { MemoryUspState, scopeUspState, type UspStateStore } from './state';
 export { createUsp, type Usp, type UspOptions, type UspProfile } from './usp';
+export { createUspMcp, bridgeAuth, USP_MCP_TOOLS, type UspMcpOptions } from './mcp';
 export { ProtocolError } from './protocol';
 export { CONFIRMATION_ACTION, type ConsentMode } from './booking-mapping';
 export {

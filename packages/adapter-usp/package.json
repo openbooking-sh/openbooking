@@ -43,6 +43,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.2.0",
     "@openbooking-sh/core": "workspace:^",
     "hono": "^4.13.12",
     "jose": "^6.2.12",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@hono/node-server": "^2.1.3",
+    "@modelcontextprotocol/client": "^2.2.0",
     "@openbooking-sh/booking-page": "workspace:^",
     "@openbooking-sh/provider-memory": "workspace:^",
     "ajv": "^8.17.1",
