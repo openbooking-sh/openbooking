@@ -57,3 +57,6 @@ export function createSigner(secret: string, now: () => number = Date.now): Sign
 // stolen one stops working on its own (or at once, on logout or a password reset).
 export const SESSION_TTL_MS = 7 * 24 * 3_600_000;
 export const OAUTH_STATE_TTL_MS = 15 * 60_000;
+// An unsubscribe link sits in an inbox for years and must keep working; the token only proves the
+// link came from us, and the worst it can do is stop emails to the one address it was made for.
+export const UNSUBSCRIBE_TTL_MS = 5 * 365 * 24 * 3_600_000;

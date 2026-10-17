@@ -160,6 +160,22 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       alter table ob_usp_request_keys enable row level security;
     `,
   },
+  {
+    version: 5,
+    name: 'email-suppressions',
+    // Addresses that unsubscribed from a business's emails, kept as a hash of the normalised
+    // address (never the address) per business. Survives restarts and is shared by every instance.
+    sql: `
+      create table ob_email_suppressions (
+        business_id  text not null,
+        address_hash text not null,
+        created_at   timestamptz not null default now(),
+        primary key (business_id, address_hash)
+      );
+
+      alter table ob_email_suppressions enable row level security;
+    `,
+  },
 ];
 
 /**

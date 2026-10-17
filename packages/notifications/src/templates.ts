@@ -18,6 +18,8 @@ export interface CustomerEmailInput {
   manageUrl?: string;
   /** Privacy policy linked in the footer. */
   privacyUrl?: string;
+  /** One-click unsubscribe page for this address, linked in the footer. */
+  unsubscribeUrl?: string;
 }
 
 export interface OwnerEmailInput {
@@ -52,6 +54,7 @@ export function renderConfirmationEmail(input: CustomerEmailInput): RenderedEmai
     venue,
     ...(input.manageUrl ? { link: [input.manageUrl, 'View or cancel your booking'] } : {}),
     ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
+    ...(input.unsubscribeUrl ? { unsubscribeUrl: input.unsubscribeUrl } : {}),
   });
 }
 
@@ -75,6 +78,7 @@ export function renderCancellationEmail(input: CustomerEmailInput): RenderedEmai
     sections: [],
     venue,
     ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
+    ...(input.unsubscribeUrl ? { unsubscribeUrl: input.unsubscribeUrl } : {}),
   });
 }
 
@@ -135,6 +139,7 @@ function compose(p: {
   link?: [url: string, label: string];
   footer?: string;
   privacyUrl?: string;
+  unsubscribeUrl?: string;
 }): RenderedEmail {
   const address = formatAddress(p.venue.address);
   const contact = [p.venue.name, address, p.venue.phone_number].filter(Boolean) as string[];
@@ -153,6 +158,9 @@ function compose(p: {
     '',
     footer,
     ...(p.privacyUrl ? [`Privacy policy: ${p.privacyUrl}`] : []),
+    ...(p.unsubscribeUrl
+      ? [`Stop emails from ${p.venue.name} to this address: ${p.unsubscribeUrl}`]
+      : []),
   ].join('\n');
 
   const e = escapeHtml;
@@ -184,6 +192,10 @@ ${
 </div>
 <p style="text-align:center;font-size:12px;color:#646b80;margin:14px 0 0">${e(footer)}${
     p.privacyUrl ? ` <a href="${e(p.privacyUrl)}" style="color:#646b80">Privacy policy</a>` : ''
+  }${
+    p.unsubscribeUrl
+      ? ` <a href="${e(p.unsubscribeUrl)}" style="color:#646b80">Unsubscribe</a>`
+      : ''
   }</p>
 </body></html>`;
 
