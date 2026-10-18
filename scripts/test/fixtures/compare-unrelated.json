@@ -1,0 +1,9 @@
+{
+  "status": "ahead",
+  "ahead_by": 2,
+  "files": [
+    { "filename": "README.md", "status": "modified" },
+    { "filename": "schemas-extra/x.json", "status": "added" }
+  ],
+  "commits": []
+}
