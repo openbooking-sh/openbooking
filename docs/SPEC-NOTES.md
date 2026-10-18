@@ -177,3 +177,7 @@ Each offer reuses the `stay` shape (`id`, `stay_dates`, `accommodation_type`, `r
 - **Spec inconsistency:** the OpenRPC (and the OpenAPI) require `booking` in the `usp_bookings_create` result, but 9.4.2 makes a taken slot or an expired hold a 200 with `messages` and no booking. We follow 9.4.2 (as REST already did), so those results do not validate against the result schema; the tests check the parts that are defined for them. The OpenAPI also documents no 200 for `POST /bookings`.
 - **Gaps:** HTTP message signatures, the nonce challenge, ES256, the MCP transports other than HTTP (stdio) and OAuth/API-key mechanisms on MCP are not done.
 - **Open upstream:** `range_too_wide` is 400 in the error registry (9.4.3) but 422 in the availability prose (we follow the registry); no code for an unknown hold id on release (we use `booking_not_found`); the message `severity` list in the prose includes `unrecoverable` but the message schema's enum does not (we send no severity on `capabilities_incompatible`).
+
+## 7. Pins and upstream watch
+
+Every protocol we implement or watch, with its pinned version or commit and its source, is listed in [PROTOCOLS.md](./PROTOCOLS.md). A weekly job (`scripts/watch-protocols.mjs`) compares each upstream with those pins and files an issue when a watched spec file or release changed.
