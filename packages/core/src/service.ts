@@ -47,9 +47,15 @@ import {
 } from './schemas';
 
 export type Operation =
-  'search' | 'hold' | 'confirm' | 'get' | 'update' | 'reschedule' | 'cancel' | 'list';
+  'search' | 'hold' | 'confirm' | 'get' | 'update' | 'reschedule' | 'cancel' | 'list' | 'expire';
 
-/** Emitted after every operation; used for logging, metrics and the agent benchmark. */
+/**
+ * Emitted after every operation; used for logging, metrics and the agent benchmark.
+ *
+ * `operation: 'expire'` is different: no caller asked for it. It reports that a hold lapsed
+ * (see {@link BookingService.sweepExpired}), once per booking, carries no actor, and has `at` set
+ * to the moment the hold lapsed.
+ */
 export interface BookingEvent {
   operation: Operation;
   ok: boolean;
@@ -92,6 +98,14 @@ export interface BookingServiceOptions {
   holdLimit?: { limit: number; windowMs: number; limiter?: RateLimiter } | false;
   onEvent?: (event: BookingEvent) => void;
   /**
+   * Decides which instance announces that a hold expired. Holds lapse by the clock, so any
+   * instance may be the first to notice; a claim per booking makes sure exactly one of them
+   * emits the `expire` event. Default: in memory, which dedupes within this process only. When
+   * several instances share a database, pass a shared store (a `NotificationLog` such as
+   * `PostgresNotificationLog` fits) or each instance announces the same expiry once.
+   */
+  expiryClaims?: ExpiryClaims;
+  /**
    * Takes deposits that are due at confirmation, and refunds them on cancellation. Without it the
    * deposit is judged by the booking system itself (tokens in the demo provider).
    */
@@ -109,7 +123,16 @@ export interface CancelResult {
   already_inactive: boolean;
 }
 
+/** At-most-once claim on a key, across every instance sharing the store. Must be atomic. */
+export interface ExpiryClaims {
+  /** True the first time `key` is claimed, false afterwards. */
+  claim(key: string): Promise<boolean>;
+}
+
 export const DEFAULT_HOLD_TTL_SECONDS = 600;
+
+/** Enough to skip the shared claim for expiries this process already settled. */
+const SETTLED_EXPIRIES_MAX = 5000;
 
 export class BookingService {
   readonly provider: BookingProvider;
@@ -118,6 +141,9 @@ export class BookingService {
   readonly holdTtlSeconds: number;
   readonly #guard: IdempotencyGuard;
   readonly #listeners = new Set<(e: BookingEvent) => void>();
+  readonly #expiryClaims: ExpiryClaims;
+  /** Bookings whose expiry this process already claimed or lost; saves a store round trip per read. */
+  readonly #settledExpiries = new Set<string>();
 
   constructor(options: BookingServiceOptions) {
     this.provider = options.provider;
@@ -130,6 +156,7 @@ export class BookingService {
       options.idempotencyTtlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS,
       now,
     );
+    this.#expiryClaims = options.expiryClaims ?? new MemoryExpiryClaims();
     if (options.onEvent) this.#listeners.add(options.onEvent);
     const limit = options.holdLimit ?? { limit: 20, windowMs: 10 * 60_000 };
     this.#holdLimit = limit
@@ -266,8 +293,8 @@ export class BookingService {
           'This booking system does not support listing bookings.',
         );
       }
-      const all = (await this.provider.listBookings(query, this.#ctx())).map((b) =>
-        this.#normalize(b),
+      const all = await Promise.all(
+        (await this.provider.listBookings(query, this.#ctx())).map((b) => this.#observe(b)),
       );
       return all
         .filter((b) => !query.status || query.status.includes(b.status))
@@ -282,7 +309,8 @@ export class BookingService {
   }
 
   #emit(event: BookingEvent): void {
-    const actor = currentActor();
+    // An expiry is the clock's doing, not that of the actor whose read happened to notice it.
+    const actor = event.operation === 'expire' ? undefined : currentActor();
     const full = actor ? { ...event, actor } : event;
     for (const l of this.#listeners) {
       try {
@@ -313,7 +341,7 @@ export class BookingService {
           },
           ctx,
         );
-        return this.#normalize(booking);
+        return this.#observe(booking);
       });
     });
   }
@@ -386,7 +414,7 @@ export class BookingService {
             },
             ctx,
           );
-          return this.#normalize(confirmed);
+          return this.#observe(confirmed);
         });
       },
       bookingIdOf(input),
@@ -419,7 +447,7 @@ export class BookingService {
             },
             ctx,
           );
-          return this.#normalize(updated);
+          return this.#observe(updated);
         });
       },
       bookingIdOf(input),
@@ -490,7 +518,7 @@ export class BookingService {
             { booking_id: booking.booking_id, slot_id: req.slot_id },
             ctx,
           );
-          return this.#normalize(moved);
+          return this.#observe(moved);
         });
       },
       bookingIdOf(input),
@@ -528,7 +556,7 @@ export class BookingService {
               },
               ctx,
             );
-            return { booking: this.#normalize(released), already_inactive: false };
+            return { booking: await this.#observe(released), already_inactive: false };
           }
 
           const outcome = evaluateBookingCancellation(booking, ctx.now);
@@ -562,7 +590,7 @@ export class BookingService {
             ctx,
           );
           await this.#refund(booking, outcome.refund);
-          return { booking: this.#normalize(cancelled), already_inactive: false };
+          return { booking: await this.#observe(cancelled), already_inactive: false };
         });
       },
       bookingIdOf(input),
@@ -666,7 +694,70 @@ export class BookingService {
   async #load(bookingId: string): Promise<Booking> {
     const booking = await this.provider.getBooking(bookingId, this.#ctx());
     if (!booking) throw new BookingError('not_found', `No booking with id "${bookingId}".`);
-    return this.#normalize(booking);
+    return this.#observe(booking);
+  }
+
+  /**
+   * Announce, once per booking, that its hold lapsed, for every hold the booking system lists.
+   * Nobody runs a job when a hold expires, so an expiry is announced when something first notices
+   * it: any read of the booking (get, list, a retried call), or this sweep. Call it on a timer
+   * or cron (cheap, and safe to run from every instance at once) so integrators hear about holds
+   * nobody looks at again. Needs a provider with `listBookings`. Returns the booking ids
+   * announced by THIS call.
+   */
+  async sweepExpired(): Promise<string[]> {
+    if (!this.provider.listBookings) return [];
+    const announced: string[] = [];
+    for (const raw of await this.provider.listBookings({}, this.#ctx())) {
+      if (await this.#announceExpiry(raw)) announced.push(raw.booking_id);
+    }
+    return announced;
+  }
+
+  /** Normalise a booking for presentation, announcing its expiry if this read is the first to see it. */
+  async #observe(booking: Booking): Promise<Booking> {
+    const normalized = this.#normalize(booking);
+    if (normalized.status === 'expired') await this.#announceExpiry(booking);
+    return normalized;
+  }
+
+  /**
+   * Emit `expire` for a held booking whose `expires_at` has passed, at most once across every
+   * instance sharing the claim store. A hold that was confirmed or cancelled in time is neither
+   * `held` nor `expired`, so it never gets here. If the claim store fails nothing is emitted:
+   * a missed event is safer than a duplicate, and reads must never fail because of it.
+   */
+  async #announceExpiry(booking: Booking): Promise<boolean> {
+    // Providers may already report a lapsed hold as `expired` (the memory store does, on every
+    // read); either way it is a hold only a lapse can have ended: confirming clears expires_at and
+    // cancelling sets `cancelled`.
+    if (booking.status !== 'held' && booking.status !== 'expired') return false;
+    if (
+      !booking.expires_at ||
+      new Date(booking.expires_at).getTime() > this.clock.now().getTime()
+    ) {
+      return false;
+    }
+    const id = booking.booking_id;
+    if (this.#settledExpiries.has(id)) return false;
+    let won: boolean;
+    try {
+      won = await this.#expiryClaims.claim(`expired:${id}`);
+    } catch {
+      return false;
+    }
+    if (this.#settledExpiries.size >= SETTLED_EXPIRIES_MAX) this.#settledExpiries.clear();
+    this.#settledExpiries.add(id);
+    if (!won) return false;
+    this.#emit({
+      operation: 'expire',
+      ok: true,
+      at: booking.expires_at ?? this.clock.now().toISOString(),
+      booking_id: id,
+      status: 'expired',
+      booking: { ...booking, status: 'expired' },
+    });
+    return true;
   }
 
   /** Holds past `expires_at` are presented as `expired` even if the provider has not swept them. */
@@ -698,7 +789,7 @@ export class BookingService {
     const id = 'booking' in value ? value.booking.booking_id : value.booking_id;
     const current = await this.provider.getBooking(id, this.#ctx());
     if (!current) return value;
-    const fresh = this.#normalize(current);
+    const fresh = await this.#observe(current);
     return ('booking' in value ? { ...value, booking: fresh } : fresh) as T;
   }
 
@@ -743,6 +834,16 @@ export class BookingService {
 
 interface CallMeta {
   replayed: boolean;
+}
+
+class MemoryExpiryClaims implements ExpiryClaims {
+  readonly #keys = new Set<string>();
+
+  async claim(key: string): Promise<boolean> {
+    if (this.#keys.has(key)) return false;
+    this.#keys.add(key);
+    return true;
+  }
 }
 
 function parse<S extends z.ZodType>(schema: S, input: unknown, context: string): z.output<S> {

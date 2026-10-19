@@ -220,8 +220,8 @@ an open slot, and another slot at a different time once the first is full.
 
 ## 6. Get webhooks when bookings change
 
-Send `booking.held`, `booking.confirmed`, `booking.updated` and `booking.cancelled` to your CRM,
-SMS sender or own database:
+Send `booking.held`, `booking.confirmed`, `booking.updated`, `booking.cancelled` and
+`booking.expired` to your CRM, SMS sender or own database:
 
 ```ts
 const { app, webhooks } = createOpenBookingApp({
