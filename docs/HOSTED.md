@@ -235,6 +235,35 @@ All optional, set as environment variables on the Vercel project:
 No customer names, emails or phone numbers are sent to any of them. Background work (emails,
 calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
 
+## Cold starts
+
+Each new function instance logs one line, with stage names and milliseconds only:
+
+```
+[openbooking] cold start: imports=1900ms db_connect=850ms migrate=12ms app=6ms boot=870ms
+```
+
+- `imports`: process start until the entry module finished loading (Node start, bundle load; the
+  largest single dependency is `@sentry/node`).
+- `db_connect`: opening the first Postgres connection: TCP, TLS, login, and a Neon compute waking
+  from idle. This is the stage to check first when a cold start takes seconds.
+- `migrate`: the schema check. An up-to-date database costs one query; only a database with
+  pending migrations takes the advisory lock, so instances booting together still serialise.
+- `app`: building the hosted app (stores, routes). Tenants are built lazily per request.
+
+Measured locally (PGlite, so no network): `app` is 2 to 5 ms, the up-to-date `migrate` is one query,
+and module loading dominates (Sentry alone is about 1 to 3 seconds on a loaded laptop). A real cold
+start adds what only production shows: Neon waking a suspended compute (typically a few hundred
+milliseconds up to a couple of seconds) and the round trips between the function and the database.
+
+Settings that matter, none of them code:
+
+- Keep the Vercel function region (`regions` in `vercel.json`, now `fra1`) in the same region as
+  the Neon project, otherwise every query pays a transatlantic round trip.
+- Use Neon's pooled connection string (`-pooler` host) for `DATABASE_URL`.
+- Turn off Neon's scale-to-zero for the production compute (or lengthen the suspend delay), so the
+  first request after a quiet period does not wait for the compute to start.
+
 ## Not done yet
 
 - Custom domains or subdomains per business (paths only: `/b/{id}`).

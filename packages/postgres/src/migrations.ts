@@ -167,6 +167,12 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
  * advisory lock serialises migrators, and each migration runs in its own transaction.
  */
 export async function migrate(db: Db): Promise<number[]> {
+  // Cold-start fast path: a database that already has every migration (nearly every boot) is
+  // recognised with one read, instead of BEGIN, lock, create-if-missing, select and COMMIT, which
+  // cost five round trips to the database. This is safe without the lock because rows in
+  // ob_migrations are committed together with the migration they record, so seeing all of them
+  // means nothing is pending; anything else falls through to the locked path below.
+  if (await upToDate(db)) return [];
   return db.transaction(async (tx) => {
     await tx.query(LOCK_SQL, ['openbooking:migrate']);
     await tx.query(
@@ -191,6 +197,19 @@ export async function migrate(db: Db): Promise<number[]> {
     }
     return applied;
   });
+}
+
+/** True when every known migration is recorded. A missing table means a fresh database. */
+async function upToDate(db: Db): Promise<boolean> {
+  try {
+    const { rows } = await db.query<{ version: number }>('select version from ob_migrations');
+    const done = new Set(rows.map((r) => Number(r.version)));
+    return MIGRATIONS.every((m) => done.has(m.version));
+  } catch (error) {
+    // 42P01: undefined_table. Anything else (auth, network) is a real failure.
+    if ((error as { code?: string }).code === '42P01') return false;
+    throw error;
+  }
 }
 
 /** Split a migration script on `;` (our migrations contain no functions or quoted semicolons). */
