@@ -53,8 +53,8 @@ hours per weekday, closed dates, staff, services (duration, price, who does it),
 rule as percentages of the price, booking rules, email preferences, and whether the business is
 listed in the OpenBooking app. `catalog.ts` turns them into the provider configuration.
 
-Deposits are not offered in hosted settings yet; they need online payments (planned: Stripe payment
-links).
+Deposits are set per business once it connects its own Stripe account: see
+[Deposits (Stripe)](#deposits-stripe) below.
 
 ## Getting found: Google, website, social
 
