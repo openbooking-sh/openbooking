@@ -111,7 +111,7 @@ export interface OpenBookingServerOptions {
       }
     | false;
   /**
-   * Signed webhooks for booking.held, .confirmed, .updated and .cancelled. On serverless hosts,
+   * Signed webhooks for booking.held, .confirmed, .updated, .cancelled and .expired. On serverless hosts,
    * keep the function alive for `webhooks.idle()` (e.g. `waitUntil`) so retries can finish.
    */
   webhooks?: WebhookOptions;

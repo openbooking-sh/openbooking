@@ -22,8 +22,17 @@ const SEARCH = {
 function boot(db: Db, clock: ManualClock) {
   const stores = postgresStores(db, { idempotency: { now: () => clock.now().getTime() } });
   const provider = createDemoSalonProvider({ store: stores.bookings });
-  const service = new BookingService({ provider, clock, idempotencyStore: stores.idempotency });
-  return { service, provider, stores };
+  const service = new BookingService({
+    provider,
+    clock,
+    idempotencyStore: stores.idempotency,
+    expiryClaims: stores.notificationLog,
+  });
+  const expired: string[] = [];
+  service.on((e) => {
+    if (e.operation === 'expire') expired.push(e.booking_id!);
+  });
+  return { service, provider, stores, expired };
 }
 
 describe(`demo salon on postgres (${target})`, () => {
@@ -56,6 +65,40 @@ describe(`demo salon on postgres (${target})`, () => {
     expect(replay.confirmation_code).toBe(confirmed.confirmation_code);
     const listed = await second.service.listBookings({ status: ['confirmed'] });
     expect(listed.map((b) => b.booking_id)).toEqual([hold.booking_id]);
+  });
+
+  it('announces each lapsed hold once across instances and restarts, never a confirmed one', async () => {
+    const db = await freshDb();
+    const clock = new ManualClock(NOW);
+    const a = boot(db, clock);
+    const b = boot(db, clock);
+    const { slots } = await a.service.searchAvailability(SEARCH);
+    const slotId = slots[0]!.slot_id;
+    const lapsing = await a.service.hold({ slot_id: slotId, idempotency_key: 'lapse-key-1' });
+    const kept = await a.service.hold({ slot_id: slotId, idempotency_key: 'lapse-key-2' });
+    await a.service.confirm({
+      booking_id: kept.booking_id,
+      idempotency_key: 'confirm-key-2',
+      user_confirmed: true,
+      customer: CUSTOMER,
+    });
+
+    clock.advance(a.service.holdTtlSeconds * 1000 + 1);
+    await Promise.all([
+      a.service.getBooking(lapsing.booking_id),
+      b.service.getBooking(lapsing.booking_id),
+      a.service.sweepExpired(),
+      b.service.sweepExpired(),
+    ]);
+    // A third instance booting later (a restart) also finds the claim already taken.
+    const c = boot(db, clock);
+    await c.service.sweepExpired();
+    await c.service.listBookings({});
+
+    expect([...a.expired, ...b.expired, ...c.expired]).toEqual([lapsing.booking_id]);
+    expect((await c.service.getBooking(kept.booking_id)).status).toBe('confirmed');
+    // Expired holds still stop blocking: the held-then-lapsed slot is free again.
+    expect(await a.provider.findOverlaps(clock.now())).toEqual([]);
   });
 
   it('never double-books under concurrent holds, and holds lapse on time', async () => {

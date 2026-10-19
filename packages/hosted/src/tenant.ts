@@ -133,6 +133,8 @@ export class Tenant {
     this.service = new BookingService({
       provider: this.provider,
       idempotencyStore: prefixed(deps.idempotency, `${business.id}:`),
+      // The email dedupe store, scoped to this business: one instance announces each expiry.
+      expiryClaims: { claim: (key) => deps.notificationLog.claim(`${business.id}:${key}`) },
       payments: this.#payments,
       ...(deps.clock ? { clock: deps.clock } : {}),
       ...(deps.holdTtlSeconds ? { holdTtlSeconds: deps.holdTtlSeconds } : {}),

@@ -1,0 +1,20 @@
+[
+  {
+    "tag_name": "v3-rc",
+    "prerelease": true,
+    "published_at": "2026-10-10T00:00:00Z",
+    "html_url": "https://github.com/acme/spec/releases/tag/v3-rc"
+  },
+  {
+    "tag_name": "v2",
+    "prerelease": false,
+    "published_at": "2026-09-01T00:00:00Z",
+    "html_url": "https://github.com/acme/spec/releases/tag/v2"
+  },
+  {
+    "tag_name": "v1",
+    "prerelease": false,
+    "published_at": "2026-01-01T00:00:00Z",
+    "html_url": "https://github.com/acme/spec/releases/tag/v1"
+  }
+]

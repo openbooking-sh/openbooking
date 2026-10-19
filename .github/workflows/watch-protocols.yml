@@ -1,0 +1,61 @@
+name: Watch protocols
+
+# Weekly check of the specs we implement (MCP, WebMCP, UCP, USP, A2A) and the ones we watch (ACP,
+# AP2) against the pins in scripts/protocols.json. When a watched spec file or release changed it
+# opens ONE issue, or updates the open "Protocol watch" issue instead of adding another. See
+# docs/PROTOCOLS.md. The script only reads public GitHub data; the built-in GITHUB_TOKEN is used
+# for the rate limit and to file the issue. No other secrets.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency: watch-protocols
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # A source that cannot be checked makes this step fail, but only after the report and the
+      # outputs are written, so real changes are still filed below and the run still ends red.
+      - id: watch
+        continue-on-error: true
+        run: node scripts/watch-protocols.mjs --out report.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Open or update the protocol watch issue
+        if: steps.watch.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.watch.outputs.title }}
+        run: |
+          label=()
+          if gh label list --limit 200 --json name --jq '.[].name' | grep -qx 'protocol-watch'; then
+            label=(--label protocol-watch)
+          fi
+          existing=$(gh issue list --state open --author 'app/github-actions' \
+            --search 'Protocol watch: in:title' --json number,title \
+            --jq '[.[] | select(.title | startswith("Protocol watch:"))][0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$TITLE" --body-file report.md
+            gh issue comment "$existing" --body "Updated by the weekly run: $TITLE. The description has the current report."
+          else
+            gh issue create --title "$TITLE" --body-file report.md "${label[@]}"
+          fi
+      - name: Fail when a source could not be checked
+        if: steps.watch.outcome == 'failure'
+        env:
+          FAILED: ${{ steps.watch.outputs.failed }}
+        run: |
+          echo "::error::at least one protocol source could not be checked: $FAILED"
+          exit 1

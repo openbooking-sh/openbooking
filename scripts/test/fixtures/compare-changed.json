@@ -1,0 +1,23 @@
+{
+  "status": "ahead",
+  "ahead_by": 3,
+  "html_url": "https://github.com/acme/spec/compare/aaaaaaa...main",
+  "files": [
+    { "filename": "schemas/booking.json", "status": "modified" },
+    { "filename": "README.md", "status": "modified" },
+    { "filename": "specs/new.md", "previous_filename": "schemas/old.md", "status": "renamed" },
+    { "filename": "tests/vectors/a.json", "status": "added" }
+  ],
+  "commits": [
+    {
+      "sha": "1111111111",
+      "html_url": "https://github.com/acme/spec/commit/1111111111",
+      "commit": { "message": "first\n\nbody" }
+    },
+    {
+      "sha": "2222222222",
+      "html_url": "https://github.com/acme/spec/commit/2222222222",
+      "commit": { "message": "second @bob | `x`" }
+    }
+  ]
+}
