@@ -8,6 +8,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       'bench/results/**',
+      '.claude/worktrees/**',
       'packages/adapter-usp/test/fixtures/**',
     ],
   },

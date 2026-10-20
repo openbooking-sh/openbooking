@@ -18,3 +18,6 @@ bench/results/
 
 # Release tarballs (scripts/publish.mjs)
 .release
+
+# Checkouts made by assistants working in parallel
+.claude/worktrees/
