@@ -87,6 +87,38 @@ export const memoryBackend = (store: () => BookingRecordStore): Backend => ({
   idempotency: async (now) => new MemoryIdempotencyStore(now),
 });
 
+/**
+ * An idempotency store whose first `parties` lookups all wait until each has asked, then go on
+ * together: every caller has read "nothing recorded" before any of them records a result. A
+ * barrier on the lookup (each call makes exactly one) fixes the interleaving whatever the
+ * backend's speed. It gives up after a second so a change in how often the engine looks keys up
+ * fails the test instead of hanging it.
+ */
+function bothLookUpFirst(
+  inner: IdempotencyStore,
+  parties: number,
+): IdempotencyStore & { events: string[] } {
+  const events: string[] = [];
+  let arrived = 0;
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  return {
+    events,
+    get: async (key) => {
+      events.push('get');
+      if (++arrived >= parties) open();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([gate, new Promise((resolve) => (timer = setTimeout(resolve, 1000)))]);
+      clearTimeout(timer);
+      return inner.get(key);
+    },
+    set: async (key, record, ttlMs) => {
+      events.push('set');
+      return inner.set(key, record, ttlMs);
+    },
+  };
+}
+
 async function makeEnv(backend: Backend): Promise<Env> {
   const clockA = new ManualClock(NOW);
   const clockB = new ManualClock(NOW);
@@ -580,22 +612,46 @@ export function describeConcurrency(name: string, backend: Backend, defaultRuns:
     // one key are joined per process only. Across instances both run, so one key can hold twice
     // (inventory stays safe). `it.fails` flips to a failure the day this is closed, and then
     // should become a plain `it`.
+    //
+    // The race is made certain, not left to timing: each instance looks the key up before either
+    // has recorded a result. Without that, a real server decides the order: sometimes the first
+    // call finishes before the second looks, the second then replays it, and "expected to fail"
+    // fails. (PGlite runs one query at a time and always loses the race, which hid this.)
+    const sameKeyAtOnce = async () => {
+      let gated: ReturnType<typeof bothLookUpFirst> | undefined;
+      const env = await makeEnv({
+        bookings: backend.bookings,
+        idempotency: async (now) => (gated = bothLookUpFirst(await backend.idempotency(now), 2)),
+      });
+      const [slot] = await daySlots(env, 'cut');
+      const results = await Promise.all(
+        [env.a, env.b].map((s) =>
+          s.hold({
+            slot_id: slot!.slot_id,
+            idempotency_key: 'both-at-once-1',
+            customer: CUSTOMER,
+          }),
+        ),
+      );
+      return { results, events: gated!.events };
+    };
+
     it.fails(
       'KNOWN GAP: the same key sent to two instances at the same instant holds once',
       async () => {
-        const env = await makeEnv(backend);
-        const [slot] = await daySlots(env, 'cut');
-        const results = await Promise.all(
-          [env.a, env.b].map((s) =>
-            s.hold({
-              slot_id: slot!.slot_id,
-              idempotency_key: 'both-at-once-1',
-              customer: CUSTOMER,
-            }),
-          ),
-        );
+        const { results } = await sameKeyAtOnce();
         expect(new Set(results.map((r) => r.booking_id)).size).toBe(1);
       },
     );
+
+    // `it.fails` passes on ANY failure, so this pins down why the test above fails: both
+    // instances looked the key up before either recorded a result, both ran, and the two holds
+    // are on different staff members, so no slot was given out twice.
+    it('the gap above is the documented one: two holds on two staff, never one slot twice', async () => {
+      const { results, events } = await sameKeyAtOnce();
+      expect(events.slice(0, 2)).toEqual(['get', 'get']);
+      expect(new Set(results.map((r) => r.booking_id)).size).toBe(2);
+      expect(new Set(results.map((r) => r.slot.resource?.label)).size).toBe(2);
+    });
   });
 }
