@@ -330,14 +330,14 @@ safe:
 
 | Protocol                              | Status       | What you get                                                                                                                        |
 | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **MCP** (Model Context Protocol)      | ✅ Supported | 5 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
+| **MCP** (Model Context Protocol)      | ✅ Supported | 6 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
 | **A2A** (Agent2Agent)                 | 🟡 Beta      | v1.0 Agent Card plus a JSON-RPC `SendMessage` endpoint (`/a2a`) for search, hold, confirm and cancel; no streaming or tasks         |
 
 ## Start in one command
 
 ```sh
-npx create-openbooking my-salon
+npx create-openbooking@latest my-salon
 cd my-salon && npm run dev
 ```
 
@@ -969,7 +969,7 @@ Apache-2.0
 **A booking backend that AI assistants can book, in one command.**
 
 ```sh
-npx create-openbooking my-salon
+npx create-openbooking@latest my-salon
 # or: npm create openbooking@latest my-salon
 ```
 
@@ -1326,7 +1326,7 @@ Apache-2.0
 | `@openbooking-sh/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
 | `@openbooking-sh/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
 | `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
-| `@openbooking-sh/adapter-mcp`     | Five MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
+| `@openbooking-sh/adapter-mcp`     | Six MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
 | `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
 | `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                    | core                                                                    |
 | `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
@@ -1400,7 +1400,7 @@ The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mappin
 
 ## Agent-friendly design choices
 
-- **Few tools, flat inputs.** Five tools, and `party_size` is an integer. Each tool description says what it does and does **not** do, e.g. "hold does NOT confirm".
+- **Few tools, flat inputs.** Six tools, and `party_size` is an integer. Each tool description says what it does and does **not** do, e.g. "hold does NOT confirm".
 - **Responses tell the agent what to do.** Every booking response includes `next_step`, and every error includes `suggested_next_action`. Holds carry both `expires_at` and `expires_in_seconds`.
 - **Policy terms up front.** Search results and holds carry the cancellation policy (human-readable `description` plus structured fields) and the deposit terms _before_ confirmation.
 - **Opaque slot ids.** A `slot_id` encodes everything needed to hold it, so the agent doesn't re-send dates and times and can't get them wrong.
