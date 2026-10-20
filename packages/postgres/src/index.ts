@@ -10,6 +10,7 @@ export {
   PostgresCalendarLinkStore,
   PostgresNotificationLog,
   PostgresRateLimiter,
+  PostgresSuppressionList,
 } from './hosted';
 
 import type { Db } from './db';
@@ -21,6 +22,7 @@ import {
   PostgresCalendarLinkStore,
   PostgresNotificationLog,
   PostgresRateLimiter,
+  PostgresSuppressionList,
 } from './hosted';
 import { PostgresIdempotencyStore, type PostgresIdempotencyStoreOptions } from './idempotency';
 import { PostgresUspState, type PostgresUspStateOptions } from './usp';
@@ -41,6 +43,7 @@ export interface PostgresStores {
   activityFor: (businessId: string) => PostgresActivityLog;
   calendarLinks: PostgresCalendarLinkStore;
   notificationLog: PostgresNotificationLog;
+  suppressions: PostgresSuppressionList;
   rateLimiter: PostgresRateLimiter;
 }
 
@@ -59,6 +62,7 @@ export function postgresStores(
     activityFor: (businessId) => new PostgresActivityLog(db, { scope: businessId }),
     calendarLinks: new PostgresCalendarLinkStore(db),
     notificationLog: new PostgresNotificationLog(db),
+    suppressions: new PostgresSuppressionList(db),
     rateLimiter: new PostgresRateLimiter(db),
   };
 }

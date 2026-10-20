@@ -128,6 +128,7 @@ async function boot(): Promise<Runtime> {
             activityFor: stores.activityFor,
             calendarLinks: stores.calendarLinks,
             notificationLog: stores.notificationLog,
+            suppressions: stores.suppressions,
             rateLimiter: stores.rateLimiter,
           }
         : {}),

@@ -68,17 +68,17 @@ describe(`migrate on boot (${target})`, { timeout: 60_000 }, () => {
 
   it('still applies what is pending when only some versions are recorded', async () => {
     const db = await freshDb();
-    const last = MIGRATIONS[MIGRATIONS.length - 1]!;
-    // Pretend the newest migration has not run: undo its record (the tables stay, so only the
-    // bookkeeping is replayed); it must be recorded again, not skipped by the fast path.
-    await db.query('delete from ob_migrations where version = $1', [last.version]);
+    // A named migration, never "the newest": adding a later one must not change what this proves.
+    // Pretend it has not run (forget its record and drop what it made): it must run again, and
+    // only it, instead of being skipped by the fast path, although later versions are recorded.
+    const missing = MIGRATIONS.find((m) => m.name === 'usp-state')!;
+    await db.query('delete from ob_migrations where version = $1', [missing.version]);
     await db.query('drop table ob_usp_owners cascade');
     await db.query('drop table ob_usp_credentials cascade');
     await db.query('drop table ob_usp_proofs cascade');
     await db.query('drop table ob_usp_profile_bindings cascade');
     await db.query('drop table ob_usp_request_keys cascade');
-    expect(last.name).toBe('usp-state');
-    expect(await migrate(db)).toEqual([last.version]);
+    expect(await migrate(db)).toEqual([missing.version]);
     expect(await migrate(db)).toEqual([]);
   });
 
