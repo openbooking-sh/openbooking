@@ -969,7 +969,7 @@ Apache-2.0
 **A booking backend that AI assistants can book, in one command.**
 
 ```sh
-npx create-openbooking@latest my-salon
+npx create-openbookingmy-salon
 # or: npm create openbooking@latest my-salon
 ```
 
