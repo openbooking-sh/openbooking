@@ -1,5 +1,32 @@
 # @openbooking-sh/postgres
 
+## 0.13.0
+
+### Minor Changes
+
+- edba76d: Customers can unsubscribe from a business's emails. Customer emails carry an unsubscribe link and the RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers (`EmailMessage.headers`, passed on by `ResendMailer`). Hosted serves `/unsubscribe`: a GET shows a button, the POST records a hash of the address for that business, and nothing more is sent to it. New `SuppressionList` (`MemorySuppressionList`, `PostgresSuppressionList`, migration 5), `isSuppressed` and `unsubscribeUrl` options in `attachNotifications`, and a `suppressions` option on `createHostedApp` (`stores.suppressions` with Postgres).
+- 65bea74: Add `PostgresUspState` (also `postgresStores(db).usp`): durable state for the USP adapter, so owners, booking credentials (by hash), replay memory and request keys are shared by every server instance. Migration 4 adds five `ob_usp_*` tables, with row level security like the rest; `migrate(db)` applies it. No customer details are stored in them.
+
+### Patch Changes
+
+- a5cd2c1: `migrate()` recognises an up-to-date database with a single query instead of a transaction, an advisory lock and three more statements, which trims serverless cold starts by four database round trips. Databases with pending migrations (including fresh ones) still take the lock, so instances booting at the same time stay serialised.
+- Updated dependencies [e6a751c]
+- Updated dependencies [3825c49]
+- Updated dependencies [92f6c50]
+- Updated dependencies [edba76d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [89789c9]
+- Updated dependencies [787f01c]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/studio@0.13.0
+  - @openbooking-sh/hosted@0.13.0
+  - @openbooking-sh/provider-memory@0.13.0
+  - @openbooking-sh/notifications@0.13.0
+  - @openbooking-sh/google-calendar@0.13.0
+  - @openbooking-sh/provider-calcom@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

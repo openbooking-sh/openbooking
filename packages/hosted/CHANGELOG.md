@@ -1,5 +1,44 @@
 # @openbooking-sh/hosted
 
+## 0.13.0
+
+### Minor Changes
+
+- e6a751c: Add the `booking.expired` webhook event, and an `expire` engine event, for holds that lapse without being confirmed or cancelled. Nothing runs when a hold expires, so the event is sent when a read first notices it or when `service.sweepExpired()` runs (call it from a cron or timer to report lapses nobody reads). Each expiry is announced at most once across instances through a new `expiryClaims` option (hosted reuses its email dedupe log; pass `PostgresNotificationLog` when running several instances on one database). The event carries no actor, and Studio shows it as a system entry.
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+- edba76d: Customers can unsubscribe from a business's emails. Customer emails carry an unsubscribe link and the RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers (`EmailMessage.headers`, passed on by `ResendMailer`). Hosted serves `/unsubscribe`: a GET shows a button, the POST records a hash of the address for that business, and nothing more is sent to it. New `SuppressionList` (`MemorySuppressionList`, `PostgresSuppressionList`, migration 5), `isSuppressed` and `unsubscribeUrl` options in `attachNotifications`, and a `suppressions` option on `createHostedApp` (`stores.suppressions` with Postgres).
+- db42a3d: Owners can let AI assistants and platforms book them through USP: Studio → Settings → AI assistants, off by default, either the customer confirms on a page or the assistant books immediately. The profile is at `/b/{id}/.well-known/usp`. Businesses saved before the setting count as off. Pass `uspState` (`postgresStores(db).usp`) when running more than one instance; the Vercel entry does.
+- 89789c9: USP over MCP. `createUsp({ mcp: true })` serves the spec's `usp_*` tools at `<path>/mcp` (a stateless Streamable HTTP MCP endpoint) and advertises it in the profile. It is the REST engine behind a different wrapper: same consent modes, idempotency, ownership, capability negotiation and state. Platforms authenticate with the MCP form of the key proof inside `_meta.usp.authorization`, results come back as `structuredContent` plus text, and protocol errors are JSON-RPC errors with `data.code`. Off by default: `usp: { mcp: true }` in the server, `uspMcp` in the hosted app.
+
+  Also: `If-Match` (REST) and `_meta.usp.if_match` (MCP) on a booking write are now refused with `revision_mismatch` (412), because bookings carry no revision to match; REST used to ignore them.
+
+### Patch Changes
+
+- 787f01c: USP: platform profiles are now fetched (safely, public internet only) and capabilities negotiated. `usp.platformProfiles` on `createOpenBookingApp` and `uspPlatformProfiles` on `createHostedApp` take a fetcher or `false`; hosted shares one fetcher, and so one cache, across all businesses.
+- Updated dependencies [3d98490]
+- Updated dependencies [e6a751c]
+- Updated dependencies [5b1fb9a]
+- Updated dependencies [3825c49]
+- Updated dependencies [92f6c50]
+- Updated dependencies [edba76d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [89789c9]
+- Updated dependencies [787f01c]
+- Updated dependencies [787f01c]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/booking-page@0.13.0
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/studio@0.13.0
+  - @openbooking-sh/server@0.13.0
+  - @openbooking-sh/provider-memory@0.13.0
+  - @openbooking-sh/notifications@0.13.0
+  - @openbooking-sh/adapter-usp@0.13.0
+  - @openbooking-sh/adapter-mcp@0.13.0
+  - @openbooking-sh/google-calendar@0.13.0
+  - @openbooking-sh/payments-stripe@0.13.0
+
 ## 0.12.1
 
 ### Patch Changes
