@@ -13,6 +13,8 @@ export interface EmailMessage {
   text: string;
   html: string;
   attachments?: EmailAttachment[];
+  /** Extra headers, e.g. List-Unsubscribe. Mailers that can't set headers ignore them. */
+  headers?: Record<string, string>;
 }
 
 /** Sends one email. Throw on failure; callers decide whether to retry or log. */
@@ -69,6 +71,7 @@ export class ResendMailer implements Mailer {
         text: m.text,
         html: m.html,
         ...(m.replyTo ? { reply_to: m.replyTo } : {}),
+        ...(m.headers && Object.keys(m.headers).length ? { headers: m.headers } : {}),
         ...(m.attachments?.length
           ? {
               attachments: m.attachments.map((a) => ({

@@ -53,8 +53,8 @@ hours per weekday, closed dates, staff, services (duration, price, who does it),
 rule as percentages of the price, booking rules, email preferences, and whether the business is
 listed in the OpenBooking app. `catalog.ts` turns them into the provider configuration.
 
-Deposits are not offered in hosted settings yet; they need online payments (planned: Stripe payment
-links).
+Deposits are set per business once it connects its own Stripe account: see
+[Deposits (Stripe)](#deposits-stripe) below.
 
 ## Getting found: Google, website, social
 
@@ -162,6 +162,14 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 - **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
   listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
   page and per-business MCP work straight away. Studio shows a "Confirm your email" step.
+- **Unsubscribe:** every customer email has an unsubscribe link and `List-Unsubscribe` /
+  `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link is a signed token naming the
+  business and a SHA-256 of the normalised address (no address in it). `GET /unsubscribe` only shows
+  a button, so mail scanners change nothing; the POST (also what a mail client's one-click sends)
+  records the hash for that business. After that the address gets no emails from that business at
+  all, confirmations and cancellations included, and the business is still told about bookings. The
+  list is per business, keeps no address, and is deleted with the account. The business's own
+  notices have no link: they are switched off in Studio.
 - **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP, reset
   emails per email and IP. The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets;
   pass `clientIp` when running without a proxy.
@@ -178,6 +186,7 @@ implements all of them. `postgresStores(db)` returns them ready to pass to `crea
 | `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.           |
 | `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                                    |
 | `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.                |
+| `suppressions`    | `SuppressionList`     | `PostgresSuppressionList`   | Unsubscribed addresses as hashes, per business.              |
 | `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                                   |
 | `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                      |
 | `uspState`        | `UspStateStore`       | `PostgresUspState`          | USP owners, credentials, replay memory; scoped per business. |

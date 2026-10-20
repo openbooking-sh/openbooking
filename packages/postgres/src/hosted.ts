@@ -4,7 +4,7 @@
  */
 import type { CalendarLink, CalendarLinkStore } from '@openbooking-sh/google-calendar';
 import type { Business, BusinessStore, RateLimiter } from '@openbooking-sh/hosted';
-import type { NotificationLog } from '@openbooking-sh/notifications';
+import type { NotificationLog, SuppressionList } from '@openbooking-sh/notifications';
 import { json, type Db, type Queryable } from './db';
 
 /**
@@ -151,6 +151,35 @@ export class PostgresNotificationLog implements NotificationLog {
       [key],
     );
     return rows.length > 0;
+  }
+}
+
+/** Unsubscribed addresses (as hashes) per business; adding twice is fine. */
+export class PostgresSuppressionList implements SuppressionList {
+  readonly #db: Queryable;
+
+  constructor(db: Queryable) {
+    this.#db = db;
+  }
+
+  async add(scope: string, hash: string): Promise<void> {
+    await this.#db.query(
+      `insert into ob_email_suppressions (business_id, address_hash) values ($1, $2)
+       on conflict do nothing`,
+      [scope, hash],
+    );
+  }
+
+  async has(scope: string, hash: string): Promise<boolean> {
+    const { rows } = await this.#db.query(
+      'select 1 from ob_email_suppressions where business_id = $1 and address_hash = $2',
+      [scope, hash],
+    );
+    return rows.length > 0;
+  }
+
+  async deleteScope(scope: string): Promise<void> {
+    await this.#db.query('delete from ob_email_suppressions where business_id = $1', [scope]);
   }
 }
 
