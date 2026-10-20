@@ -88,29 +88,32 @@ export const memoryBackend = (store: () => BookingRecordStore): Backend => ({
 });
 
 /**
- * An idempotency store whose first `parties` lookups all wait until each has asked, then go on
- * together: every caller has read "nothing recorded" before any of them records a result. A
- * barrier on the lookup (each call makes exactly one) fixes the interleaving whatever the
- * backend's speed. It gives up after a second so a change in how often the engine looks keys up
- * fails the test instead of hanging it.
+ * An idempotency store that holds back each lookup's answer until `parties` lookups have been
+ * answered: every caller has read "nothing recorded" before any of them goes on to run and record
+ * a result. The barrier sits AFTER the lookup, not before it: a real server's pool opens its
+ * second connection slowly, so a barrier in front would still let the first call finish
+ * completely before the second query reaches the database. Each call looks its key up exactly
+ * once. It gives up after ten seconds, so a change in how often the engine looks keys up fails
+ * the test instead of hanging it.
  */
 function bothLookUpFirst(
   inner: IdempotencyStore,
   parties: number,
 ): IdempotencyStore & { events: string[] } {
   const events: string[] = [];
-  let arrived = 0;
+  let answered = 0;
   let open!: () => void;
   const gate = new Promise<void>((resolve) => (open = resolve));
   return {
     events,
     get: async (key) => {
+      const found = await inner.get(key);
       events.push('get');
-      if (++arrived >= parties) open();
+      if (++answered >= parties) open();
       let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([gate, new Promise((resolve) => (timer = setTimeout(resolve, 1000)))]);
+      await Promise.race([gate, new Promise((resolve) => (timer = setTimeout(resolve, 10_000)))]);
       clearTimeout(timer);
-      return inner.get(key);
+      return found;
     },
     set: async (key, record, ttlMs) => {
       events.push('set');
