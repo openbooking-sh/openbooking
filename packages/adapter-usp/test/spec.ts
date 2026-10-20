@@ -55,3 +55,48 @@ export const serviceErrors = (data: unknown) =>
 
 export const messageErrors = (data: unknown) =>
   check('https://usp-protocol.dev/schemas/services/booking.json#/$defs/Message', data);
+
+// ---------------------------------------------------------------------------
+// MCP binding: the OpenRPC document
+// ---------------------------------------------------------------------------
+
+const OPENRPC = 'urn:usp:openrpc';
+const openrpc = read('openrpc/usp-mcp.json');
+ajv.addSchema(openrpc, OPENRPC);
+
+const methodIndex = (method: string) => {
+  const i = openrpc.methods.findIndex((m: { name: string }) => m.name === method);
+  if (i < 0) throw new Error(`${method} is not in the OpenRPC document`);
+  return i;
+};
+
+/** Errors (empty when valid) for a tool's `structuredContent` against its OpenRPC result. */
+export const mcpResultErrors = (method: string, structuredContent: unknown) =>
+  check(
+    `${OPENRPC}#/methods/${methodIndex(method)}/result/schema/properties/structuredContent`,
+    structuredContent,
+  );
+
+/** Errors for the arguments of a call against the OpenRPC params (by-name, `_meta` included). */
+export function mcpArgsErrors(method: string, args: unknown): string[] {
+  const i = methodIndex(method);
+  const params = openrpc.methods[i].params as Array<{ name: string; required?: boolean }>;
+  const validate = ajv.compile({
+    type: 'object',
+    required: params.filter((p) => p.required).map((p) => p.name),
+    properties: Object.fromEntries(
+      params.map((p, j) => [p.name, { $ref: `${OPENRPC}#/methods/${i}/params/${j}/schema` }]),
+    ),
+    additionalProperties: false,
+  });
+  return validate(args) ? [] : (validate.errors ?? []).map((e) => `${e.instancePath} ${e.message}`);
+}
+
+/** Errors for a JSON-RPC error's `data` against the OpenRPC `USPProtocolError`. */
+export function mcpErrorDataErrors(data: unknown): string[] {
+  const validate = ajv.compile(openrpc.components.errors.USPProtocolError.data);
+  return validate(data) ? [] : (validate.errors ?? []).map((e) => `${e.instancePath} ${e.message}`);
+}
+
+/** The tool names the OpenRPC document defines. */
+export const mcpMethodNames = (): string[] => openrpc.methods.map((m: { name: string }) => m.name);

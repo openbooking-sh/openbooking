@@ -33,7 +33,7 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-function setup() {
+function setup(options: { uspMcp?: boolean } = {}) {
   const clock = new ManualClock(NOW);
   const businesses = new MemoryBusinessStore();
   const hosted = createHostedApp({
@@ -42,6 +42,7 @@ function setup() {
     clock,
     businesses,
     uspPlatformProfiles: profiles,
+    ...(options.uspMcp ? { uspMcp: true } : {}),
   });
   cleanups.push(hosted.close);
   const req = async (
@@ -165,6 +166,47 @@ describe('a business that has not turned USP on', () => {
     const view = (await w.req('/studio/api/settings', { token })).json;
     expect(view.settings.assistants).toEqual({ usp: 'off' });
     expect(view.links.map((l: any) => l.label)).not.toContain('USP profile');
+  });
+});
+
+describe('the USP MCP binding', () => {
+  const rpc = (w: World, id: string, method: string, params: unknown) =>
+    w.hosted.app.request(`${BASE}/b/${id}/usp/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    });
+
+  it('is off by default, even for a business that has USP on', async () => {
+    const w = setup();
+    const token = await signup(w, 'Studio Nord', 'owner@example.com');
+    await setUsp(w, token, 'confirm');
+    expect((await rpc(w, 'studio-nord', 'tools/list', {})).status).toBe(404);
+    const profile = (await w.req('/b/studio-nord/.well-known/usp')).json;
+    expect(profile.usp.services['dev.usp-protocol.services']).toHaveLength(1);
+  });
+
+  it('serves the usp_* tools under the business address when the deployment turns it on', async () => {
+    const w = setup({ uspMcp: true });
+    const token = await signup(w, 'Studio Nord', 'owner@example.com');
+    // Not for a business that has USP off.
+    expect((await rpc(w, 'studio-nord', 'tools/list', {})).status).toBe(404);
+    await setUsp(w, token, 'confirm');
+    const profile = (await w.req('/b/studio-nord/.well-known/usp')).json;
+    expect(
+      profile.usp.services['dev.usp-protocol.services'].find((s: any) => s.transport === 'mcp')
+        .endpoint,
+    ).toBe(`${BASE}/b/studio-nord/usp/mcp`);
+    const res = await rpc(w, 'studio-nord', 'tools/call', {
+      name: 'usp_services_list',
+      arguments: {},
+    });
+    expect(res.status).toBe(200);
+    const body = JSON.parse((await res.text()).replace(/^[\s\S]*?data: /, '').trim() || '{}');
+    expect(body.result.structuredContent.services.length).toBeGreaterThan(0);
   });
 });
 

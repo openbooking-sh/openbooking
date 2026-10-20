@@ -305,7 +305,7 @@ export const STUDIO_HTML = `<!doctype html>
     var icon = LOGOS[n] ? '<img class="ai-ico" src="' + LOGOS[n] + '" alt="" />' : '<span class="ini">' + esc(n.charAt(0).toUpperCase()) + '</span>';
     return '<span class="src-l">' + icon + esc(n) + '</span>';
   }
-  var OPS = { search: 'searched availability', hold: 'held a slot', confirm: 'confirmed a booking', cancel: 'cancelled', get: 'looked up a booking', update: 'updated a booking', list: 'listed bookings' };
+  var OPS = { search: 'searched availability', hold: 'held a slot', confirm: 'confirmed a booking', cancel: 'cancelled', get: 'looked up a booking', update: 'updated a booking', list: 'listed bookings', expire: 'hold expired' };
 
   // Login: a shared Studio token (self-hosted), or email + password when the host says so
   // (hosted OpenBooking answers 401 with login: 'password' and where to log in).

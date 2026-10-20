@@ -37,6 +37,8 @@ import {
   type Mailer,
   type NotificationHandle,
   type NotificationLog,
+  type SuppressionList,
+  suppressionHash,
 } from '@openbooking-sh/notifications';
 import {
   MemoryBookingProvider,
@@ -74,12 +76,18 @@ export interface TenantDeps {
   holdTtlSeconds?: number;
   mail?: { mailer: Mailer; from: string };
   notificationLog: NotificationLog;
+  /** Customers who unsubscribed, per business (by hash). */
+  suppressions: SuppressionList;
+  /** The signed one-click unsubscribe link for a customer address of a business. */
+  unsubscribeUrl: (businessId: string, email: string) => string;
   google?: GoogleCredentials & { fetch?: typeof fetch };
   calendarLinks: CalendarLinkStore;
   /** Shared by every business; each gets its own scope of it. */
   uspState: UspStateStore;
   /** One fetcher for every business, so platform profiles are cached once. */
   uspPlatformProfiles: ProfileFetcher | false;
+  /** Serve USP's MCP binding too, for businesses with USP on. */
+  uspMcp: boolean;
   allowedHosts: string[];
   /** Owners must confirm their email before the business is listed in the OpenBooking app. */
   requireVerifiedEmail?: boolean;
@@ -127,6 +135,8 @@ export class Tenant {
     this.service = new BookingService({
       provider: this.provider,
       idempotencyStore: prefixed(deps.idempotency, `${business.id}:`),
+      // The email dedupe store, scoped to this business: one instance announces each expiry.
+      expiryClaims: { claim: (key) => deps.notificationLog.claim(`${business.id}:${key}`) },
       payments: this.#payments,
       ...(deps.clock ? { clock: deps.clock } : {}),
       ...(deps.holdTtlSeconds ? { holdTtlSeconds: deps.holdTtlSeconds } : {}),
@@ -152,6 +162,7 @@ export class Tenant {
         service: this.service,
         mailer,
         log: deps.notificationLog,
+        isSuppressed: (email) => deps.suppressions.has(this.id, suppressionHash(this.id, email)),
         config: () => {
           const s = this.#business.settings;
           const owner = s.notifications.owner_email ?? this.#business.owner.email;
@@ -162,6 +173,7 @@ export class Tenant {
             ownerEmails: s.notifications.email_owner,
             customerEmails: s.notifications.email_customers,
             privacyUrl: PRIVACY_URL,
+            unsubscribeUrl: (email) => deps.unsubscribeUrl(this.id, email),
           };
         },
         manageUrl: (b) => this.#app.bookingPage?.manageUrl(b),
@@ -209,6 +221,7 @@ export class Tenant {
     for (const r of records) await d.calendarLinks.delete(r.booking.booking_id);
     await d.activityFor(this.id).clear?.();
     await d.idempotency.deletePrefix?.(`${this.id}:`);
+    await d.suppressions.deleteScope(this.id);
     await d.bookings.deleteVenue?.(this.id);
     await d.businesses.delete?.(this.id);
   }
@@ -444,6 +457,7 @@ export class Tenant {
               state: this.#uspState,
               businessId: this.id,
               platformProfiles: this.#deps.uspPlatformProfiles,
+              mcp: this.#deps.uspMcp,
             },
       studio: false,
       bookingPage: {

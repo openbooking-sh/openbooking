@@ -39,6 +39,7 @@ const hosted = createHostedApp({
         activityFor: stores.activityFor,
         calendarLinks: stores.calendarLinks,
         notificationLog: stores.notificationLog,
+        suppressions: stores.suppressions,
         rateLimiter: stores.rateLimiter,
       }
     : {}),

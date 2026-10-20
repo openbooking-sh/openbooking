@@ -124,6 +124,8 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
   const privileged = (
     needs: (typeof USP)['availability' | 'bookings'],
     handler: (c: Context, p: UspPrincipal, text: string) => Promise<Response>,
+    /** A write to an existing booking, which a platform may make conditional (spec 5.6). */
+    conditional = false,
   ) =>
     guard(async (c) => {
       if (!o.auth) {
@@ -173,6 +175,16 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
             ],
           });
         }
+      }
+      if (conditional && c.req.header('if-match') !== undefined) {
+        // A precondition must be applied or refused, never ignored. Bookings carry no `revision`
+        // here (its absence tells platforms to write unconditionally), so a platform that sends
+        // one is working from a state we never showed it, and no value can match.
+        throw new ProtocolError(
+          'revision_mismatch',
+          'This business does not issue booking revisions, so a precondition cannot hold.',
+          'Retry without If-Match (REST) or _meta.usp.if_match (MCP), after reading the booking again.',
+        );
       }
       return handler(c, principal, text);
     });
@@ -519,149 +531,161 @@ export function registerBookingRoutes(app: Hono, o: BookingRoutesOptions): void 
 
   app.put(
     '/bookings/:booking_id',
-    privileged(USP.bookings, async (c, p, text) => {
-      const req = parse(UpdateRequest, jsonObject(text));
-      await checkKey(p, c, 'update', req);
-      const booking = await owned(p, param(c, 'booking_id'), true);
-      const messages: UspMessage[] = [];
-      if (req.recipient !== undefined) {
-        messages.push(
-          message('warning', 'recipient_not_stored', 'This business does not store a recipient.'),
-        );
-      }
-      if (booking.status === 'cancelled' || booking.status === 'expired') {
-        messages.push(
-          message('error', 'invalid_transition', 'A canceled booking can no longer be changed.', {
-            severity: 'requires_buyer_review',
-          }),
-        );
-        return bookingResponse(c, booking, messages);
-      }
-      const buyer = req.buyer;
-      const current = booking.customer;
-      if (!buyer && req.notes === undefined) return bookingResponse(c, booking, messages);
-      try {
-        const updated = await service.update({
-          booking_id: booking.booking_id,
-          idempotency_key: stepKey(p, keyOf(c), 'update'),
-          ...(buyer && current
-            ? {
-                customer: {
-                  first_name: buyer.first_name ?? current.first_name,
-                  last_name: buyer.last_name ?? current.last_name,
-                  ...((buyer.email ?? current.email)
-                    ? { email: (buyer.email ?? current.email)! }
-                    : {}),
-                  ...((buyer.phone_number ?? current.phone_number)
-                    ? { phone_number: (buyer.phone_number ?? current.phone_number)! }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(req.notes !== undefined ? { notes: req.notes } : {}),
-        });
-        return bookingResponse(c, updated, messages);
-      } catch (e) {
-        const m = businessOutcome(e);
-        if (!m) throw e;
-        return bookingResponse(c, booking, [...messages, m]);
-      }
-    }),
+    privileged(
+      USP.bookings,
+      async (c, p, text) => {
+        const req = parse(UpdateRequest, jsonObject(text));
+        await checkKey(p, c, 'update', req);
+        const booking = await owned(p, param(c, 'booking_id'), true);
+        const messages: UspMessage[] = [];
+        if (req.recipient !== undefined) {
+          messages.push(
+            message('warning', 'recipient_not_stored', 'This business does not store a recipient.'),
+          );
+        }
+        if (booking.status === 'cancelled' || booking.status === 'expired') {
+          messages.push(
+            message('error', 'invalid_transition', 'A canceled booking can no longer be changed.', {
+              severity: 'requires_buyer_review',
+            }),
+          );
+          return bookingResponse(c, booking, messages);
+        }
+        const buyer = req.buyer;
+        const current = booking.customer;
+        if (!buyer && req.notes === undefined) return bookingResponse(c, booking, messages);
+        try {
+          const updated = await service.update({
+            booking_id: booking.booking_id,
+            idempotency_key: stepKey(p, keyOf(c), 'update'),
+            ...(buyer && current
+              ? {
+                  customer: {
+                    first_name: buyer.first_name ?? current.first_name,
+                    last_name: buyer.last_name ?? current.last_name,
+                    ...((buyer.email ?? current.email)
+                      ? { email: (buyer.email ?? current.email)! }
+                      : {}),
+                    ...((buyer.phone_number ?? current.phone_number)
+                      ? { phone_number: (buyer.phone_number ?? current.phone_number)! }
+                      : {}),
+                  },
+                }
+              : {}),
+            ...(req.notes !== undefined ? { notes: req.notes } : {}),
+          });
+          return bookingResponse(c, updated, messages);
+        } catch (e) {
+          const m = businessOutcome(e);
+          if (!m) throw e;
+          return bookingResponse(c, booking, [...messages, m]);
+        }
+      },
+      true,
+    ),
   );
 
   app.post(
     '/bookings/:booking_id/cancel',
-    privileged(USP.bookings, async (c, p, text) => {
-      const req = parse(CancelRequest, jsonObject(text));
-      await checkKey(p, c, 'cancel', req);
-      const booking = await owned(p, param(c, 'booking_id'), true);
-      if (booking.status === 'cancelled' || booking.status === 'expired') {
-        return bookingResponse(c, booking, [
-          message('error', 'invalid_transition', 'This booking is already canceled.', {
-            severity: 'requires_buyer_review',
-          }),
-        ]);
-      }
-      if (booking.status === 'confirmed') {
-        const terms = evaluateBookingCancellation(booking, service.clock.now());
-        if (!terms.allowed) {
+    privileged(
+      USP.bookings,
+      async (c, p, text) => {
+        const req = parse(CancelRequest, jsonObject(text));
+        await checkKey(p, c, 'cancel', req);
+        const booking = await owned(p, param(c, 'booking_id'), true);
+        if (booking.status === 'cancelled' || booking.status === 'expired') {
           return bookingResponse(c, booking, [
-            message(
-              'error',
-              'cancellation_not_allowed',
-              'The booking has already started and can no longer be canceled online.',
-              { severity: 'requires_buyer_review' },
-            ),
+            message('error', 'invalid_transition', 'This booking is already canceled.', {
+              severity: 'requires_buyer_review',
+            }),
           ]);
         }
-        if (!terms.free && mode === 'action') {
-          // A fee needs the customer's own approval, which they give on their booking page.
-          const link = o.bookingUrl?.(booking);
-          return bookingResponse(c, booking, [
-            message(
-              'error',
-              'cancellation_not_allowed',
-              `Cancelling now costs ${terms.fee ? formatMoney(terms.fee) : 'a fee'}. The customer must approve that and cancel on their booking page${link ? `: ${link}` : '.'}`,
-              { severity: 'requires_buyer_review' },
-            ),
-          ]);
+        if (booking.status === 'confirmed') {
+          const terms = evaluateBookingCancellation(booking, service.clock.now());
+          if (!terms.allowed) {
+            return bookingResponse(c, booking, [
+              message(
+                'error',
+                'cancellation_not_allowed',
+                'The booking has already started and can no longer be canceled online.',
+                { severity: 'requires_buyer_review' },
+              ),
+            ]);
+          }
+          if (!terms.free && mode === 'action') {
+            // A fee needs the customer's own approval, which they give on their booking page.
+            const link = o.bookingUrl?.(booking);
+            return bookingResponse(c, booking, [
+              message(
+                'error',
+                'cancellation_not_allowed',
+                `Cancelling now costs ${terms.fee ? formatMoney(terms.fee) : 'a fee'}. The customer must approve that and cancel on their booking page${link ? `: ${link}` : '.'}`,
+                { severity: 'requires_buyer_review' },
+              ),
+            ]);
+          }
         }
-      }
-      try {
-        const { booking: cancelled } = await service.cancel({
-          booking_id: booking.booking_id,
-          idempotency_key: stepKey(p, keyOf(c), 'cancel'),
-          // Free cancellations, and every cancellation in commit mode, are the platform's call.
-          user_confirmed: true,
-          ...(req.reason ? { reason: req.reason } : {}),
-        });
-        return bookingResponse(c, cancelled);
-      } catch (e) {
-        const m = businessOutcome(e);
-        if (!m) throw e;
-        return bookingResponse(c, booking, [m]);
-      }
-    }),
+        try {
+          const { booking: cancelled } = await service.cancel({
+            booking_id: booking.booking_id,
+            idempotency_key: stepKey(p, keyOf(c), 'cancel'),
+            // Free cancellations, and every cancellation in commit mode, are the platform's call.
+            user_confirmed: true,
+            ...(req.reason ? { reason: req.reason } : {}),
+          });
+          return bookingResponse(c, cancelled);
+        } catch (e) {
+          const m = businessOutcome(e);
+          if (!m) throw e;
+          return bookingResponse(c, booking, [m]);
+        }
+      },
+      true,
+    ),
   );
 
   app.post(
     '/bookings/:booking_id/reschedule',
-    privileged(USP.bookings, async (c, p, text) => {
-      const req = parse(RescheduleRequest, jsonObject(text));
-      await checkKey(p, c, 'reschedule', req);
-      if (req.hold_id) {
-        throw new ProtocolError('validation_error', 'hold_id: not supported when rescheduling.');
-      }
-      const booking = await owned(p, param(c, 'booking_id'), true);
-      const supported = typeof service.provider.rescheduleBooking === 'function';
-      if (mode === 'action' || !supported) {
-        // Moving a booking changes the time, price and terms the customer agreed to, so in
-        // `action` mode it is theirs to approve, and there is no page for that yet.
-        return bookingResponse(c, booking, [
-          message(
-            'error',
-            'reschedule_not_allowed',
-            supported
-              ? 'Moving a booking needs the customer. They can cancel on their booking page and book a new time, or contact the business.'
-              : 'This business does not move bookings online. Cancel it and book a new time instead.',
-            { severity: 'requires_buyer_review' },
-          ),
-        ]);
-      }
-      try {
-        const moved = await service.reschedule({
-          booking_id: booking.booking_id,
-          slot_id: req.slot_id,
-          idempotency_key: stepKey(p, keyOf(c), 'reschedule'),
-          user_confirmed: true,
-        });
-        return bookingResponse(c, moved);
-      } catch (e) {
-        const m = businessOutcome(e);
-        if (!m) throw e;
-        return bookingResponse(c, booking, [m]);
-      }
-    }),
+    privileged(
+      USP.bookings,
+      async (c, p, text) => {
+        const req = parse(RescheduleRequest, jsonObject(text));
+        await checkKey(p, c, 'reschedule', req);
+        if (req.hold_id) {
+          throw new ProtocolError('validation_error', 'hold_id: not supported when rescheduling.');
+        }
+        const booking = await owned(p, param(c, 'booking_id'), true);
+        const supported = typeof service.provider.rescheduleBooking === 'function';
+        if (mode === 'action' || !supported) {
+          // Moving a booking changes the time, price and terms the customer agreed to, so in
+          // `action` mode it is theirs to approve, and there is no page for that yet.
+          return bookingResponse(c, booking, [
+            message(
+              'error',
+              'reschedule_not_allowed',
+              supported
+                ? 'Moving a booking needs the customer. They can cancel on their booking page and book a new time, or contact the business.'
+                : 'This business does not move bookings online. Cancel it and book a new time instead.',
+              { severity: 'requires_buyer_review' },
+            ),
+          ]);
+        }
+        try {
+          const moved = await service.reschedule({
+            booking_id: booking.booking_id,
+            slot_id: req.slot_id,
+            idempotency_key: stepKey(p, keyOf(c), 'reschedule'),
+            user_confirmed: true,
+          });
+          return bookingResponse(c, moved);
+        } catch (e) {
+          const m = businessOutcome(e);
+          if (!m) throw e;
+          return bookingResponse(c, booking, [m]);
+        }
+      },
+      true,
+    ),
   );
 
   /**

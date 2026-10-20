@@ -21,8 +21,11 @@ import {
 import { StripeError, StripePayments, verifyWebhook } from '@openbooking-sh/payments-stripe';
 import {
   MemoryNotificationLog,
+  MemorySuppressionList,
+  suppressionHash,
   type Mailer,
   type NotificationLog,
+  type SuppressionList,
 } from '@openbooking-sh/notifications';
 import { MemoryBookingStore, type BookingRecordStore } from '@openbooking-sh/provider-memory';
 import {
@@ -38,6 +41,7 @@ import * as z from 'zod';
 import {
   OAUTH_STATE_TTL_MS,
   SESSION_TTL_MS,
+  UNSUBSCRIBE_TTL_MS,
   createSigner,
   hashPassword,
   verifyPassword,
@@ -68,6 +72,7 @@ import { posthogSnippet, withHeadSnippet, type Analytics } from './analytics';
 import { slackEscape, type OpsNotifier } from './slack';
 import { PRIVACY_URL, TERMS_URL } from './legal';
 import { signupHtml } from './signup';
+import { unsubscribeConfirmHtml, unsubscribeDoneHtml, unsubscribeInvalidHtml } from './unsubscribe';
 import {
   createProfileFetcher,
   MemoryUspState,
@@ -97,6 +102,11 @@ export interface HostedOptions {
    * a hardened fetcher that only reaches the public internet. `false` skips fetching (tests).
    */
   uspPlatformProfiles?: ProfileFetcher | false;
+  /**
+   * Also serve USP's MCP binding (`<business>/usp/mcp`) for the businesses that turn USP on.
+   * Off by default: it is a second public endpoint per business, with the REST binding's rules.
+   */
+  uspMcp?: boolean;
   activityFor?: (businessId: string) => ActivityLog;
   clock?: Clock;
   /**
@@ -113,6 +123,11 @@ export interface HostedOptions {
   /** Booking emails. Without it no emails are sent. `from` is a bare address. */
   mail?: { mailer: Mailer; from: string };
   notificationLog?: NotificationLog;
+  /**
+   * Customers who unsubscribed from a business's emails (hashes only). Memory by default, which
+   * forgets on restart: use `stores.suppressions` from @openbooking-sh/postgres in production.
+   */
+  suppressions?: SuppressionList;
   /** Google OAuth client (Calendar API enabled). The redirect URI is `{baseUrl}/oauth/google/callback`. */
   google?: { clientId: string; clientSecret: string; fetch?: typeof fetch };
   /** Test hook: the fetch calls to Stripe go through. */
@@ -218,6 +233,8 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ? { ...options.google, redirectUri: `${baseUrl}/oauth/google/callback` }
     : undefined;
 
+  const suppressions = options.suppressions ?? new MemorySuppressionList();
+
   const deps: TenantDeps = {
     baseUrl,
     businesses,
@@ -233,11 +250,21 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ...(options.holdTtlSeconds ? { holdTtlSeconds: options.holdTtlSeconds } : {}),
     ...(options.mail ? { mail: options.mail } : {}),
     notificationLog: options.notificationLog ?? new MemoryNotificationLog(),
+    suppressions,
+    unsubscribeUrl: (businessId, email) =>
+      `${baseUrl}/unsubscribe?token=${encodeURIComponent(
+        signer.sign(
+          'unsubscribe',
+          `${businessId}.${suppressionHash(businessId, email)}`,
+          UNSUBSCRIBE_TTL_MS,
+        ),
+      )}`,
     ...(google ? { google } : {}),
     ...(options.stripeFetch ? { stripeFetch: options.stripeFetch } : {}),
     calendarLinks: options.calendarLinks ?? new MemoryCalendarLinkStore(),
     uspState: options.uspState ?? new MemoryUspState(() => clock.now().getTime()),
     uspPlatformProfiles: options.uspPlatformProfiles ?? createProfileFetcher(),
+    uspMcp: options.uspMcp === true,
     allowedHosts,
     requireVerifiedEmail,
     ...(options.onEvent || options.analytics || options.ops
@@ -590,6 +617,40 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     tenants.get(id)?.sync(saved);
     track('password_reset', id);
     return c.json({ token: sessionToken(saved), business_id: id });
+  });
+
+  // Unsubscribe link from customer emails. No login: the signed token names the business and a
+  // hash of the address, so it can't be forged or used to learn whose address it is. GET only
+  // shows a button (scanners open links); the POST, which RFC 8058 one-click also uses, acts.
+  const unsubscribeTarget = (token: string) => {
+    const subject = signer.verify('unsubscribe', token);
+    const dot = subject?.lastIndexOf('.') ?? -1;
+    if (!subject || dot < 1) return undefined;
+    return { businessId: subject.slice(0, dot), hash: subject.slice(dot + 1) };
+  };
+  const unsubscribePage = (c: Context, html: string, status: 200 | 400 | 429 = 200) =>
+    c.html(html, status, { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+  app.get('/unsubscribe', async (c) => {
+    const token = c.req.query('token') ?? '';
+    const target = unsubscribeTarget(token);
+    const business = target ? await businesses.get(target.businessId) : undefined;
+    if (!target || !business) return unsubscribePage(c, unsubscribeInvalidHtml(), 400);
+    return unsubscribePage(
+      c,
+      unsubscribeConfirmHtml({
+        businessName: business.settings.profile.name,
+        action: `/unsubscribe?token=${encodeURIComponent(token)}`,
+      }),
+    );
+  });
+  app.post('/unsubscribe', async (c) => {
+    if (!(await allowed([`unsubscribe:ip:${clientIp(c.req.raw)}`, LIMITS.unsubscribePerIp])))
+      return unsubscribePage(c, unsubscribeInvalidHtml(), 429);
+    const target = unsubscribeTarget(c.req.query('token') ?? '');
+    const business = target ? await businesses.get(target.businessId) : undefined;
+    if (!target || !business) return unsubscribePage(c, unsubscribeInvalidHtml(), 400);
+    await suppressions.add(target.businessId, target.hash);
+    return unsubscribePage(c, unsubscribeDoneHtml(business.settings.profile.name));
   });
 
   app.get('/api/verify-email', async (c) => {

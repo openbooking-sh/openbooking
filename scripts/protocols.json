@@ -1,0 +1,166 @@
+{
+  "_comment": "Sources watched by scripts/watch-protocols.mjs. A pin is the upstream state we last implemented or reviewed against. Bump a pin only after reading the diff (see docs/PROTOCOLS.md). 'commit.pin' compares as <pin>...<branch> and only files under 'paths' count as a change. 'releases.pin' is the newest release or tag we have looked at. 'baseline' pins record where watching started, not a commit we implemented against. 'activity.keywords' only filters the informational issue and PR section; activity never opens an issue by itself.",
+  "sources": [
+    {
+      "id": "mcp",
+      "protocol": "MCP",
+      "repo": "modelcontextprotocol/modelcontextprotocol",
+      "branch": "main",
+      "ours": "packages/adapter-mcp",
+      "releases": { "feed": "releases", "pin": "2026-07-28" },
+      "commit": {
+        "pin": "5f5440bb26a62e2cf3440b92da5a667efa03b267",
+        "paths": ["schema/draft/", "docs/specification/draft/", "seps/"]
+      },
+      "activity": {
+        "keywords": [
+          "tool",
+          "elicitation",
+          "stateless",
+          "session",
+          "streamable",
+          "transport",
+          "auth",
+          "annotation",
+          "structured",
+          "idempot"
+        ]
+      }
+    },
+    {
+      "id": "webmcp",
+      "protocol": "WebMCP",
+      "repo": "webmachinelearning/webmcp",
+      "branch": "main",
+      "ours": "packages/booking-page",
+      "commit": {
+        "pin": "f14762e63607bf96592b1a7a6392cd2b047b8209",
+        "baseline": true,
+        "paths": ["index.bs", "docs/", "declarative-api-explainer.md", "implementation-status.md"]
+      },
+      "activity": {
+        "keywords": [
+          "modelcontext",
+          "registertool",
+          "tool",
+          "execute",
+          "annotation",
+          "agent",
+          "navigator"
+        ]
+      }
+    },
+    {
+      "id": "ucp",
+      "protocol": "UCP",
+      "repo": "Universal-Commerce-Protocol/ucp",
+      "branch": "main",
+      "ours": "packages/adapter-ucp",
+      "releases": { "feed": "releases", "pin": "v2026-08-25" },
+      "commit": {
+        "pin": "b0e81adecf816a1771b736464f17586d76950f7f",
+        "paths": ["source/", "docs/specification/", "docs/documentation/roadmap.md"]
+      },
+      "activity": {
+        "keywords": [
+          "lodging",
+          "booking",
+          "appointment",
+          "availability",
+          "hold",
+          "cancel",
+          "idempot",
+          "stay",
+          "payment terms",
+          "policy"
+        ]
+      }
+    },
+    {
+      "id": "usp",
+      "protocol": "USP",
+      "repo": "wix/universal-scheduling-protocol",
+      "branch": "master",
+      "ours": "packages/adapter-usp",
+      "commit": {
+        "pin": "78363d766e738efd44fb42d1d1bf93ce617187ec",
+        "paths": [
+          "schemas/",
+          "openapi/",
+          "openrpc/",
+          "tests/vectors/",
+          "specification.md",
+          "CHANGE_LOG.md",
+          "docs/"
+        ]
+      },
+      "activity": {
+        "keywords": [
+          "booking",
+          "availability",
+          "hold",
+          "cancel",
+          "reschedul",
+          "consent",
+          "dpop",
+          "auth",
+          "profile",
+          "capabilit",
+          "error",
+          "version"
+        ]
+      }
+    },
+    {
+      "id": "a2a",
+      "protocol": "A2A",
+      "repo": "a2aproject/A2A",
+      "branch": "main",
+      "ours": "packages/adapter-a2a",
+      "releases": { "feed": "releases", "pin": "v1.0.1" },
+      "commit": {
+        "pin": "3303592588e388e62e0f69f701af531d2f4e3991",
+        "paths": ["specification/", "docs/specification.md"]
+      },
+      "activity": {
+        "keywords": [
+          "agent card",
+          "agentcard",
+          "sendmessage",
+          "jsonrpc",
+          "extension",
+          "binding",
+          "task",
+          "part"
+        ]
+      }
+    },
+    {
+      "id": "acp",
+      "protocol": "ACP",
+      "repo": "agentic-commerce-protocol/agentic-commerce-protocol",
+      "branch": "main",
+      "ours": "none yet (not built)",
+      "commit": {
+        "pin": "7fdd78df677a94dce04c770644b0fbbb1401272b",
+        "baseline": true,
+        "paths": ["spec/", "changelog/", "rfcs/"]
+      },
+      "activity": { "keywords": ["payment", "token", "checkout", "delegat", "booking", "stripe"] }
+    },
+    {
+      "id": "ap2",
+      "protocol": "AP2",
+      "repo": "google-agentic-commerce/AP2",
+      "branch": "main",
+      "ours": "none yet (not built)",
+      "releases": { "feed": "releases", "pin": "v0.2.0" },
+      "commit": {
+        "pin": "e1ea56db72a6385bce3e5c1112b3a56ce60acb43",
+        "baseline": true,
+        "paths": ["docs/", "CHANGELOG.md"]
+      },
+      "activity": { "keywords": ["mandate", "consent", "payment", "credential", "booking"] }
+    }
+  ]
+}

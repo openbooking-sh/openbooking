@@ -25,3 +25,4 @@ export {
   type NotificationOptions,
 } from './notify';
 export { formatAmount, formatWhen } from './format';
+export { MemorySuppressionList, suppressionHash, type SuppressionList } from './suppression';

@@ -25,6 +25,8 @@ export interface UspProfileOptions {
    * how platforms authenticate (spec 10.1.6), and without one they would all answer 401.
    */
   bookings?: { mechanisms: readonly string[] };
+  /** Also advertise the MCP binding, at `<uspPath>/mcp`. */
+  mcp?: boolean;
 }
 
 export function buildUspProfile(options: UspProfileOptions) {
@@ -45,6 +47,17 @@ export function buildUspProfile(options: UspProfileOptions) {
             spec: USP_SPEC.spec,
             schema: USP_SPEC.rest,
           },
+          ...(options.mcp
+            ? [
+                {
+                  version: USP_VERSION,
+                  transport: 'mcp',
+                  endpoint: `${endpoint}/mcp`,
+                  spec: USP_SPEC.spec,
+                  schema: USP_SPEC.mcp,
+                },
+              ]
+            : []),
         ],
       },
       capabilities: {

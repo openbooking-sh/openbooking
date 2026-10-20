@@ -51,8 +51,8 @@ export function toActivityEntry(e: BookingEvent): Omit<ActivityEntry, 'id'> {
     ...(e.status ? { status: e.status } : {}),
     ...(e.error_code ? { error_code: e.error_code } : {}),
     ...(e.replayed ? { replayed: true } : {}),
-    agent: e.actor?.agent ?? 'Direct API',
-    protocol: e.actor?.protocol ?? 'api',
+    agent: e.actor?.agent ?? (e.operation === 'expire' ? 'System' : 'Direct API'),
+    protocol: e.actor?.protocol ?? (e.operation === 'expire' ? 'system' : 'api'),
     ...(e.actor?.client ? { client: e.actor.client } : {}),
   };
 }

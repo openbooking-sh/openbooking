@@ -7,9 +7,10 @@
  *   app.get('/.well-known/usp', async (c) => c.json(await usp.profile()));
  */
 import type { Booking, BookingService } from '@openbooking-sh/core';
-import type { Hono } from 'hono';
+import { Hono } from 'hono';
 import type { UspBusinessAuth } from './auth';
 import type { ConsentMode } from './booking-mapping';
+import { bridgeAuth, createUspMcp } from './mcp';
 import { createPopAuthenticator } from './pop-auth';
 import { createProfileFetcher, type ProfileFetcher } from './profile-fetch';
 import { buildUspProfileFor } from './profile';
@@ -45,6 +46,12 @@ export interface UspOptions {
   platformProfiles?: ProfileFetcher | false;
   /** Display name in the profile. Default: the booking system's name. */
   name?: string;
+  /**
+   * Also serve the MCP binding (the `usp_*` tools) at `<path>/mcp` and advertise it in the
+   * profile. Off by default: it is a second public endpoint. It runs on the same router, so the
+   * consent mode, idempotency, ownership, negotiation and state are exactly the REST ones.
+   */
+  mcp?: boolean;
 }
 
 export type UspProfile = Awaited<ReturnType<typeof buildUspProfileFor>>;
@@ -54,6 +61,8 @@ export interface Usp {
   path: string;
   /** The `/.well-known/usp` document. */
   profile(): Promise<UspProfile>;
+  /** Release the MCP handler (a no-op unless `mcp` is on). */
+  close(): Promise<void>;
 }
 
 export function createUsp(options: UspOptions): Usp {
@@ -72,17 +81,27 @@ export function createUsp(options: UspOptions): Usp {
     // request we see (hosted serves each business under /b/<id>), so build it from `baseUrl`.
     htu: (request) => `${base}${new URL(request.url).pathname}`,
   });
-  const router = createUspRouter({
+  // The MCP binding hands the router a principal it already verified (see mcp.ts), so the router
+  // sees the same authenticator either way.
+  const bridge = bridgeAuth(auth);
+  const rest = createUspRouter({
     service,
     baseUrl: base,
     consent: options.consent ?? 'action',
-    auth,
+    auth: bridge.auth,
     state,
     ...(options.businessId ? { businessId: options.businessId } : {}),
     ...(options.continueUrl ? { continueUrl: options.continueUrl } : {}),
     ...(options.bookingUrl ? { bookingUrl: options.bookingUrl } : {}),
     ...(options.businessAuth ? { businessAuth: options.businessAuth } : {}),
   });
+  const mcp = options.mcp ? createUspMcp({ router: rest, bridge }) : undefined;
+  let router = rest;
+  if (mcp) {
+    router = new Hono();
+    router.all('/mcp', (c) => mcp.fetch(c.req.raw));
+    router.route('/', rest);
+  }
   return {
     router,
     path,
@@ -91,7 +110,11 @@ export function createUsp(options: UspOptions): Usp {
         baseUrl: base,
         uspPath: path,
         bookings: { mechanisms: auth.mechanisms },
+        ...(mcp ? { mcp: true } : {}),
         ...(options.name ? { name: options.name } : {}),
       }),
+    close: async () => {
+      await mcp?.close();
+    },
   };
 }

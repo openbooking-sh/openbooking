@@ -16,6 +16,7 @@ export const LIMITS = {
   resetEmailPerEmail: { limit: 3, windowMs: 60 * MIN },
   resetEmailPerIp: { limit: 20, windowMs: 60 * MIN },
   resetSubmitPerIp: { limit: 20, windowMs: 15 * MIN },
+  unsubscribePerIp: { limit: 60, windowMs: 15 * MIN },
 } as const;
 
 /**

@@ -82,6 +82,11 @@ export interface OpenBookingServerOptions {
          * profiles (no capability negotiation: for local development and tests).
          */
         platformProfiles?: ProfileFetcher | false;
+        /**
+         * Also serve USP's MCP binding (the `usp_*` tools) at `<path>/mcp`. Off by default: it is
+         * a second public endpoint, though it shares the REST binding's rules and state.
+         */
+        mcp?: boolean;
       }
     | false;
   /**
@@ -111,7 +116,7 @@ export interface OpenBookingServerOptions {
       }
     | false;
   /**
-   * Signed webhooks for booking.held, .confirmed, .updated and .cancelled. On serverless hosts,
+   * Signed webhooks for booking.held, .confirmed, .updated, .cancelled and .expired. On serverless hosts,
    * keep the function alive for `webhooks.idle()` (e.g. `waitUntil`) so retries can finish.
    */
   webhooks?: WebhookOptions;
@@ -161,6 +166,7 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
 
   const app = new Hono();
   let mcpHandler: McpHttpHandler | undefined;
+  let uspMcp: { close(): Promise<void> } | undefined;
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
@@ -210,6 +216,9 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
                 status: 'draft',
                 profile: `${baseUrl}/.well-known/usp`,
                 endpoint: `${baseUrl}${options.usp.path ?? '/usp'}`,
+                ...(options.usp.mcp
+                  ? { mcp_endpoint: `${baseUrl}${options.usp.path ?? '/usp'}/mcp` }
+                  : {}),
               },
             }
           : {}),
@@ -272,11 +281,13 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
       ...(options.usp.state ? { state: options.usp.state } : {}),
       ...(options.usp.businessAuth ? { businessAuth: options.usp.businessAuth } : {}),
       ...(options.usp.businessId ? { businessId: options.usp.businessId } : {}),
+      ...(options.usp.mcp ? { mcp: true } : {}),
       ...(options.usp.platformProfiles !== undefined
         ? { platformProfiles: options.usp.platformProfiles }
         : {}),
       ...(page ? { continueUrl: page.confirmUrl, bookingUrl: page.manageUrl } : {}),
     });
+    uspMcp = usp;
     app.use(`${usp.path}/*`, async (c, next) =>
       runAsActor(await actorFromRequest(c.req.raw, 'usp'), () => next()),
     );
@@ -338,6 +349,7 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
       await studio?.idle();
       studio?.close();
       await mcpHandler?.close();
+      await uspMcp?.close();
     },
   };
 }

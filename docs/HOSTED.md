@@ -53,8 +53,8 @@ hours per weekday, closed dates, staff, services (duration, price, who does it),
 rule as percentages of the price, booking rules, email preferences, and whether the business is
 listed in the OpenBooking app. `catalog.ts` turns them into the provider configuration.
 
-Deposits are not offered in hosted settings yet; they need online payments (planned: Stripe payment
-links).
+Deposits are set per business once it connects its own Stripe account: see
+[Deposits (Stripe)](#deposits-stripe) below.
 
 ## Getting found: Google, website, social
 
@@ -136,7 +136,9 @@ owner turns it on in Studio → Settings → AI assistants, where they also choo
   customer first.
 
 The business's profile is at `/b/{id}/.well-known/usp` (there is no profile at the root, because
-the root is not one business). Businesses saved before the setting existed have no `assistants`
+the root is not one business). USP's MCP binding (`/b/{id}/usp/mcp`, the `usp_*` tools) is off
+unless the deployment passes `uspMcp: true`; it then serves every business that has USP on, with the
+same consent setting. Businesses saved before the setting existed have no `assistants`
 block and count as off. For several instances or serverless, pass `uspState` (`postgresStores(db).usp`,
 which the Vercel entry does when `DATABASE_URL` is set): it holds owners, credentials and replay
 protection, shared by every instance and kept apart per business. When a platform calls, hosted fetches the platform's own profile (public internet only, cached, shared by all businesses) and uses only what both sides support. Protocol details are in
@@ -160,6 +162,14 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 - **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
   listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
   page and per-business MCP work straight away. Studio shows a "Confirm your email" step.
+- **Unsubscribe:** every customer email has an unsubscribe link and `List-Unsubscribe` /
+  `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link is a signed token naming the
+  business and a SHA-256 of the normalised address (no address in it). `GET /unsubscribe` only shows
+  a button, so mail scanners change nothing; the POST (also what a mail client's one-click sends)
+  records the hash for that business. After that the address gets no emails from that business at
+  all, confirmations and cancellations included, and the business is still told about bookings. The
+  list is per business, keeps no address, and is deleted with the account. The business's own
+  notices have no link: they are switched off in Studio.
 - **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP, reset
   emails per email and IP. The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets;
   pass `clientIp` when running without a proxy.
@@ -176,6 +186,7 @@ implements all of them. `postgresStores(db)` returns them ready to pass to `crea
 | `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.           |
 | `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                                    |
 | `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.                |
+| `suppressions`    | `SuppressionList`     | `PostgresSuppressionList`   | Unsubscribed addresses as hashes, per business.              |
 | `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                                   |
 | `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                      |
 | `uspState`        | `UspStateStore`       | `PostgresUspState`          | USP owners, credentials, replay memory; scoped per business. |
@@ -234,6 +245,35 @@ All optional, set as environment variables on the Vercel project:
 
 No customer names, emails or phone numbers are sent to any of them. Background work (emails,
 calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
+
+## Cold starts
+
+Each new function instance logs one line, with stage names and milliseconds only:
+
+```
+[openbooking] cold start: imports=1900ms db_connect=850ms migrate=12ms app=6ms boot=870ms
+```
+
+- `imports`: process start until the entry module finished loading (Node start, bundle load; the
+  largest single dependency is `@sentry/node`).
+- `db_connect`: opening the first Postgres connection: TCP, TLS, login, and a Neon compute waking
+  from idle. This is the stage to check first when a cold start takes seconds.
+- `migrate`: the schema check. An up-to-date database costs one query; only a database with
+  pending migrations takes the advisory lock, so instances booting together still serialise.
+- `app`: building the hosted app (stores, routes). Tenants are built lazily per request.
+
+Measured locally (PGlite, so no network): `app` is 2 to 5 ms, the up-to-date `migrate` is one query,
+and module loading dominates (Sentry alone is about 1 to 3 seconds on a loaded laptop). A real cold
+start adds what only production shows: Neon waking a suspended compute (typically a few hundred
+milliseconds up to a couple of seconds) and the round trips between the function and the database.
+
+Settings that matter, none of them code:
+
+- Keep the Vercel function region (`regions` in `vercel.json`, now `fra1`) in the same region as
+  the Neon project, otherwise every query pays a transatlantic round trip.
+- Use Neon's pooled connection string (`-pooler` host) for `DATABASE_URL`.
+- Turn off Neon's scale-to-zero for the production compute (or lengthen the suspend delay), so the
+  first request after a quiet period does not wait for the compute to start.
 
 ## Not done yet
 
