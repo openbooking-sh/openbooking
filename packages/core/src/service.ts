@@ -553,6 +553,7 @@ export class BookingService {
                 reason: req.reason ?? null,
                 fee: null,
                 refund: null,
+                release_hold: true,
               },
               ctx,
             );
