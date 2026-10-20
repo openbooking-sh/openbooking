@@ -1,5 +1,20 @@
 # @openbooking-sh/booking-page
 
+## 0.13.0
+
+### Minor Changes
+
+- 3d98490: The booking page API now describes itself: an OpenAPI 3.1 document at `<page>/book/api/openapi.json`, generated from zod schemas that every real response is tested against. The schemas are exported as `api` and the generator as `buildOpenApi`. Call the API with the new `@openbooking-sh/client`.
+- 5b1fb9a: Add a confirm page (`/confirm/:id`) for a booking an assistant is holding: it shows the time, price and cancellation terms and confirms only when the person presses the button. `BookingPage.confirmUrl(booking)` returns its link, and `GET /api/holds/:id` returns what the page shows (a confirmed booking reveals no code or name).
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+
+### Patch Changes
+
+- Updated dependencies [e6a751c]
+- Updated dependencies [3825c49]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

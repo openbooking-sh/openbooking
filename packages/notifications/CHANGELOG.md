@@ -1,5 +1,19 @@
 # @openbooking-sh/notifications
 
+## 0.13.0
+
+### Minor Changes
+
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+- edba76d: Customers can unsubscribe from a business's emails. Customer emails carry an unsubscribe link and the RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers (`EmailMessage.headers`, passed on by `ResendMailer`). Hosted serves `/unsubscribe`: a GET shows a button, the POST records a hash of the address for that business, and nothing more is sent to it. New `SuppressionList` (`MemorySuppressionList`, `PostgresSuppressionList`, migration 5), `isSuppressed` and `unsubscribeUrl` options in `attachNotifications`, and a `suppressions` option on `createHostedApp` (`stores.suppressions` with Postgres).
+
+### Patch Changes
+
+- Updated dependencies [e6a751c]
+- Updated dependencies [3825c49]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes
