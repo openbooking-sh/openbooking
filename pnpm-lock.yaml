@@ -314,6 +314,9 @@ importers:
 
   packages/adapter-usp:
     dependencies:
+      '@modelcontextprotocol/server':
+        specifier: ^2.2.0
+        version: 2.2.0
       '@openbooking-sh/core':
         specifier: workspace:^
         version: link:../core
@@ -330,6 +333,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.3
         version: 2.1.3(hono@4.13.12)
+      '@modelcontextprotocol/client':
+        specifier: ^2.2.0
+        version: 2.2.0
       '@openbooking-sh/booking-page':
         specifier: workspace:^
         version: link:../booking-page

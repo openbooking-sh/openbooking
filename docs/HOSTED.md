@@ -136,7 +136,9 @@ owner turns it on in Studio → Settings → AI assistants, where they also choo
   customer first.
 
 The business's profile is at `/b/{id}/.well-known/usp` (there is no profile at the root, because
-the root is not one business). Businesses saved before the setting existed have no `assistants`
+the root is not one business). USP's MCP binding (`/b/{id}/usp/mcp`, the `usp_*` tools) is off
+unless the deployment passes `uspMcp: true`; it then serves every business that has USP on, with the
+same consent setting. Businesses saved before the setting existed have no `assistants`
 block and count as off. For several instances or serverless, pass `uspState` (`postgresStores(db).usp`,
 which the Vercel entry does when `DATABASE_URL` is set): it holds owners, credentials and replay
 protection, shared by every instance and kept apart per business. When a platform calls, hosted fetches the platform's own profile (public internet only, cached, shared by all businesses) and uses only what both sides support. Protocol details are in

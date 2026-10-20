@@ -86,6 +86,8 @@ export interface TenantDeps {
   uspState: UspStateStore;
   /** One fetcher for every business, so platform profiles are cached once. */
   uspPlatformProfiles: ProfileFetcher | false;
+  /** Serve USP's MCP binding too, for businesses with USP on. */
+  uspMcp: boolean;
   allowedHosts: string[];
   /** Owners must confirm their email before the business is listed in the OpenBooking app. */
   requireVerifiedEmail?: boolean;
@@ -455,6 +457,7 @@ export class Tenant {
               state: this.#uspState,
               businessId: this.id,
               platformProfiles: this.#deps.uspPlatformProfiles,
+              mcp: this.#deps.uspMcp,
             },
       studio: false,
       bookingPage: {
