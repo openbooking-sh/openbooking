@@ -68,7 +68,7 @@ app.get('/.well-known/ucp', (c) => c.json(buildUcpProfile({ baseUrl, ucpPath: '/
   'adapter-usp': {
     title: 'Universal Scheduling Protocol (draft)',
     intro:
-      'Exposes a `BookingService` over the Universal Scheduling Protocol (USP), the draft standard from Wix and Stripe that lets any platform or AI assistant discover and book a business: the profile at `/.well-known/usp`, the catalog, availability, holds and bookings over REST. Platforms sign in with a key they make themselves (no accounts), and each business chooses how a booking becomes real: the customer confirms on a page (default), or the assistant books immediately. Follows a draft spec and may change with it. Most apps use it through `' +
+      'Exposes a `BookingService` over the Universal Scheduling Protocol (USP), the draft standard from Wix and Stripe that lets any platform or AI assistant discover and book a business: the profile at `/.well-known/usp`, the catalog, availability, holds and bookings over REST. Platforms sign in with a key they make themselves (no accounts), or, when you turn it on, by signing requests with a key they publish in their profile (HTTP message signatures, ES256). Each business chooses how a booking becomes real: the customer confirms on a page (default), or the assistant books immediately. Follows a draft spec and may change with it. Most apps use it through `' +
       S +
       '/server` (`usp: {}`) or hosted OpenBooking.',
     usage: `import { createUsp } from '${S}/adapter-usp';

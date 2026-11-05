@@ -1,6 +1,6 @@
 # @openbooking-sh/adapter-usp
 
-**Universal Scheduling Protocol (draft).** Exposes a `BookingService` over the Universal Scheduling Protocol (USP), the draft standard from Wix and Stripe that lets any platform or AI assistant discover and book a business: the profile at `/.well-known/usp`, the catalog, availability, holds and bookings over REST. Platforms sign in with a key they make themselves (no accounts), and each business chooses how a booking becomes real: the customer confirms on a page (default), or the assistant books immediately. Follows a draft spec and may change with it. Most apps use it through `@openbooking-sh/server` (`usp: {}`) or hosted OpenBooking.
+**Universal Scheduling Protocol (draft).** Exposes a `BookingService` over the Universal Scheduling Protocol (USP), the draft standard from Wix and Stripe that lets any platform or AI assistant discover and book a business: the profile at `/.well-known/usp`, the catalog, availability, holds and bookings over REST. Platforms sign in with a key they make themselves (no accounts), or, when you turn it on, by signing requests with a key they publish in their profile (HTTP message signatures, ES256). Each business chooses how a booking becomes real: the customer confirms on a page (default), or the assistant books immediately. Follows a draft spec and may change with it. Most apps use it through `@openbooking-sh/server` (`usp: {}`) or hosted OpenBooking.
 
 Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
 

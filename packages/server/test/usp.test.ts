@@ -145,6 +145,26 @@ describe('USP in the server', () => {
     });
   });
 
+  it('turns on the extra platform authentication it is given, and says so in the profile', async () => {
+    const plain = await boot({ usp: { platformProfiles: profiles } });
+    const before = await json(await fetch(`${plain.url}/.well-known/usp`));
+    expect(before.authorization.accepted_mechanisms).not.toContain('http_message_signature');
+
+    const w = await boot({
+      usp: { platformProfiles: profiles, platformAuth: { httpSignatures: true } },
+    });
+    const profile = await json(await fetch(`${w.url}/.well-known/usp`));
+    expect(profile.authorization.accepted_mechanisms).toEqual([
+      'platform_key_pop',
+      'booking_scoped_credential',
+      'http_message_signature',
+    ]);
+    // Signing keys live in platform profiles, so signatures need a way to read them.
+    await expect(
+      boot({ usp: { platformProfiles: false, platformAuth: { httpSignatures: true } } }),
+    ).rejects.toThrow(/fetchProfile/);
+  });
+
   it('holds a booking for the customer, who confirms it on the real page; Studio sees the channel', async () => {
     const w = await boot({ usp: { platformProfiles: profiles } });
     const assistant = await platform(w);
