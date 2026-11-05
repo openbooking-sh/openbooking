@@ -532,7 +532,8 @@ export class MemoryBookingProvider implements BookingProvider {
     if (o.weekdays && !o.weekdays.includes(time.weekdayOfDate(date))) return false;
     if (o.first_start && local < o.first_start) return false;
     if (o.last_start && local > o.last_start) return false;
-    // Must finish by closing time.
+    // Must finish by closing time. This compares wall-clock minutes while the duration is elapsed
+    // time, so it is off by the clock change on a venue open through the 02:00 change (OPE-98).
     const periods = cfg.opening_hours[time.weekdayOfDate(date)] ?? [];
     const startMin = time.minutesOfDay(local);
     return periods.some((p) => {

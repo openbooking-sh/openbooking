@@ -591,5 +591,11 @@ function prefixed(store: IdempotencyStore, prefix: string): IdempotencyStore {
   return {
     get: (key) => store.get(prefix + key),
     set: (key, record: IdempotencyRecord, ttlMs) => store.set(prefix + key, record, ttlMs),
+    // Left out when the store has none, so the engine knows it cannot claim across instances.
+    ...(store.claim && {
+      claim: (key: string, fingerprint: string, ttlMs: number) =>
+        store.claim!(prefix + key, fingerprint, ttlMs),
+    }),
+    ...(store.release && { release: (key: string) => store.release!(prefix + key) }),
   };
 }

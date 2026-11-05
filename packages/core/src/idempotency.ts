@@ -4,7 +4,9 @@
  * Semantics (aligned with UCP REST `Idempotency-Key`):
  *  - Same key + same request  → the original successful result is replayed; nothing runs twice.
  *  - Same key + different request → `idempotency_conflict` (UCP: HTTP 409).
- *  - Concurrent calls with the same key share a single in-flight execution.
+ *  - Concurrent calls with the same key share a single in-flight execution. Across server
+ *    instances that needs a store with `claim()`: the first instance to claim the key runs, the
+ *    others wait for its result and replay it.
  *  - Only successes are stored. Failed calls change no state (providers must be atomic), so a retry
  *    after an error simply re-executes — e.g. confirm without consent, then with consent, same key.
  *  - Records are kept for at least 24h (UCP minimum).
@@ -22,6 +24,16 @@ export interface IdempotencyStore {
   get(key: string): Promise<IdempotencyRecord | undefined>;
   set(key: string, record: IdempotencyRecord, ttlMs: number): Promise<void>;
   /**
+   * Claim `key` for a call that is about to run, so another instance sending the same key at the
+   * same instant waits for it instead of running too. Resolves true when this caller now holds the
+   * claim; false when a result is already recorded or another caller holds a live claim. The
+   * claim expires after `ttlMs` (a crashed instance must not block a key for ever), and `set`
+   * replaces it with the result. Optional: without it, concurrent calls are joined per process only.
+   */
+  claim?(key: string, fingerprint: string, ttlMs: number): Promise<boolean>;
+  /** Give up a claim after a failed call, so a retry (or a waiting caller) can run. */
+  release?(key: string): Promise<void>;
+  /**
    * Delete every record whose key starts with `prefix` and resolve how many went. Optional: used
    * when a hosted business closes its account (its keys are prefixed with its id), because the
    * records hold copies of its bookings, customer details included.
@@ -31,6 +43,7 @@ export interface IdempotencyStore {
 
 export class MemoryIdempotencyStore implements IdempotencyStore {
   readonly #records = new Map<string, { record: IdempotencyRecord; expiresAt: number }>();
+  readonly #claims = new Map<string, number>();
   readonly #now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -49,6 +62,19 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 
   async set(key: string, record: IdempotencyRecord, ttlMs: number): Promise<void> {
     this.#records.set(key, { record, expiresAt: this.#now() + ttlMs });
+    this.#claims.delete(key);
+  }
+
+  async claim(key: string, _fingerprint: string, ttlMs: number): Promise<boolean> {
+    if (await this.get(key)) return false;
+    const held = this.#claims.get(key);
+    if (held !== undefined && held > this.#now()) return false;
+    this.#claims.set(key, this.#now() + ttlMs);
+    return true;
+  }
+
+  async release(key: string): Promise<void> {
+    this.#claims.delete(key);
   }
 
   async deletePrefix(prefix: string): Promise<number> {
@@ -61,6 +87,14 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 }
 
 export const DEFAULT_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long a claim blocks the same key on other instances if its holder never finishes. Longer
+ * than any provider call should take; shorter than an agent would wait.
+ */
+const CLAIM_TTL_MS = 60_000;
+/** How often a caller that lost the claim looks for the winner's result. */
+const CLAIM_POLL_MS = 40;
 
 /** Deterministic JSON (sorted keys) used to fingerprint requests. */
 export function stableStringify(value: unknown): string {
@@ -118,18 +152,25 @@ export class IdempotencyGuard {
     // Register as in-flight synchronously (before any await) so concurrent callers with the same
     // key always join this execution instead of racing past the store lookup.
     const promise = (async (): Promise<IdempotentResult<T>> => {
-      const existing = await this.#store.get(key);
-      if (existing) {
-        if (existing.fingerprint !== fingerprint) throw conflict(key);
-        return { value: structuredClone(existing.value) as T, replayed: true };
+      for (;;) {
+        const existing = await this.#store.get(key);
+        if (existing) {
+          if (existing.fingerprint !== fingerprint) throw conflict(key);
+          return { value: structuredClone(existing.value) as T, replayed: true };
+        }
+        if (!this.#store.claim) return this.#execute(key, fingerprint, fn);
+        // Another instance may be running this very key. Whoever claims it first runs; the rest
+        // look again for its result. A failed run releases the claim, so one of the waiting
+        // callers then runs (failures are never stored, so a retry re-executes).
+        if (await this.#store.claim(key, fingerprint, CLAIM_TTL_MS)) {
+          try {
+            return await this.#execute(key, fingerprint, fn);
+          } finally {
+            await this.#store.release?.(key).catch(() => undefined);
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, CLAIM_POLL_MS));
       }
-      const value = await fn();
-      await this.#store.set(
-        key,
-        { fingerprint, value: structuredClone(value), created_at: this.#now() },
-        this.#ttlMs,
-      );
-      return { value, replayed: false };
     })();
     this.#inFlight.set(key, { fingerprint, promise });
     try {
@@ -137,6 +178,20 @@ export class IdempotencyGuard {
     } finally {
       this.#inFlight.delete(key);
     }
+  }
+
+  async #execute<T>(
+    key: string,
+    fingerprint: string,
+    fn: () => Promise<T>,
+  ): Promise<IdempotentResult<T>> {
+    const value = await fn();
+    await this.#store.set(
+      key,
+      { fingerprint, value: structuredClone(value), created_at: this.#now() },
+      this.#ttlMs,
+    );
+    return { value, replayed: false };
   }
 }
 
