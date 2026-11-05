@@ -68,6 +68,32 @@ describe('policy link', () => {
   });
 });
 
+describe('child booking notice', () => {
+  const NOTICE = 'Booking for a child? A parent books. Use <your> details.';
+
+  it('shows the notice above the confirm button, escaped, when one is set', async () => {
+    const service = new BookingService({
+      provider: createDemoSalonProvider(),
+      clock: new ManualClock('2026-10-08T08:00:00Z'),
+    });
+    const page = createBookingPage({
+      service,
+      pageUrl: BASE,
+      apiBase: `${BASE}/book`,
+      childNotice: NOTICE,
+    });
+    const html = await (await page.app.request('/')).text();
+    expect(html).toContain('Booking for a child? A parent books. Use &lt;your&gt; details.');
+    expect(html.indexOf('id="child-notice"')).toBeLessThan(html.indexOf('id="confirm"'));
+  });
+
+  it('shows nothing when none is set: a self-hosted business decides its own rules', async () => {
+    const t = setup();
+    const html = await (await t.page.app.request('/')).text();
+    expect(html).not.toContain('child-notice');
+  });
+});
+
 const customer = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
 
 async function book(t: ReturnType<typeof setup>) {

@@ -138,6 +138,23 @@ describe('policy links', () => {
   });
 });
 
+describe('age rules', () => {
+  it('tells people creating an account that they must be 18 or older', async () => {
+    const { req } = setup();
+    const signupPage = await req('/signup');
+    expect(signupPage.text).toContain('You must be 18 or older to create an account.');
+  });
+
+  it('puts the child-booking notice on every business booking page', async () => {
+    const { req, signup } = setup();
+    const { business_id } = await signup();
+    const page = await req(`/b/${business_id}`, { accept: 'text/html' });
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('id="child-notice"');
+    expect(page.text).toContain('A parent or guardian must make the booking');
+  });
+});
+
 describe('sign-up and login', () => {
   it('creates a bookable business with starter settings in one call', async () => {
     const { req, signup } = setup();
