@@ -66,6 +66,17 @@ import {
   resetHtml,
   verifyEmail,
 } from './account';
+import {
+  MAX_ACTIVE_API_KEYS,
+  MemoryApiKeyStore,
+  TOUCH_EVERY_MS,
+  apiKeyFromHeaders,
+  apiKeyView,
+  checkApiKey,
+  newApiKey,
+  scopeNeeded,
+  type ApiKeyStore,
+} from './api-keys';
 import { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
 import { ImportError, importFromWebsite, type ImportOptions } from './importer';
 import { setupHtml } from './setup';
@@ -130,6 +141,11 @@ export interface HostedOptions {
    * forgets on restart: use `stores.suppressions` from @openbooking-sh/postgres in production.
    */
   suppressions?: SuppressionList;
+  /**
+   * API keys for each business's booking API (hashes only). Memory by default, which forgets on
+   * restart: use `stores.apiKeys` from @openbooking-sh/postgres in production.
+   */
+  apiKeys?: ApiKeyStore;
   /** Google OAuth client (Calendar API enabled). The redirect URI is `{baseUrl}/oauth/google/callback`. */
   google?: { clientId: string; clientSecret: string; fetch?: typeof fetch };
   /** Test hook: the fetch calls to Stripe go through. */
@@ -243,6 +259,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     : undefined;
 
   const suppressions = options.suppressions ?? new MemorySuppressionList();
+  const apiKeys = options.apiKeys ?? new MemoryApiKeyStore();
 
   const deps: TenantDeps = {
     baseUrl,
@@ -261,6 +278,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     ...(options.mail ? { mail: options.mail } : {}),
     notificationLog: options.notificationLog ?? new MemoryNotificationLog(),
     suppressions,
+    apiKeys,
     unsubscribeUrl: (businessId, email) =>
       `${baseUrl}/unsubscribe?token=${encodeURIComponent(
         signer.sign(
@@ -899,6 +917,44 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     return c.json({ ok: true });
   });
 
+  // API keys for the business's own booking API. The secret is returned once, when it is made.
+  app.get(`${STUDIO_PATH}/api/api-keys`, async (c) =>
+    c.json({ keys: (await apiKeys.list(c.get('tenant').id)).map(apiKeyView) }),
+  );
+  app.post(`${STUDIO_PATH}/api/api-keys`, async (c) => {
+    const t = c.get('tenant');
+    if (!(await allowed([`apikey-create:${t.id}`, LIMITS.apiKeyCreatePerBusiness]))) {
+      return tooMany(c);
+    }
+    const input = z
+      .object({ name: z.string().trim().min(1).max(60), scope: z.enum(['read', 'book']) })
+      .safeParse(await c.req.json().catch(() => ({})));
+    if (!input.success) {
+      return err(
+        c,
+        new BookingError('validation_error', 'Give the key a name (up to 60 letters).'),
+      );
+    }
+    const active = (await apiKeys.list(t.id)).filter((k) => !k.revoked_at);
+    if (active.length >= MAX_ACTIVE_API_KEYS) {
+      return err(
+        c,
+        new BookingError(
+          'validation_error',
+          `You can have ${MAX_ACTIVE_API_KEYS} active keys. Revoke one you no longer use first.`,
+        ),
+      );
+    }
+    const { key, stored } = newApiKey(t.id, input.data, clock.now());
+    await apiKeys.create(stored);
+    return c.json({ key, ...apiKeyView(stored) });
+  });
+  app.delete(`${STUDIO_PATH}/api/api-keys/:id`, async (c) =>
+    (await apiKeys.revoke(c.get('tenant').id, c.req.param('id'), clock.now().toISOString()))
+      ? c.json({ ok: true })
+      : err(c, new BookingError('not_found', 'No active key with that id.'), 404),
+  );
+
   app.all(`${STUDIO_PATH}/api/*`, (c) => {
     const t = c.get('tenant');
     return forward(t.studio.app, c.req.raw, c.req.path.slice(STUDIO_PATH.length));
@@ -1002,7 +1058,41 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     const id = c.req.param('id') ?? '';
     const t = await tenant(id);
     if (!t) return c.json({ error: { code: 'not_found', message: `No business "${id}".` } }, 404);
-    return forward(t.app, c.req.raw, c.req.path.slice(`/b/${id}`.length));
+    const path = c.req.path.slice(`/b/${id}`.length);
+    // A request without a key is public, as before. One that carries a key must carry a good one.
+    const given = apiKeyFromHeaders(c.req.raw.headers);
+    const needed = given ? scopeNeeded(c.req.method, path) : undefined;
+    if (given && needed) {
+      const checked = await checkApiKey(apiKeys, given, id, needed);
+      if (!checked.ok) {
+        return checked.reason === 'invalid'
+          ? c.json(
+              {
+                error: {
+                  code: 'invalid_api_key',
+                  message: 'That API key is not valid for this business. It may have been revoked.',
+                },
+              },
+              401,
+            )
+          : c.json(
+              {
+                error: {
+                  code: 'insufficient_scope',
+                  message: 'This key can only read availability. Create a booking key in Studio.',
+                },
+              },
+              403,
+            );
+      }
+      if (!(await allowed([`apikey:${checked.key.id}`, LIMITS.apiKeyPerMinute]))) return tooMany(c);
+      const now = clock.now();
+      const last = checked.key.last_used_at ? Date.parse(checked.key.last_used_at) : 0;
+      if (now.getTime() - last > TOUCH_EVERY_MS) {
+        later(apiKeys.touch(checked.key.id, now.toISOString()), 'api key last-used');
+      }
+    }
+    return forward(t.app, c.req.raw, path);
   };
   app.all('/b/:id', business);
   app.all('/b/:id/*', business);

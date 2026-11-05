@@ -184,7 +184,11 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
     c.header('Vary', 'Origin');
     if (c.req.method === 'OPTIONS') {
       c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      c.header('Access-Control-Allow-Headers', 'content-type, x-openbooking-agent');
+      // x-openbooking-key: hosted API keys, sent by a business's own website.
+      c.header(
+        'Access-Control-Allow-Headers',
+        'content-type, x-openbooking-agent, x-openbooking-key',
+      );
       c.header('Access-Control-Max-Age', '86400');
       return c.body(null, 204);
     }

@@ -732,6 +732,14 @@ export const STUDIO_HTML = `<!doctype html>
       '<div class="field" style="max-width:560px;margin-top:14px"><label for="s-usp">Let assistants and platforms book me directly (USP)</label><select id="s-usp">' +
       uspOpt('off', 'Off') + uspOpt('confirm', 'On: the customer confirms on a page (recommended)') + uspOpt('instant', 'On: the assistant books immediately') + '</select></div>' +
       '<p class="hint">USP is a draft standard from Wix and Stripe that lets any assistant or platform book you, signing in with its own key. With the page, the assistant holds a time and the customer approves the time, price and cancellation terms before anything is booked. Immediately means the assistant is trusted to have asked first. Save changes to apply.</p></div>';
+    if (SV.api_keys) {
+      h += '<div class="card"><h2>API keys</h2><p class="hint">For your own website. A key lets its code call your booking API (availability, holds, bookings) and the MCP endpoint. Visitors can still book without one; a key tells you who is calling, can be limited to reading availability, and can be revoked on its own. Anyone who can read your site can read a key in its code, so give a site a read key unless it books.</p>' +
+        '<div id="keys-list"></div>' +
+        '<div class="two-f">' + field('Name', 'key-name', '', 'placeholder="My website" maxlength="60"') +
+        '<div class="field"><label for="key-scope">It can</label><select id="key-scope"><option value="read">Read availability</option><option value="book">Read and book</option></select></div></div>' +
+        '<button class="btn btn-sm" id="key-new" type="button">Create key</button>' +
+        '<p class="hint" id="key-msg" role="status" aria-live="polite" style="margin-top:10px"></p></div>';
+    }
     if (dataRights) {
       h += '<div class="card"><h2>Customer data</h2><p class="hint">A customer asks what you hold about them, or asks you to delete it. Enter their email address or phone number. Deleting removes name, contact details and notes from their bookings; the bookings themselves stay in your calendar history. Upcoming bookings are kept: cancel them first.</p>' +
         '<div class="two-f">' + field('Email', 'cd-email', '', 'type="email"') + field('Phone', 'cd-phone', '', 'placeholder="+47..."') + '</div>' +
@@ -768,6 +776,32 @@ export const STUDIO_HTML = `<!doctype html>
     };
     if ($('stripe-off')) $('stripe-off').onclick = function () { if (confirm('Disconnect Stripe? Customers can no longer pay deposits online, and existing deposits can no longer be refunded automatically.')) api(st.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
     if ($('g-off')) $('g-off').onclick = function () { if (confirm('Disconnect Google Calendar?')) api(g.disconnect_path, { method: 'POST', body: '{}' }).then(loadSettings).catch(function (e) { toast(e.message); }); };
+    if ($('key-new')) {
+      var keysPath = SV.api_keys.path;
+      var drawKeys = function () {
+        api(keysPath).then(function (d) {
+          $('keys-list').innerHTML = d.keys.length ? d.keys.map(function (k) {
+            return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><code>' + esc(k.prefix) + '</code><strong>' + esc(k.name) + '</strong><span class="hint">' +
+              (k.scope === 'book' ? 'read and book' : 'read only') + (k.last_used_at ? ', last used ' + ago(k.last_used_at) : ', never used') + (k.revoked_at ? ', revoked' : '') + '</span>' +
+              (k.revoked_at ? '' : '<button class="btn btn-sm btn-danger" data-revoke="' + esc(k.id) + '" type="button">Revoke</button>') + '</div>';
+          }).join('') : '<p class="hint">No keys yet.</p>';
+          $('keys-list').querySelectorAll('[data-revoke]').forEach(function (b) {
+            b.onclick = function () {
+              if (confirm('Revoke this key? Any site using it stops working at once.')) api(keysPath + '/' + b.getAttribute('data-revoke'), { method: 'DELETE' }).then(drawKeys).catch(function (e) { toast(e.message); });
+            };
+          });
+        }).catch(function (e) { toast(e.message); });
+      };
+      drawKeys();
+      $('key-new').onclick = function () {
+        $('key-msg').textContent = '';
+        api(keysPath, { method: 'POST', body: JSON.stringify({ name: $('key-name').value.trim(), scope: $('key-scope').value }) }).then(function (d) {
+          $('key-name').value = '';
+          $('key-msg').innerHTML = 'Copy this key now, it is not shown again: <code>' + esc(d.key) + '</code>';
+          drawKeys();
+        }).catch(function (e) { $('key-msg').textContent = e.message; });
+      };
+    }
     if ($('cd-export')) {
       var who = function () { return { email: $('cd-email').value.trim() || undefined, phone: $('cd-phone').value.trim() || undefined }; };
       var named = function (w) { if (w.email || w.phone) return true; $('cd-msg').textContent = 'Enter an email address or a phone number.'; return false; };

@@ -1581,6 +1581,28 @@ which the Vercel entry does when `DATABASE_URL` is set): it holds owners, creden
 protection, shared by every instance and kept apart per business. When a platform calls, hosted fetches the platform's own profile (public internet only, cached, shared by all businesses) and uses only what both sides support. Protocol details are in
 [SPEC-NOTES.md](SPEC-NOTES.md#6-usp-universal-scheduling-protocol-draft).
 
+## API keys for the business's own website
+
+A site with no backend (an AI-built static page, say) can call its business's booking API straight
+from the browser or from a function. In Studio → Settings → API keys the owner makes a key and gives it
+a name and one of two scopes:
+
+- **Read availability:** `GET /b/{id}/book/api/info`, `/availability` and `/openapi.json`.
+- **Read and book:** also holds, confirming, cancelling and reading a hold or booking
+  (`/b/{id}/book/api/*`), and the business's MCP endpoint (`/b/{id}/mcp`).
+
+Send it as `x-openbooking-key: obk_…` or as `Authorization: Bearer obk_…`. A key works for its own
+business only. The secret is shown once; only a hash is stored. Studio lists each key with when it was last
+used and revokes it on its own, and each key is limited to 300 calls a minute. A bad, revoked or
+other business's key gets `401 invalid_api_key`, and a read key asked to book gets
+`403 insufficient_scope`. A business holds at most ten active keys, and closing the account deletes them.
+
+**A key is not a lock.** Public access still works without one, as before, so a visitor (or a scraper)
+can call the same endpoints with no key. What a key adds is a name for who is calling, a way to give a
+site read-only access, a limit per site, and a way to cut one site off. A key in a browser's JavaScript is
+visible to anyone who opens the page, so give a site that only shows availability a read key. UCP,
+A2A and USP are not governed by keys. Studio never accepts one.
+
 ## Emails
 
 Set `RESEND_API_KEY` (and `MAIL_FROM`, default `bookings@openbooking.sh`, which must be a verified
@@ -1625,6 +1647,7 @@ implements all of them. `postgresStores(db)` returns them ready to pass to `crea
 | `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                                    |
 | `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.                |
 | `suppressions`    | `SuppressionList`     | `PostgresSuppressionList`   | Unsubscribed addresses as hashes, per business.              |
+| `apiKeys`         | `ApiKeyStore`         | `PostgresApiKeyStore`       | Website API keys as hashes, per business.                    |
 | `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                                   |
 | `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                      |
 | `uspState`        | `UspStateStore`       | `PostgresUspState`          | USP owners, credentials, replay memory; scoped per business. |
@@ -1770,6 +1793,8 @@ numbers in your own Neon and Vercel dashboards.
 
 ## Not done yet
 
+- A per-business "require a key" switch (today keys identify and limit callers but do not lock
+  the public API), and a key restricted to named website origins.
 - Custom domains or subdomains per business (paths only: `/b/{id}`).
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Encrypting Google refresh tokens at rest (they sit in the business record as-is).
