@@ -64,7 +64,7 @@ import {
 } from '@openbooking-sh/studio';
 import type { Business, BusinessStore } from './business';
 import { providerConfig } from './catalog';
-import { PRIVACY_URL, TERMS_URL } from './legal';
+import { CHILD_BOOKING_NOTICE, PRIVACY_URL, TERMS_URL } from './legal';
 import { LIMITS, type RateLimiter } from './limits';
 
 export interface TenantDeps {
@@ -474,6 +474,7 @@ export class Tenant {
       bookingPage: {
         pageUrl: this.pageUrl,
         privacyUrl: PRIVACY_URL,
+        childNotice: CHILD_BOOKING_NOTICE,
         profile: () => {
           const p = this.#business.settings.profile;
           return {
@@ -602,5 +603,11 @@ function prefixed(store: IdempotencyStore, prefix: string): IdempotencyStore {
   return {
     get: (key) => store.get(prefix + key),
     set: (key, record: IdempotencyRecord, ttlMs) => store.set(prefix + key, record, ttlMs),
+    // Left out when the store has none, so the engine knows it cannot claim across instances.
+    ...(store.claim && {
+      claim: (key: string, fingerprint: string, ttlMs: number) =>
+        store.claim!(prefix + key, fingerprint, ttlMs),
+    }),
+    ...(store.release && { release: (key: string) => store.release!(prefix + key) }),
   };
 }

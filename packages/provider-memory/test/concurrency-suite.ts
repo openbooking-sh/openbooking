@@ -119,6 +119,9 @@ function bothLookUpFirst(
       events.push('set');
       return inner.set(key, record, ttlMs);
     },
+    // Passed straight through: the engine claims a key only if its store can.
+    ...(inner.claim && { claim: inner.claim.bind(inner) }),
+    ...(inner.release && { release: inner.release.bind(inner) }),
   };
 }
 
@@ -611,15 +614,13 @@ export function describeConcurrency(name: string, backend: Backend, defaultRuns:
       },
     );
 
-    // Known limitation, documented in PostgresIdempotencyStore: concurrent first-time calls with
-    // one key are joined per process only. Across instances both run, so one key can hold twice
-    // (inventory stays safe). `it.fails` flips to a failure the day this is closed, and then
-    // should become a plain `it`.
+    // One key sent to two instances at the same instant holds once: the instance that claims the
+    // key runs, the other waits for its result and replays it.
     //
     // The race is made certain, not left to timing: each instance looks the key up before either
     // has recorded a result. Without that, a real server decides the order: sometimes the first
-    // call finishes before the second looks, the second then replays it, and "expected to fail"
-    // fails. (PGlite runs one query at a time and always loses the race, which hid this.)
+    // call finishes before the second looks and the second simply replays it, so the test would
+    // pass without the claim. (PGlite runs one query at a time and always loses the race.)
     const sameKeyAtOnce = async () => {
       let gated: ReturnType<typeof bothLookUpFirst> | undefined;
       const env = await makeEnv({
@@ -639,22 +640,13 @@ export function describeConcurrency(name: string, backend: Backend, defaultRuns:
       return { results, events: gated!.events };
     };
 
-    it.fails(
-      'KNOWN GAP: the same key sent to two instances at the same instant holds once',
-      async () => {
-        const { results } = await sameKeyAtOnce();
-        expect(new Set(results.map((r) => r.booking_id)).size).toBe(1);
-      },
-    );
-
-    // `it.fails` passes on ANY failure, so this pins down why the test above fails: both
-    // instances looked the key up before either recorded a result, both ran, and the two holds
-    // are on different staff members, so no slot was given out twice.
-    it('the gap above is the documented one: two holds on two staff, never one slot twice', async () => {
+    it('the same key sent to two instances at the same instant holds once', async () => {
       const { results, events } = await sameKeyAtOnce();
+      // Both really did look the key up before either had a result (the race was on) ...
       expect(events.slice(0, 2)).toEqual(['get', 'get']);
-      expect(new Set(results.map((r) => r.booking_id)).size).toBe(2);
-      expect(new Set(results.map((r) => r.slot.resource?.label)).size).toBe(2);
+      // ... and still only one hold was made, on one staff member; the other call replayed it.
+      expect(new Set(results.map((r) => r.booking_id)).size).toBe(1);
+      expect(events.filter((e) => e === 'set')).toHaveLength(1);
     });
   });
 }

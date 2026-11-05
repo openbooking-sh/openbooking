@@ -116,8 +116,9 @@ export interface HostedOptions {
    */
   retentionDays?: number;
   /**
-   * Secret for `GET /api/maintenance/purge`, which applies the retention period. Vercel Cron
-   * sends it as `Authorization: Bearer $CRON_SECRET`. The endpoint does not exist without it.
+   * Secret for `GET /api/maintenance/purge` (retention period, and announcing lapsed holds) and
+   * `GET /api/maintenance/sweep` (announcing lapsed holds only, for a more frequent cron). Vercel
+   * Cron sends it as `Authorization: Bearer $CRON_SECRET`. The endpoints do not exist without it.
    */
   cronSecret?: string;
   holdTtlSeconds?: number;
@@ -180,6 +181,8 @@ export interface HostedApp {
   idle(): Promise<void>;
   /** Remove personal data from bookings past the retention period. Safe to run any time. */
   purgeExpiredData(): Promise<{ businesses: number; anonymized: number }>;
+  /** Announce lapsed holds (`booking.expired`) for every business. Safe to run any time, from any instance. */
+  sweepExpiredHolds(): Promise<{ businesses: number; announced: number }>;
   close(): Promise<void>;
 }
 
@@ -1019,7 +1022,23 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     }
     return { businesses: all.length, anonymized };
   };
-  app.get('/api/maintenance/purge', async (c) => {
+  // Nobody runs a job when a hold lapses, so tell each business's integrators (webhooks, emails)
+  // by asking its engine to look. One failing business must not stop the others.
+  const sweepExpiredHolds = async () => {
+    const all = await businesses.list();
+    let announced = 0;
+    for (const b of all) {
+      try {
+        const t = await tenant(b.id);
+        announced += (await t?.service.sweepExpired())?.length ?? 0;
+      } catch {
+        // Retried on the next run.
+      }
+    }
+    return { businesses: all.length, announced };
+  };
+  /** 404 without a cron secret, 401 with the wrong one, otherwise runs the job. */
+  const cronJob = (job: () => Promise<object>) => async (c: Context) => {
     const secret = options.cronSecret;
     if (!secret) return c.json({ error: { code: 'not_found', message: 'Not found.' } }, 404);
     const given = Buffer.from((c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, ''));
@@ -1027,12 +1046,21 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     if (given.length !== want.length || !timingSafeEqual(given, want)) {
       return c.json({ error: { code: 'unauthorized', message: 'Wrong secret.' } }, 401);
     }
-    return c.json({ ok: true, ...(await purgeExpiredData()) });
-  });
+    return c.json({ ok: true, ...(await job()) });
+  };
+  app.get(
+    '/api/maintenance/purge',
+    cronJob(async () => ({
+      ...(await purgeExpiredData()),
+      expired_announced: (await sweepExpiredHolds()).announced,
+    })),
+  );
+  app.get('/api/maintenance/sweep', cronJob(sweepExpiredHolds));
 
   return {
     app,
     purgeExpiredData,
+    sweepExpiredHolds,
     tenant,
     businesses,
     idle: async () => {

@@ -113,6 +113,8 @@ export interface OpenBookingServerOptions {
         profile?: BookingPageOptions['profile'];
         /** Privacy policy linked in the booking page footer. */
         privacyUrl?: string;
+        /** Notice for bookings made on behalf of a child, shown above the confirm button. */
+        childNotice?: string;
       }
     | false;
   /**
@@ -120,6 +122,13 @@ export interface OpenBookingServerOptions {
    * keep the function alive for `webhooks.idle()` (e.g. `waitUntil`) so retries can finish.
    */
   webhooks?: WebhookOptions;
+  /**
+   * Announce holds that lapsed every this many milliseconds (calls `service.sweepExpired()`), so
+   * `booking.expired` reaches webhooks even when nobody looks at the booking again. Off by default.
+   * It needs a long-running process: on serverless hosts call `service.sweepExpired()` from a cron
+   * instead. Needs a provider with `listBookings`.
+   */
+  sweepExpiredEveryMs?: number;
 }
 
 export interface OpenBookingApp {
@@ -164,6 +173,13 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
   const ucpPath = options.ucpPath ?? '/ucp';
   const a2aPath = options.a2aPath ?? '/a2a';
 
+  // Unref'd so it never keeps a process alive; a failed sweep is retried on the next tick.
+  const sweepTimer =
+    options.sweepExpiredEveryMs && options.sweepExpiredEveryMs > 0
+      ? setInterval(() => void service.sweepExpired().catch(() => {}), options.sweepExpiredEveryMs)
+      : undefined;
+  sweepTimer?.unref?.();
+
   const app = new Hono();
   let mcpHandler: McpHttpHandler | undefined;
   let uspMcp: { close(): Promise<void> } | undefined;
@@ -182,6 +198,9 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
           : {}),
         ...(options.bookingPage && options.bookingPage.privacyUrl
           ? { privacyUrl: options.bookingPage.privacyUrl }
+          : {}),
+        ...(options.bookingPage && options.bookingPage.childNotice
+          ? { childNotice: options.bookingPage.childNotice }
           : {}),
       })
     : undefined;
@@ -344,6 +363,7 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
     bookingPage: page,
     webhooks,
     close: async () => {
+      if (sweepTimer) clearInterval(sweepTimer);
       offWebhooks?.();
       await webhooks?.idle();
       await studio?.idle();

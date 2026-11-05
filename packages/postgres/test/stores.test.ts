@@ -65,10 +65,36 @@ describe(`PostgresIdempotencyStore (${target})`, () => {
     expect(await store.get('other:k1')).toBeDefined();
   });
 
+  it('hands a key to one claimant at a time, and a claim is not a result', async () => {
+    let now = Date.parse('2030-01-01T00:00:00Z');
+    const store = new PostgresIdempotencyStore(await freshDb(), { now: () => now });
+    // Eight at once: exactly one wins.
+    const wins = await Promise.all(
+      Array.from({ length: 8 }, () => store.claim('k', 'hold:{}', 60_000)),
+    );
+    expect(wins.filter(Boolean)).toHaveLength(1);
+    expect(await store.get('k')).toBeUndefined(); // a claim is not a replayable result
+
+    // The holder finishing replaces the claim with the result; nobody can claim it again.
+    await store.set('k', { fingerprint: 'hold:{}', value: { id: 1 }, created_at: now }, 60_000);
+    expect(await store.claim('k', 'hold:{}', 60_000)).toBe(false);
+    await store.release('k'); // a release never deletes a recorded result
+    expect((await store.get('k'))?.value).toEqual({ id: 1 });
+
+    // A failed holder gives the claim up; a dead one lets it expire.
+    expect(await store.claim('j', 'hold:{}', 60_000)).toBe(true);
+    await store.release('j');
+    expect(await store.claim('j', 'hold:{}', 60_000)).toBe(true);
+    expect(await store.claim('j', 'hold:{}', 60_000)).toBe(false);
+    now += 60_000;
+    expect(await store.claim('j', 'hold:{}', 60_000)).toBe(true);
+  });
+
   it('keeps undefined and array results intact', async () => {
     const store = new PostgresIdempotencyStore(await freshDb());
     await store.set('void', { fingerprint: 'f', value: undefined, created_at: 1 }, 60_000);
     await store.set('arr', { fingerprint: 'f', value: ['a', 'b'], created_at: 1 }, 60_000);
+    expect(await store.get('void')).toBeDefined(); // a result of undefined is still a result
     expect((await store.get('void'))?.value).toBeUndefined();
     expect((await store.get('arr'))?.value).toEqual(['a', 'b']);
   });
