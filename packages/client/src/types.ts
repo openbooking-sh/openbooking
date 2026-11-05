@@ -108,6 +108,8 @@ export interface Booking {
 export interface BookingDetail extends Booking {
   customer: { first_name: string; last_name: string } | null;
   cancellation: { reason: string | null; fee: Money | null; refund: Money | null } | null;
+  /** What cancelling right now would cost. null unless confirmed and not yet started. */
+  cancel_now: { free: boolean; fee: Money | null; refund: Money | null } | null;
 }
 
 /** A confirmed booking seen by someone who only has its id: no code, no name. */
