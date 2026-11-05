@@ -49,6 +49,15 @@ pnpm docs                # regenerate package READMEs and llms files
 
 Postgres tests use PGlite. Set `TEST_DATABASE_URL` to run them against a real server.
 
+- PGlite runs one query at a time, so it hides ordering races. CI's `postgres` job uses a real server;
+  to reproduce a failure there, run Postgres locally (an `embedded-postgres` install in a scratch
+  folder works) and set `TEST_DATABASE_URL`.
+- On Windows plain `pnpm` may not be on PATH: use `corepack pnpm …`.
+- Parallel assistant checkouts live in `.claude/worktrees/` (ignored by git, prettier and eslint).
+  Never run `taskkill` on all `node.exe`: it kills other sessions' test runs.
+- Do not write tests that assume the newest migration or version (adding one breaks them): name the
+  one you mean.
+
 ## Workflow
 
 - **`main` is protected.** Branch, open a PR, and merge only with green CI: `check (22)`,
@@ -58,7 +67,10 @@ Postgres tests use PGlite. Set `TEST_DATABASE_URL` to run them against a real se
 - **Releases:** merging to `main` makes the Release workflow open "Release: version packages".
   Merging that PR stages the versions on npm (trusted publishing, provenance), and a maintainer
   approves them on npmjs.com.
-- **Never run `npm publish` yourself.**
+- **Never run `npm publish` yourself.** New packages need a first manual publish and a trusted-publisher
+  setup on npmjs.com before the release PR can merge.
+- **Issue ids in PRs:** merging a PR whose title or branch names a Linear issue closes it. Name an
+  issue in the title only when the PR finishes it, and name sub-issues, never a parent.
 - **Commits:** conventional style (`feat(scope): …`, `fix: …`), explaining _why_ in the body.
 
 ## Conventions
