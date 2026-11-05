@@ -113,6 +113,8 @@ export interface OpenBookingServerOptions {
         profile?: BookingPageOptions['profile'];
         /** Privacy policy linked in the booking page footer. */
         privacyUrl?: string;
+        /** Notice for bookings made on behalf of a child, shown above the confirm button. */
+        childNotice?: string;
       }
     | false;
   /**
@@ -182,6 +184,9 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
           : {}),
         ...(options.bookingPage && options.bookingPage.privacyUrl
           ? { privacyUrl: options.bookingPage.privacyUrl }
+          : {}),
+        ...(options.bookingPage && options.bookingPage.childNotice
+          ? { childNotice: options.bookingPage.childNotice }
           : {}),
       })
     : undefined;
