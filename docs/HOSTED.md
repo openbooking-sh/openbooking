@@ -210,6 +210,10 @@ email addresses ignore case.
   `retentionDays` ago (default 730). `GET /api/maintenance/purge` applies it; `vercel.json`
   runs it daily. It needs `CRON_SECRET` set (Vercel sends it as a bearer token) and does not exist
   without it.
+- **Lapsed holds.** Nobody runs a job when a hold expires, so `booking.expired` is sent when
+  something notices. The same daily purge now sweeps every business for lapsed holds, and
+  `GET /api/maintenance/sweep` (same secret) does only that, for a more frequent cron. Vercel Hobby
+  allows daily crons only; add a minute-level cron on Pro, or call the endpoint from any scheduler.
 - **What this does not reach.** Events already written to the owner's Google Calendar, emails
   already sent, and anything a webhook already delivered to an integrator are outside OpenBooking's
   storage. The owner has to remove those themselves.

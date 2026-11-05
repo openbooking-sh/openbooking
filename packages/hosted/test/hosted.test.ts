@@ -866,5 +866,41 @@ describe('customer data rights', () => {
   it('has no purge endpoint without a cron secret', async () => {
     const { req } = setup();
     expect((await req('/api/maintenance/purge')).status).toBe(404);
+    expect((await req('/api/maintenance/sweep')).status).toBe(404);
+  });
+
+  it('announces a lapsed hold nobody looks at again, once, from either cron endpoint', async () => {
+    const expired: Array<[string, string | undefined]> = [];
+    const { clock, req, signup } = setup({
+      cronSecret: 'a-long-cron-secret',
+      onEvent: (businessId, e) => {
+        if (e.operation === 'expire') expired.push([businessId, e.booking_id]);
+      },
+    });
+    const { business_id } = await signup();
+    const api = `/b/${business_id}/book/api`;
+    const av = await req(`${api}/availability?date=${DAY}&service=haircut`);
+    const hold = await req(`${api}/hold`, {
+      body: { slot_id: av.json.slots[0].slot_id, idempotency_key: randomUUID() },
+    });
+    expect(hold.status).toBe(200);
+    const sweep = () => req('/api/maintenance/sweep', { token: 'a-long-cron-secret' });
+
+    // Still held: nothing to announce.
+    expect((await sweep()).json.announced).toBe(0);
+
+    // The hold lapses and nobody reads the booking again. Only the cron tells anyone.
+    clock.set('2026-10-06T08:00:00Z');
+    expect((await req('/api/maintenance/sweep')).status).toBe(401);
+    const first = await sweep();
+    expect(first.status).toBe(200);
+    expect(first.json.announced).toBe(1);
+    expect(expired).toEqual([[business_id, hold.json.booking.booking_id]]);
+
+    // Again, and from the daily purge: already announced, so nothing more.
+    expect((await sweep()).json.announced).toBe(0);
+    const purged = await req('/api/maintenance/purge', { token: 'a-long-cron-secret' });
+    expect(purged.json.expired_announced).toBe(0);
+    expect(expired).toHaveLength(1);
   });
 });
