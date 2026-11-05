@@ -314,6 +314,7 @@ export function renderPage(m: PageModel): string {
 <body>
 <div class="wrap">
 ${venueHeader(v, m.profile)}
+<main>
 <noscript><div class="warn">Online booking needs JavaScript. Please contact ${esc(v.name)}${contact}.</div></noscript>
 
 <section class="card" id="s-service"><h2>1. Choose a service</h2><div id="services"></div></section>
@@ -363,6 +364,7 @@ ${
     ? `<section class="card"><h2>Book with an AI assistant</h2><p class="muted" style="margin:0 0 8px;font-size:14px">${esc(v.name)} can be booked from ChatGPT, Claude, Gemini and other assistants. Ask yours to book ${esc(v.name)}, or connect this MCP server:</p><code>${esc(m.mcpUrl)}</code></section>`
     : ''
 }
+</main>
 ${footer(m.privacyUrl)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
@@ -384,6 +386,7 @@ export function renderManage(m: {
 <body>
 <div class="wrap">
 ${venueHeader(v, m.profile)}
+<main>
 <section class="card">
   <h2>Your booking</h2>
   <div id="body" class="muted">Loading…</div>
@@ -395,6 +398,7 @@ ${venueHeader(v, m.profile)}
   </div>
 </section>
 <p style="margin-top:16px"><a href="${esc(m.pageUrl)}" style="color:var(--royal)">Make a new booking</a></p>
+</main>
 ${footer(m.privacyUrl)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
@@ -420,6 +424,7 @@ export function renderConfirm(m: {
 <body>
 <div class="wrap">
 ${venueHeader(v, m.profile)}
+<main>
 <section class="card">
   <h2 id="title">Confirm your booking</h2>
   <p class="muted" id="lead">An assistant reserved this time for you. Nothing is booked until you confirm it here.</p>
@@ -429,6 +434,7 @@ ${venueHeader(v, m.profile)}
   <button class="btn btn-primary hidden" id="confirm">Confirm booking</button>
 </section>
 <p style="margin-top:16px"><a href="${esc(m.pageUrl)}" style="color:var(--royal)">Make a new booking</a></p>
+</main>
 ${footer(m.privacyUrl)}
 </div>
 <script type="application/json" id="ob-data">${scriptJson(data)}</script>
