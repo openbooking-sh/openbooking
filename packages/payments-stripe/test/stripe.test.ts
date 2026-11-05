@@ -97,29 +97,92 @@ describe('StripePayments', () => {
   });
 
   it('refunds the payment with an idempotency key, so a retry cannot refund twice', async () => {
-    const s = stripe({ json: { id: 're_1' } });
+    const s = stripe({ json: { data: [], has_more: false } }, { json: { id: 're_1' } });
     await make(s.fetch).refund({
       reference: 'pi_9',
       amount: NOK(30000),
       idempotency_key: 'refund:bk_123',
     });
-    expect(s.calls[0]!.url).toBe('https://api.stripe.com/v1/refunds');
-    expect(s.calls[0]!.headers['idempotency-key']).toBe('refund:bk_123');
-    expect(Object.fromEntries(s.calls[0]!.body)).toEqual({
+    expect(s.calls[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.stripe.com/v1/refunds?payment_intent=pi_9&limit=100',
+    });
+    expect(s.calls[1]!.url).toBe('https://api.stripe.com/v1/refunds');
+    expect(s.calls[1]!.headers['idempotency-key']).toBe('refund:bk_123');
+    expect(Object.fromEntries(s.calls[1]!.body)).toEqual({
       payment_intent: 'pi_9',
       amount: '30000',
     });
   });
 
+  it('refunds nothing more once the amount is already refunded, even after Stripe forgot the key', async () => {
+    // A cancellation retried a day later: the 24 hour idempotency window is over, so only the
+    // refund list can say the 20000 went out already.
+    const s = stripe({
+      json: { data: [{ amount: 20000, status: 'succeeded' }], has_more: false },
+    });
+    await make(s.fetch).refund({
+      reference: 'pi_9',
+      amount: NOK(20000),
+      idempotency_key: 'refund:bk_123',
+    });
+    expect(s.calls.map((c) => c.method)).toEqual(['GET']);
+  });
+
+  it('refunds only what is missing, counting pending refunds and the owner’s own, not failed ones', async () => {
+    const s = stripe(
+      {
+        json: {
+          data: [
+            { amount: 5000, status: 'succeeded' }, // the owner refunded some by hand
+            { amount: 7000, status: 'pending' },
+            { amount: 9000, status: 'failed' },
+            { amount: 4000, status: 'canceled' },
+          ],
+          has_more: false,
+        },
+      },
+      { json: { id: 're_2' } },
+    );
+    await make(s.fetch).refund({
+      reference: 'pi_9',
+      amount: NOK(20000),
+      idempotency_key: 'refund:bk_123',
+    });
+    expect(Object.fromEntries(s.calls[1]!.body)).toEqual({
+      payment_intent: 'pi_9',
+      amount: '8000',
+    });
+    // A different amount is a different request, so Stripe must not mix it up with the first.
+    expect(s.calls[1]!.headers['idempotency-key']).toBe('refund:bk_123:8000');
+  });
+
+  it('never refunds blind when it cannot read the refunds already made', async () => {
+    for (const answer of [
+      { json: { data: [], has_more: true } },
+      { json: { object: 'list' } },
+      { status: 403, json: { error: { message: 'This key cannot read refunds.' } } },
+    ]) {
+      const s = stripe(answer);
+      await expect(
+        make(s.fetch).refund({ reference: 'pi_9', amount: NOK(100), idempotency_key: 'k' }),
+      ).rejects.toBeInstanceOf(StripeError);
+      expect(s.calls.map((c) => c.method)).toEqual(['GET']);
+    }
+  });
+
   it('surfaces Stripe errors, and works for a connected account', async () => {
-    const s = stripe({ status: 402, json: { error: { message: 'Charge already refunded.' } } });
+    const s = stripe(
+      { json: { data: [], has_more: false } },
+      { status: 402, json: { error: { message: 'Charge already refunded.' } } },
+    );
     const p = make(s.fetch, { stripeAccount: 'acct_42' });
     const err = await p
       .refund({ reference: 'pi_9', amount: NOK(1), idempotency_key: 'k' })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StripeError);
     expect(err).toMatchObject({ status: 402, message: 'Charge already refunded.' });
-    expect(s.calls[0]!.headers['stripe-account']).toBe('acct_42');
+    expect(s.calls.map((c) => c.headers['stripe-account'])).toEqual(['acct_42', 'acct_42']);
   });
 
   it('refuses something that is not a secret key', () => {
