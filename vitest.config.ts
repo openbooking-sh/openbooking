@@ -13,6 +13,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/*/test/**/*.test.ts',
+      'packages/*/test/**/*.test.tsx',
       'bench/test/**/*.test.ts',
       'scripts/test/**/*.test.ts',
     ],

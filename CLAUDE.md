@@ -23,6 +23,7 @@ pnpm 12 workspace, Node 22 and 24, strict TypeScript, ESM.
 - `packages/postgres`: durable stores.
 - `packages/booking-page`: booking page, embed snippet and WebMCP. Its JSON API is described once as zod schemas (`src/api.ts`); the OpenAPI document is generated from them.
 - `packages/client`: typed fetch client for that API. Its types are hand-written and checked against the schemas in its tests; keep it free of dependencies.
+- `packages/react`: React `BookingWidget` and hooks on the client. `user_confirmed` is sent only from the customer's tick box; keep one idempotency key per action until it succeeds.
 - `packages/studio`: the business dashboard.
 - `packages/hosted`: multi-business hosting (app.openbooking.sh).
 - `packages/notifications`, `google-calendar`, `provider-calcom`: integrations.
