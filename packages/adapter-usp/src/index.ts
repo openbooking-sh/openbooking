@@ -4,6 +4,9 @@ export { toService, toTimeSlot, openingHours, isoDuration, type ServiceDetails }
 export * from './constants';
 export type { UspAuthenticator, UspBusinessAuth, UspIssuedCredential, UspPrincipal } from './auth';
 export { createPopAuthenticator, parseAgentHeader, type PopAuthenticatorOptions } from './pop-auth';
+export type { ProofAlgorithm } from './pop';
+export type { PopNonceOptions } from './nonce';
+export { HTTP_SIGNATURE, type HttpSignatureOptions } from './http-signature';
 export { MemoryUspState, scopeUspState, type UspStateStore } from './state';
 export { createUsp, type Usp, type UspOptions, type UspProfile } from './usp';
 export { createUspMcp, bridgeAuth, USP_MCP_TOOLS, type UspMcpOptions } from './mcp';

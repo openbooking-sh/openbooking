@@ -35,6 +35,7 @@ export interface ProofOverrides {
   iat?: number;
   jti?: string;
   ath?: string;
+  nonce?: string;
   key?: Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 }
 
@@ -42,11 +43,13 @@ export async function mcpPlatform(
   w: McpWorld,
   client: Client,
   profile = 'https://agent.example/profile.json',
+  /** The proof algorithm: Ed25519 (the spec floor) or P-256. */
+  alg: 'EdDSA' | 'ES256' = 'EdDSA',
 ) {
-  const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
-    crv: 'Ed25519',
-    extractable: true,
-  });
+  const { publicKey, privateKey } = await generateKeyPair(
+    alg,
+    alg === 'EdDSA' ? { crv: 'Ed25519', extractable: true } : { extractable: true },
+  );
   const jwk = await exportJWK(publicKey);
   const jkt = await calculateJwkThumbprint(jwk);
   let n = 0;
@@ -88,9 +91,10 @@ export async function mcpPlatform(
         ...(opts.credential !== undefined || p.ath
           ? { ath: p.ath ?? sha256(opts.credential!) }
           : {}),
+        ...(p.nonce !== undefined ? { nonce: p.nonce } : {}),
       };
       (usp.authorization as Record<string, unknown>).proof = await new SignJWT(claims)
-        .setProtectedHeader({ alg: 'EdDSA', typ: p.typ ?? 'usp-pop+jwt', jwk })
+        .setProtectedHeader({ alg, typ: p.typ ?? 'usp-pop+jwt', jwk })
         .sign(p.key ?? privateKey);
     }
     return full;

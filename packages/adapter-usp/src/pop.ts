@@ -3,6 +3,9 @@
  * itself and never sends. The key's RFC 7638 thumbprint (`jkt`) is the platform's identity, with
  * no signup and no pre-shared secret.
  *
+ * Proofs are `EdDSA` (Ed25519, the floor every business accepts) and, when the business turns it
+ * on, `ES256` (P-256). A business may also require a server-issued nonce (see nonce.ts).
+ *
  * One verifier serves both bindings, because the checks are the same and only the claims differ:
  *  - REST: a standard RFC 9449 DPoP proof (`typ: dpop+jwt`, claims `htm`, `htu`, `ath`).
  *  - MCP: `typ: usp-pop+jwt` with `usp_m`, `aud`, `usp_p` (a digest of the canonicalized params).
@@ -14,11 +17,30 @@
 import { createHash } from 'node:crypto';
 import { calculateJwkThumbprint, compactVerify, decodeProtectedHeader, importJWK } from 'jose';
 import type { JWK } from 'jose';
+import type { PopNonces } from './nonce';
 import { ProtocolError } from './protocol';
 
-/** The only algorithm and curve we accept (the spec's floor for `platform_key_pop`). */
-const ALG = 'EdDSA';
-const CRV = 'Ed25519';
+/**
+ * The algorithms a proof may use, and the one key type and curve each requires (spec 10.1.6:
+ * `EdDSA` is the floor and must be accepted; `ES256` may be accepted in addition). The curve is
+ * part of the identity: a key labelled with any other curve is refused, so one key can never show
+ * up under two thumbprints.
+ */
+const ALGORITHMS = {
+  EdDSA: { kty: 'OKP', crv: 'Ed25519', coordinates: ['x'] },
+  ES256: { kty: 'EC', crv: 'P-256', coordinates: ['x', 'y'] },
+} as const;
+export type ProofAlgorithm = keyof typeof ALGORITHMS;
+const isAlgorithm = (alg: unknown): alg is ProofAlgorithm =>
+  typeof alg === 'string' && Object.hasOwn(ALGORITHMS, alg);
+
+/** What a business accepts when nothing else is configured: the spec's floor. */
+export const DEFAULT_ALGORITHMS: readonly ProofAlgorithm[] = ['EdDSA'];
+
+/** The RFC 9449 challenge naming the accepted algorithms (`algs`, space-separated). */
+export const popChallenge = (algorithms: readonly ProofAlgorithm[]) =>
+  `DPoP algs="${algorithms.join(' ')}"`;
+
 const TYP = { rest: 'dpop+jwt', mcp: 'usp-pop+jwt' } as const;
 
 /** Proofs older or newer than this are refused; `jti`s are remembered for twice as long. */
@@ -40,6 +62,10 @@ export interface PopInput {
   /** The presented `booking_scoped_credential` value, if any. */
   credential?: string | undefined;
   now: Date;
+  /** Algorithms this business accepts. Default: `EdDSA` only. */
+  algorithms?: readonly ProofAlgorithm[];
+  /** Require a server-issued nonce in every proof (the challenge flow). Default: not required. */
+  nonces?: PopNonces;
   lookupCredential(hash: string): Promise<PopCredential | undefined>;
   /** True if this `jti` was already seen; records it otherwise. */
   seenJti(jti: string, ttlMs: number): Promise<boolean>;
@@ -56,16 +82,6 @@ export interface PopResult {
 }
 
 export const sha256 = (value: string) => createHash('sha256').update(value).digest('base64url');
-
-const reject = (
-  code:
-    | 'pop_proof_missing'
-    | 'pop_proof_invalid'
-    | 'pop_key_mismatch'
-    | 'pop_proof_replayed'
-    | 'authentication_required',
-  detail: string,
-) => new ProtocolError(code, detail, undefined, { 'www-authenticate': `DPoP algs="${ALG}"` });
 
 /** RFC 8785 JSON Canonicalization: keys sorted by UTF-16 code unit, minimal string escaping. */
 export function jcs(value: unknown): string {
@@ -101,6 +117,17 @@ export function paramsDigest(params: unknown): string {
 const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k', 'oth'];
 
 export async function verifyPop(input: PopInput): Promise<PopResult> {
+  const algorithms = input.algorithms ?? DEFAULT_ALGORITHMS;
+  const reject = (
+    code:
+      | 'pop_proof_missing'
+      | 'pop_proof_invalid'
+      | 'pop_key_mismatch'
+      | 'pop_proof_replayed'
+      | 'authentication_required',
+    detail: string,
+  ) => new ProtocolError(code, detail, undefined, { 'www-authenticate': popChallenge(algorithms) });
+
   // 1. The credential is known and unexpired.
   let credential: PopCredential | undefined;
   if (input.credential !== undefined) {
@@ -135,22 +162,34 @@ export async function verifyPop(input: PopInput): Promise<PopResult> {
   }
 
   // 5. The algorithm is accepted (never `none`) and the key's curve is the one it requires.
-  if (header.alg !== ALG) {
-    throw reject('pop_proof_invalid', `The proof must be signed with ${ALG}.`);
+  const alg = header.alg;
+  if (!isAlgorithm(alg) || !algorithms.includes(alg)) {
+    throw reject('pop_proof_invalid', `The proof must be signed with ${algorithms.join(' or ')}.`);
   }
+  const want = ALGORITHMS[alg];
   const jwk = header.jwk as JWK | undefined;
-  if (!jwk || typeof jwk !== 'object' || jwk.kty !== 'OKP' || jwk.crv !== CRV) {
-    throw reject('pop_proof_invalid', `The proof key must be an OKP ${CRV} public key.`);
+  if (!jwk || typeof jwk !== 'object' || jwk.kty !== want.kty || jwk.crv !== want.crv) {
+    throw reject(
+      'pop_proof_invalid',
+      `A ${alg} proof key must be a ${want.kty} ${want.crv} public key.`,
+    );
   }
   if (PRIVATE_MEMBERS.some((m) => m in jwk)) {
     throw reject('pop_proof_invalid', 'The proof header must not contain private key material.');
   }
-  if (typeof jwk.x !== 'string' || Buffer.from(jwk.x, 'base64url').length !== 32) {
-    throw reject('pop_proof_invalid', 'The proof key is malformed.');
+  // Only the members that make up the key go into the thumbprint and the verification key, so
+  // an extra member in the header (`kid`, `alg`, `use`) can change neither.
+  const publicKey: Record<string, string> = { kty: want.kty, crv: want.crv };
+  for (const c of want.coordinates) {
+    const v = (jwk as Record<string, unknown>)[c];
+    if (typeof v !== 'string' || Buffer.from(v, 'base64url').length !== 32) {
+      throw reject('pop_proof_invalid', 'The proof key is malformed.');
+    }
+    publicKey[c] = v;
   }
 
   // 6. The thumbprint equals the one the credential is bound to (any `kid` is ignored).
-  const jkt = await calculateJwkThumbprint({ kty: 'OKP', crv: CRV, x: jwk.x });
+  const jkt = await calculateJwkThumbprint(publicKey as unknown as JWK);
   if (credential?.jkt && credential.jkt !== jkt) {
     throw reject(
       'pop_key_mismatch',
@@ -161,8 +200,8 @@ export async function verifyPop(input: PopInput): Promise<PopResult> {
   // 7. The signature verifies against the header key.
   let claims: Record<string, unknown>;
   try {
-    const key = await importJWK({ kty: 'OKP', crv: CRV, x: jwk.x }, ALG);
-    const { payload } = await compactVerify(input.proof, key, { algorithms: [ALG] });
+    const key = await importJWK(publicKey as unknown as JWK, alg);
+    const { payload } = await compactVerify(input.proof, key, { algorithms: [alg] });
     claims = JSON.parse(new TextDecoder().decode(payload)) as Record<string, unknown>;
   } catch {
     throw reject('pop_proof_invalid', 'The proof signature does not verify.');
@@ -193,10 +232,26 @@ export async function verifyPop(input: PopInput): Promise<PopResult> {
     throw reject('pop_proof_invalid', 'The proof does not cover this credential.');
   }
 
-  // 11. `iat` is within the skew.
+  // 11. `iat` is within the skew, and `nonce` matches if one is required. A missing or stale
+  //     nonce is answered with a fresh one for this key and the call is retried by the platform.
   const iat = claims.iat;
   if (typeof iat !== 'number' || Math.abs(input.now.getTime() / 1000 - iat) > POP_SKEW_SECONDS) {
     throw reject('pop_proof_invalid', 'The proof is too old or from the future.');
+  }
+  if (input.nonces && !input.nonces.check(claims.nonce, jkt, input.now)) {
+    const nonce = input.nonces.issue(jkt, input.now);
+    throw new ProtocolError(
+      'proof_nonce_required',
+      'This business requires a nonce. Build a new proof that carries the nonce in this response.',
+      'Retry with a fresh proof (new jti) whose nonce claim is the nonce in this response.',
+      // `DPoP-Nonce` is the RFC 9449 carrier over REST. Over MCP the nonce rides in the error's
+      // `data.nonce` (the problem body is what becomes `data`), as the OpenRPC document says.
+      {
+        'www-authenticate': `DPoP error="use_dpop_nonce", algs="${algorithms.join(' ')}"`,
+        'dpop-nonce': nonce,
+      },
+      { nonce },
+    );
   }
 
   // 12. `jti` has not been seen; record it. Reads are covered too: a captured proof must not
