@@ -40,6 +40,11 @@ export interface BookingPageOptions {
   profile?: () => PageProfile | Promise<PageProfile>;
   /** Privacy policy linked in the footer of every page (hosted OpenBooking sets it). */
   privacyUrl?: string;
+  /**
+   * Notice for bookings made on behalf of a child, shown above the confirm button (hosted
+   * OpenBooking sets it). Off by default: a self-hosted business decides its own rules.
+   */
+  childNotice?: string;
 }
 
 export interface BookingPage {
@@ -114,6 +119,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
       apiPath,
       ...(options.mcpUrl ? { mcpUrl: options.mcpUrl } : {}),
       ...(options.privacyUrl ? { privacyUrl: options.privacyUrl } : {}),
+      ...(options.childNotice ? { childNotice: options.childNotice } : {}),
       prefill: readPrefill(query, cat),
     });
   };
