@@ -98,6 +98,16 @@ export const BookingDetailSchema = BookingViewSchema.extend({
       refund: MoneySchema.nullable(),
     })
     .nullable(),
+  cancel_now: z
+    .object({
+      free: z.boolean(),
+      fee: MoneySchema.nullable().describe('Kept from the paid deposit if cancelled now.'),
+      refund: MoneySchema.nullable().describe('Returned to the customer if cancelled now.'),
+    })
+    .nullable()
+    .describe(
+      'What cancelling right now would cost, by the same rules `cancel` applies. null unless the booking is confirmed and has not started.',
+    ),
 });
 
 /** What a confirmed booking shows to someone who only has its id: no code, no name. */

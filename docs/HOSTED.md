@@ -104,9 +104,17 @@ only ever shows its last four characters.
 
 - **Deposit.** The owner sets a percentage of the service price (0 = none). A service has a deposit
   only while Stripe is connected and it has a price.
-- **Booking page.** "Continue to payment" sends the customer to Stripe Checkout; Stripe returns
-  them to the page with the session id, and the page confirms the booking. The engine asks Stripe
-  whether that session was paid, for this booking and this amount, so a made-up token never works.
+- **Booking page.** The button says "Pay {amount} deposit", and the lines under it say what the
+  deposit is and what becomes of it if the customer cancels (free until when, and what is kept
+  after). It sends the customer to Stripe Checkout; Stripe returns them to the page with the
+  session id, and the page confirms the booking. The engine asks Stripe whether that session was
+  paid, for this booking and this amount, so a made-up token never works.
+- **Confirmation email.** After a paid booking the customer's email says what was paid, repeats
+  the cancellation policy, and says what happens to the deposit if they cancel. It reads the same
+  fields the refund does, so the email and the refund agree.
+- **Cancelling.** The email links to the manage page, which says what cancelling costs right now
+  before anything is pressed. While it is free, one press cancels and refunds. When a fee applies,
+  or the free time ran out after the page was opened, the page asks once more before it charges.
 - **Agents** get `payment_required` with `payment_url` and `payment_token` (see
   [RECIPES](RECIPES.md)).
 - **Refunds** follow the cancellation rules and run automatically. If Stripe is down the booking is
@@ -210,6 +218,10 @@ email addresses ignore case.
   `retentionDays` ago (default 730). `GET /api/maintenance/purge` applies it; `vercel.json`
   runs it daily. It needs `CRON_SECRET` set (Vercel sends it as a bearer token) and does not exist
   without it.
+- **Lapsed holds.** Nobody runs a job when a hold expires, so `booking.expired` is sent when
+  something notices. The same daily purge now sweeps every business for lapsed holds, and
+  `GET /api/maintenance/sweep` (same secret) does only that, for a more frequent cron. Vercel Hobby
+  allows daily crons only; add a minute-level cron on Pro, or call the endpoint from any scheduler.
 - **What this does not reach.** Events already written to the owner's Google Calendar, emails
   already sent, and anything a webhook already delivered to an integrator are outside OpenBooking's
   storage. The owner has to remove those themselves.

@@ -3,7 +3,7 @@
  * search → hold → confirm → cancel. Runs against both MCP protocol eras the SDK serves.
  */
 import { randomUUID } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { ManualClock, verifyWebhook, type WebhookEvent } from '@openbooking-sh/core';
 import {
@@ -164,6 +164,48 @@ describe('webhooks', () => {
       status: 'confirmed',
     });
     expect(received[1]!.event.data.actor).toMatchObject({ protocol: 'mcp' });
+  });
+
+  it('announces a lapsed hold on a timer, only when asked to, and stops when closed', async () => {
+    const run = async (extra: Partial<OpenBookingServerOptions>) => {
+      const types: string[] = [];
+      const ob = makeApp({
+        ...extra,
+        webhooks: {
+          endpoints: [{ url: 'https://crm.example/hooks', secret: 'whsec_integration_0123' }],
+          fetch: (async (_url: string, init: RequestInit) => {
+            types.push(JSON.parse(String(init.body)).type);
+            return new Response(null, { status: 204 });
+          }) as unknown as typeof fetch,
+        },
+      });
+      const call = await mcpClient(ob.app, 'auto');
+      const { slots } = await call('search_availability', { date: '2026-10-02', party_size: 2 });
+      await call('hold_slot', {
+        slot_id: slots[0].slot_id,
+        idempotency_key: randomUUID(),
+        customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+      });
+      // The hold lapses and nobody reads the booking again.
+      ob.clock.advance(10 * 60_000);
+      return { ob, types };
+    };
+
+    const timed = await run({ sweepExpiredEveryMs: 10 });
+    await vi.waitFor(async () => {
+      await timed.ob.webhooks!.idle();
+      expect(timed.types).toContain('booking.expired');
+    });
+    await timed.ob.close();
+    // Closing stopped the timer: nothing runs against the closed app.
+    const spy = vi.spyOn(timed.ob.service, 'sweepExpired');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(spy).not.toHaveBeenCalled();
+
+    const off = await run({});
+    await new Promise((r) => setTimeout(r, 50));
+    await off.ob.webhooks!.idle();
+    expect(off.types).not.toContain('booking.expired');
   });
 });
 

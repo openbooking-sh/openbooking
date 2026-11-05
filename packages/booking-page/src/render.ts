@@ -46,6 +46,8 @@ export interface PageModel {
   mcpUrl?: string;
   /** Privacy policy to link in the footer. Unset on self-hosted pages: that business owns its policy. */
   privacyUrl?: string;
+  /** Notice for bookings made on behalf of a child. Unset on self-hosted pages. */
+  childNotice?: string;
   prefill: Prefill;
 }
 
@@ -340,9 +342,10 @@ ${venueHeader(v, m.profile)}
   <div class="two"><div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" /></div>
   <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" autocomplete="tel" placeholder="+47..." /></div></div>
   <div class="field"><label for="notes">Anything we should know? (optional)</label><textarea id="notes" maxlength="500"></textarea></div>
+  ${m.childNotice ? `<p class="muted" id="child-notice" style="font-size:13px">${esc(m.childNotice)}</p>` : ''}
   <div class="err" id="err" role="alert"></div>
   <button class="btn btn-primary" id="confirm">Confirm booking</button>
-  <p class="muted hidden" id="pay-note" style="font-size:13px">A deposit is due. You will pay on a secure Stripe page, then come back here to finish.</p>
+  <p class="muted hidden" id="pay-note" style="font-size:14px">A deposit is due. You will pay on a secure Stripe page, then come back here to finish.</p>
   <p class="muted" style="font-size:13px">By confirming you accept the price and cancellation terms above.</p>
 </section>
 
@@ -386,6 +389,7 @@ ${venueHeader(v, m.profile)}
   <div id="body" class="muted">Loading…</div>
   <div class="err" id="err" role="alert"></div>
   <div id="cancel-box" class="hidden">
+    <p id="now" role="status" style="font-weight:600"></p>
     <div class="warn hidden" id="terms"></div>
     <button class="btn btn-danger" id="cancel">Cancel booking</button>
   </div>

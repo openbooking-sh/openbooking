@@ -64,7 +64,7 @@ import {
 } from '@openbooking-sh/studio';
 import type { Business, BusinessStore } from './business';
 import { providerConfig } from './catalog';
-import { PRIVACY_URL, TERMS_URL } from './legal';
+import { CHILD_BOOKING_NOTICE, PRIVACY_URL, TERMS_URL } from './legal';
 
 export interface TenantDeps {
   baseUrl: string;
@@ -463,6 +463,7 @@ export class Tenant {
       bookingPage: {
         pageUrl: this.pageUrl,
         privacyUrl: PRIVACY_URL,
+        childNotice: CHILD_BOOKING_NOTICE,
         profile: () => {
           const p = this.#business.settings.profile;
           return {

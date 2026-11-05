@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import {
   BookingError,
   clientIpFromHeaders,
+  evaluateBookingCancellation,
   formatMoney,
   isBookingError,
   runAsActor,
@@ -40,6 +41,11 @@ export interface BookingPageOptions {
   profile?: () => PageProfile | Promise<PageProfile>;
   /** Privacy policy linked in the footer of every page (hosted OpenBooking sets it). */
   privacyUrl?: string;
+  /**
+   * Notice for bookings made on behalf of a child, shown above the confirm button (hosted
+   * OpenBooking sets it). Off by default: a self-hosted business decides its own rules.
+   */
+  childNotice?: string;
 }
 
 export interface BookingPage {
@@ -114,6 +120,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
       apiPath,
       ...(options.mcpUrl ? { mcpUrl: options.mcpUrl } : {}),
       ...(options.privacyUrl ? { privacyUrl: options.privacyUrl } : {}),
+      ...(options.childNotice ? { childNotice: options.childNotice } : {}),
       prefill: readPrefill(query, cat),
     });
   };
@@ -347,7 +354,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
   app.get('/api/bookings/:id', (c) =>
     json(c, async () => {
       const booking = await withCode(c.req.param('id'), c.req.query('code'));
-      return { booking: view(booking, true) };
+      return { booking: view(booking, true, service.clock.now()) };
     }),
   );
 
@@ -362,7 +369,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
           user_confirmed: b.user_confirmed === true,
           reason: 'Cancelled by the customer on the booking page',
         });
-        return { booking: view(res.booking, true) };
+        return { booking: view(res.booking, true, service.clock.now()) };
       } catch (e) {
         if (isBookingError(e) && e.code === 'user_confirmation_required') {
           // Same rule as the agents get, in words for the customer.
@@ -412,7 +419,14 @@ function slotView(s: Slot) {
   };
 }
 
-function view(b: Booking, withCustomer = false) {
+/** What cancelling would cost this instant, so the manage page can say it before a button is pressed. */
+function cancelNow(b: Booking, now?: Date) {
+  if (b.status !== 'confirmed' || !now) return null;
+  const o = evaluateBookingCancellation(b, now);
+  return o.allowed ? { free: o.free, fee: o.fee, refund: o.refund } : null;
+}
+
+function view(b: Booking, withCustomer = false, now?: Date) {
   return {
     booking_id: b.booking_id,
     status: b.status,
@@ -432,6 +446,7 @@ function view(b: Booking, withCustomer = false) {
             ? { first_name: b.customer.first_name, last_name: b.customer.last_name }
             : null,
           cancellation: b.cancellation,
+          cancel_now: cancelNow(b, now),
         }
       : {}),
   };
