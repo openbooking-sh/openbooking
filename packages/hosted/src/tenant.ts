@@ -65,6 +65,7 @@ import {
 import type { Business, BusinessStore } from './business';
 import { providerConfig } from './catalog';
 import { CHILD_BOOKING_NOTICE, PRIVACY_URL, TERMS_URL } from './legal';
+import { LIMITS, type RateLimiter } from './limits';
 
 export interface TenantDeps {
   baseUrl: string;
@@ -89,6 +90,8 @@ export interface TenantDeps {
   /** Serve USP's MCP binding too, for businesses with USP on. */
   uspMcp: boolean;
   allowedHosts: string[];
+  /** Counts holds per address; each business gets its own keys. Shared across instances in Postgres. */
+  rateLimiter: RateLimiter;
   /** Owners must confirm their email before the business is listed in the OpenBooking app. */
   requireVerifiedEmail?: boolean;
   onEvent?: (businessId: string, event: BookingEvent) => void;
@@ -138,6 +141,14 @@ export class Tenant {
       // The email dedupe store, scoped to this business: one instance announces each expiry.
       expiryClaims: { claim: (key) => deps.notificationLog.claim(`${business.id}:${key}`) },
       payments: this.#payments,
+      // The engine's own limiter lives in this process only; on Vercel every cold start would reset it.
+      holdLimit: {
+        ...LIMITS.holdPerIp,
+        limiter: {
+          hit: (key, limit, windowMs) =>
+            deps.rateLimiter.hit(`${business.id}:${key}`, limit, windowMs),
+        },
+      },
       ...(deps.clock ? { clock: deps.clock } : {}),
       ...(deps.holdTtlSeconds ? { holdTtlSeconds: deps.holdTtlSeconds } : {}),
       ...(deps.onEvent ? { onEvent: (e) => deps.onEvent!(this.id, e) } : {}),

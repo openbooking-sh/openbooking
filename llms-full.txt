@@ -227,8 +227,8 @@ an open slot, and another slot at a different time once the first is full.
 
 ## 6. Get webhooks when bookings change
 
-Send `booking.held`, `booking.confirmed`, `booking.updated` and `booking.cancelled` to your CRM,
-SMS sender or own database:
+Send `booking.held`, `booking.confirmed`, `booking.updated`, `booking.cancelled` and
+`booking.expired` to your CRM, SMS sender or own database:
 
 ```ts
 const { app, webhooks } = createOpenBookingApp({
@@ -1326,7 +1326,7 @@ Apache-2.0
 | `@openbooking-sh/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
 | `@openbooking-sh/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
 | `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
-| `@openbooking-sh/adapter-mcp`     | Six MCP tools, Streamable HTTP handler, stdio                                                                      | core, `@modelcontextprotocol/server`                                    |
+| `@openbooking-sh/adapter-mcp`     | Six MCP tools, Streamable HTTP handler, stdio                                                                       | core, `@modelcontextprotocol/server`                                    |
 | `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
 | `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                    | core                                                                    |
 | `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
@@ -1365,6 +1365,7 @@ Its contract:
   - Only successes are stored, because failed calls changed nothing.
   - Replays return the **current** state of the booking.
 - **Hold TTL.** The engine computes `expires_at`; every hold response carries it. Reads present a past-expiry hold as `expired` even if the provider hasn't swept it yet.
+- **Expiry events.** Nothing runs when a hold lapses, so the engine announces it (`booking.expired`, operation `expire`) when something first notices: any read of the booking, or `service.sweepExpired()`, which a cron or timer should call so lapses nobody reads are still reported. A claim per booking (`expiryClaims`; hosted and `PostgresNotificationLog` use the email dedupe table) makes it at-most-once across instances. A crash between claim and delivery loses the event rather than repeating it. A hold confirmed or cancelled in time never emits. The event has no actor.
 - **Consent.** `confirm` requires `user_confirmed === true`, as does cancelling a _confirmed_ booking. Releasing a hold doesn't need it.
 - **Prerequisites.**
   - Customer details (name plus email or phone) are required before confirmation.
@@ -1572,7 +1573,9 @@ owner turns it on in Studio → Settings → AI assistants, where they also choo
   customer first.
 
 The business's profile is at `/b/{id}/.well-known/usp` (there is no profile at the root, because
-the root is not one business). Businesses saved before the setting existed have no `assistants`
+the root is not one business). USP's MCP binding (`/b/{id}/usp/mcp`, the `usp_*` tools) is off
+unless the deployment passes `uspMcp: true`; it then serves every business that has USP on, with the
+same consent setting. Businesses saved before the setting existed have no `assistants`
 block and count as off. For several instances or serverless, pass `uspState` (`postgresStores(db).usp`,
 which the Vercel entry does when `DATABASE_URL` is set): it holds owners, credentials and replay
 protection, shared by every instance and kept apart per business. When a platform calls, hosted fetches the platform's own profile (public internet only, cached, shared by all businesses) and uses only what both sides support. Protocol details are in
@@ -1596,9 +1599,18 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
 - **Email confirmation:** sign-up sends a confirmation link. With email enabled, a business is
   listed in the OpenBooking app (`find_business`) only after the owner confirmed it; its booking
   page and per-business MCP work straight away. Studio shows a "Confirm your email" step.
-- **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP, reset
-  emails per email and IP. The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets;
-  pass `clientIp` when running without a proxy.
+- **Unsubscribe:** every customer email has an unsubscribe link and `List-Unsubscribe` /
+  `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link is a signed token naming the
+  business and a SHA-256 of the normalised address (no address in it). `GET /unsubscribe` only shows
+  a button, so mail scanners change nothing; the POST (also what a mail client's one-click sends)
+  records the hash for that business. After that the address gets no emails from that business at
+  all, confirmations and cancellations included, and the business is still told about bookings. The
+  list is per business, keeps no address, and is deleted with the account. The business's own
+  notices have no link: they are switched off in Studio.
+- **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP (and 100 an
+  hour across all addresses), reset emails per email and IP, holds per IP and business. The IP
+  comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets; pass `clientIp` when running
+  without a proxy. See [Abuse and capacity](#abuse-and-capacity) for what is and is not limited.
 
 ## Storage
 
@@ -1612,6 +1624,7 @@ implements all of them. `postgresStores(db)` returns them ready to pass to `crea
 | `idempotency`     | `IdempotencyStore`    | `PostgresIdempotencyStore`  | Shared; hosted prefixes keys with the business id.           |
 | `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                                    |
 | `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.                |
+| `suppressions`    | `SuppressionList`     | `PostgresSuppressionList`   | Unsubscribed addresses as hashes, per business.              |
 | `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                                   |
 | `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                      |
 | `uspState`        | `UspStateStore`       | `PostgresUspState`          | USP owners, credentials, replay memory; scoped per business. |
@@ -1670,6 +1683,90 @@ All optional, set as environment variables on the Vercel project:
 
 No customer names, emails or phone numbers are sent to any of them. Background work (emails,
 calendar sync, analytics, Slack) finishes after the response through `waitUntil(hosted.idle())`.
+
+## Cold starts
+
+Each new function instance logs one line, with stage names and milliseconds only:
+
+```
+[openbooking] cold start: imports=1900ms db_connect=850ms migrate=12ms app=6ms boot=870ms
+```
+
+- `imports`: process start until the entry module finished loading (Node start, bundle load; the
+  largest single dependency is `@sentry/node`).
+- `db_connect`: opening the first Postgres connection: TCP, TLS, login, and a Neon compute waking
+  from idle. This is the stage to check first when a cold start takes seconds.
+- `migrate`: the schema check. An up-to-date database costs one query; only a database with
+  pending migrations takes the advisory lock, so instances booting together still serialise.
+- `app`: building the hosted app (stores, routes). Tenants are built lazily per request.
+
+Measured locally (PGlite, so no network): `app` is 2 to 5 ms, the up-to-date `migrate` is one query,
+and module loading dominates (Sentry alone is about 1 to 3 seconds on a loaded laptop). A real cold
+start adds what only production shows: Neon waking a suspended compute (typically a few hundred
+milliseconds up to a couple of seconds) and the round trips between the function and the database.
+
+Settings that matter, none of them code:
+
+- Keep the Vercel function region (`regions` in `vercel.json`, now `fra1`) in the same region as
+  the Neon project, otherwise every query pays a transatlantic round trip.
+- Use Neon's pooled connection string (`-pooler` host) for `DATABASE_URL`.
+- Turn off Neon's scale-to-zero for the production compute (or lengthen the suspend delay), so the
+  first request after a quiet period does not wait for the compute to start.
+
+## Abuse and capacity
+
+An audit of what a stranger on the internet can do, and what happens when the free plans run out
+(OPE-89). What the code does is checked against the code; the plan limits are not, so read the
+numbers in your own Neon and Vercel dashboards.
+
+**Limited in code**
+
+- **Sign-up, login, password reset, unsubscribe:** per IP, plus per email where there is one, and a
+  100-an-hour cap on sign-ups across all addresses (each sign-up sends an email). It is counted
+  only after the per-IP check, so one noisy address cannot use it up for everybody.
+- **Holds:** 20 per IP, per business, per 10 minutes. The count lives in the same limiter as the
+  account limits (Postgres in production), so it survives cold starts and is the same on every
+  instance. Before this it lived in each process and reset on every cold start.
+- **Request size:** every request body is capped at 256 KB (`maxBodyBytes`), 413 above it. Vercel
+  itself stops bodies over 4.5 MB. Names, emails, ids and payment tokens in a booking request have
+  length caps in `@openbooking-sh/core`; notes were already capped at 500 characters.
+- **Studio:** every `/studio/api` call needs a session. Importing a website is 10 an hour per
+  business; deleting an account is 5 per 15 minutes.
+- **Stripe webhook:** signature checked before anything is read as an event.
+
+**Not limited in code (known gaps)**
+
+- **Reads.** Availability, the booking page and the MCP tools that only look (`find_business`,
+  `get_business_info`, `search_availability`) have no limit. Every limiter check is itself a Postgres write, so counting reads
+  would add database load instead of removing it. A scraper can keep the Neon compute awake and
+  spend its hours. The fix belongs in front of the function: a rate-limit rule in the Vercel
+  Firewall (a dashboard setting, not code). Keep it generous: AI assistants often share a few IP
+  addresses, and a tight per-IP limit would block real customers booking through them.
+- **Slot hoarding from many addresses.** A holder with many IPs can hold every slot until the holds
+  expire. Holds are short-lived and cost nothing to release, so this is a nuisance, not a double
+  booking. Nothing is confirmed without `user_confirmed`.
+- **Fake sign-ups under 100 an hour.** They are real rows and real emails. Email confirmation keeps
+  them out of the OpenBooking app (`find_business`) until the owner clicks the link.
+- **Self-hosted `createOpenBookingApp`** has the hold limit but no body cap; put a limit in front of
+  it (most proxies have one).
+
+**Plan limits (cannot be fixed in code)**
+
+- **Connections.** Each function instance opens up to 3 Postgres connections (`max: 3` in
+  `api/index.ts`), and a busy moment starts more instances. Use Neon's pooled (`-pooler`) host so
+  those share a pool; without it a burst can hit the plan's connection limit and requests fail with
+  a connection error.
+- **Compute hours.** Neon's free compute sleeps when idle and wakes in a few hundred milliseconds
+  to seconds. Steady traffic, including scrapers, stops it sleeping and uses up the monthly hours.
+  When they are gone the database stops answering until the month turns or you upgrade.
+- **Storage and branches.** The free project has a storage cap. Preview branches count (OPE-97).
+- **Vercel.** The free plan has monthly caps on function invocations and CPU time, and its terms
+  limit it to non-commercial use: read them before taking payment from real customers.
+- **What failing looks like.** Out of connections, hours or storage, a request ends in a 500 (the
+  app logs the error, and Sentry gets it if `SENTRY_DSN` is set). Nothing double-books, because
+  the Postgres booking store does each check-and-reserve in one transaction under a lock.
+- **Watch:** Neon's usage page (compute hours, storage, connections) and Vercel's usage page once a
+  week, and see OPE-90 for alerts.
 
 ## Not done yet
 

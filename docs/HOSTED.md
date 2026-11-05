@@ -178,9 +178,10 @@ Resend domain). Without it nothing is sent (`pnpm dev:hosted` prints them instea
   all, confirmations and cancellations included, and the business is still told about bookings. The
   list is per business, keeps no address, and is deleted with the account. The business's own
   notices have no link: they are switched off in Studio.
-- **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP, reset
-  emails per email and IP. The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets;
-  pass `clientIp` when running without a proxy.
+- **Rate limits** (`LIMITS` in `limits.ts`): login per email and per IP, sign-up per IP (and 100 an
+  hour across all addresses), reset emails per email and IP, holds per IP and business. The IP
+  comes from `x-real-ip` / `x-forwarded-for`, which Vercel sets; pass `clientIp` when running
+  without a proxy. See [Abuse and capacity](#abuse-and-capacity) for what is and is not limited.
 
 ## Storage
 
@@ -286,6 +287,61 @@ Settings that matter, none of them code:
 - Use Neon's pooled connection string (`-pooler` host) for `DATABASE_URL`.
 - Turn off Neon's scale-to-zero for the production compute (or lengthen the suspend delay), so the
   first request after a quiet period does not wait for the compute to start.
+
+## Abuse and capacity
+
+An audit of what a stranger on the internet can do, and what happens when the free plans run out
+(OPE-89). What the code does is checked against the code; the plan limits are not, so read the
+numbers in your own Neon and Vercel dashboards.
+
+**Limited in code**
+
+- **Sign-up, login, password reset, unsubscribe:** per IP, plus per email where there is one, and a
+  100-an-hour cap on sign-ups across all addresses (each sign-up sends an email). It is counted
+  only after the per-IP check, so one noisy address cannot use it up for everybody.
+- **Holds:** 20 per IP, per business, per 10 minutes. The count lives in the same limiter as the
+  account limits (Postgres in production), so it survives cold starts and is the same on every
+  instance. Before this it lived in each process and reset on every cold start.
+- **Request size:** every request body is capped at 256 KB (`maxBodyBytes`), 413 above it. Vercel
+  itself stops bodies over 4.5 MB. Names, emails, ids and payment tokens in a booking request have
+  length caps in `@openbooking-sh/core`; notes were already capped at 500 characters.
+- **Studio:** every `/studio/api` call needs a session. Importing a website is 10 an hour per
+  business; deleting an account is 5 per 15 minutes.
+- **Stripe webhook:** signature checked before anything is read as an event.
+
+**Not limited in code (known gaps)**
+
+- **Reads.** Availability, the booking page and the MCP tools that only look (`find_business`,
+  `get_business_info`, `search_availability`) have no limit. Every limiter check is itself a Postgres write, so counting reads
+  would add database load instead of removing it. A scraper can keep the Neon compute awake and
+  spend its hours. The fix belongs in front of the function: a rate-limit rule in the Vercel
+  Firewall (a dashboard setting, not code). Keep it generous: AI assistants often share a few IP
+  addresses, and a tight per-IP limit would block real customers booking through them.
+- **Slot hoarding from many addresses.** A holder with many IPs can hold every slot until the holds
+  expire. Holds are short-lived and cost nothing to release, so this is a nuisance, not a double
+  booking. Nothing is confirmed without `user_confirmed`.
+- **Fake sign-ups under 100 an hour.** They are real rows and real emails. Email confirmation keeps
+  them out of the OpenBooking app (`find_business`) until the owner clicks the link.
+- **Self-hosted `createOpenBookingApp`** has the hold limit but no body cap; put a limit in front of
+  it (most proxies have one).
+
+**Plan limits (cannot be fixed in code)**
+
+- **Connections.** Each function instance opens up to 3 Postgres connections (`max: 3` in
+  `api/index.ts`), and a busy moment starts more instances. Use Neon's pooled (`-pooler`) host so
+  those share a pool; without it a burst can hit the plan's connection limit and requests fail with
+  a connection error.
+- **Compute hours.** Neon's free compute sleeps when idle and wakes in a few hundred milliseconds
+  to seconds. Steady traffic, including scrapers, stops it sleeping and uses up the monthly hours.
+  When they are gone the database stops answering until the month turns or you upgrade.
+- **Storage and branches.** The free project has a storage cap. Preview branches count (OPE-97).
+- **Vercel.** The free plan has monthly caps on function invocations and CPU time, and its terms
+  limit it to non-commercial use: read them before taking payment from real customers.
+- **What failing looks like.** Out of connections, hours or storage, a request ends in a 500 (the
+  app logs the error, and Sentry gets it if `SENTRY_DSN` is set). Nothing double-books, because
+  the Postgres booking store does each check-and-reserve in one transaction under a lock.
+- **Watch:** Neon's usage page (compute hours, storage, connections) and Vercel's usage page once a
+  week, and see OPE-90 for alerts.
 
 ## Not done yet
 

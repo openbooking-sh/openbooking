@@ -130,9 +130,10 @@ export type PartySize = z.infer<typeof PartySizeSchema>;
  */
 export const CustomerSchema = z
   .object({
-    first_name: z.string().min(1),
-    last_name: z.string().min(1),
-    email: z.email().optional(),
+    // Caps keep one request from carrying a megabyte into a booking row.
+    first_name: z.string().min(1).max(100),
+    last_name: z.string().min(1).max(100),
+    email: z.email().max(254).optional(),
     phone_number: z
       .string()
       .regex(/^\+?[0-9 ()-]{6,20}$/, 'Expected a phone number, ideally E.164 like +4712345678')
@@ -326,7 +327,7 @@ export type Hold = Booking & { status: 'held'; expires_at: string };
 // ---------------------------------------------------------------------------
 
 export const HoldInputSchema = z.object({
-  slot_id: z.string().min(1),
+  slot_id: z.string().min(1).max(200),
   idempotency_key: IdempotencyKeySchema,
   customer: CustomerSchema.optional(),
   notes: z.string().max(500).optional(),
@@ -334,18 +335,18 @@ export const HoldInputSchema = z.object({
 export type HoldInput = z.input<typeof HoldInputSchema>;
 
 export const ConfirmInputSchema = z.object({
-  booking_id: z.string().min(1),
+  booking_id: z.string().min(1).max(200),
   idempotency_key: IdempotencyKeySchema,
   // EXTENSION: explicit user consent flag. Never auto-confirm.
   user_confirmed: z.boolean(),
   customer: CustomerSchema.optional(),
-  payment_token: z.string().min(1).optional(),
+  payment_token: z.string().min(1).max(500).optional(),
 });
 export type ConfirmInput = z.input<typeof ConfirmInputSchema>;
 
 export const UpdateInputSchema = z
   .object({
-    booking_id: z.string().min(1),
+    booking_id: z.string().min(1).max(200),
     idempotency_key: IdempotencyKeySchema,
     customer: CustomerSchema.optional(),
     notes: z.string().max(500).nullable().optional(),
@@ -356,7 +357,7 @@ export const UpdateInputSchema = z
 export type UpdateInput = z.input<typeof UpdateInputSchema>;
 
 export const CancelInputSchema = z.object({
-  booking_id: z.string().min(1),
+  booking_id: z.string().min(1).max(200),
   idempotency_key: IdempotencyKeySchema,
   /** Required (true) to cancel a *confirmed* booking; releasing a hold does not need it. */
   user_confirmed: z.boolean().optional(),
@@ -365,9 +366,9 @@ export const CancelInputSchema = z.object({
 export type CancelInput = z.input<typeof CancelInputSchema>;
 
 export const RescheduleInputSchema = z.object({
-  booking_id: z.string().min(1),
+  booking_id: z.string().min(1).max(200),
   /** A slot for the same service and party size, from search_availability. */
-  slot_id: z.string().min(1),
+  slot_id: z.string().min(1).max(200),
   idempotency_key: IdempotencyKeySchema,
   /** Required (true): the user approved the new time, price and cancellation terms. */
   user_confirmed: z.boolean().optional(),

@@ -41,12 +41,13 @@ function setup(extra: Partial<HostedOptions> = {}) {
   cleanups.push(hosted.close);
   const req = async (
     path: string,
-    opts: { method?: string; body?: unknown; token?: string; accept?: string } = {},
+    opts: { method?: string; body?: unknown; token?: string; accept?: string; ip?: string } = {},
   ) => {
     const res = await hosted.app.request(`${BASE}${path}`, {
       method: opts.method ?? (opts.body === undefined ? 'GET' : 'POST'),
       headers: {
         'content-type': 'application/json',
+        ...(opts.ip ? { 'x-real-ip': opts.ip } : {}),
         ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
         ...(opts.accept ? { accept: opts.accept } : {}),
       },
@@ -512,6 +513,81 @@ describe('owner accounts', () => {
     const blocked = await login('correct horse');
     expect(blocked.status).toBe(429);
     expect(blocked.json.error.code).toBe('rate_limited');
+  });
+
+  it('turns away oversized request bodies before reading them', async () => {
+    const { req } = setup();
+    const huge = { email: 'maria@example.com', password: 'x'.repeat(300 * 1024) };
+    const big = await req('/api/login', { body: huge });
+    expect(big.status).toBe(413);
+    expect(big.json.error.code).toBe('payload_too_large');
+    // Ordinary requests are untouched.
+    expect((await req('/api/login', { body: { email: 'a@b.co', password: 'nope' } })).status).toBe(
+      401,
+    );
+  });
+
+  describe('abuse limits are counted in the shared limiter', () => {
+    /** A limiter that records every key, and refuses the keys the test names. */
+    function spyLimiter(refuse: (key: string) => boolean = () => false) {
+      const keys: string[] = [];
+      return {
+        keys,
+        hit: async (key: string) => {
+          keys.push(key);
+          return !refuse(key);
+        },
+      };
+    }
+
+    it('caps sign-ups across all addresses, counted only after the per-address check', async () => {
+      const spy = spyLimiter((key) => key === 'signup:all');
+      const { req } = setup({ rateLimiter: spy, clientIp: () => '198.51.100.7' });
+      const body = {
+        business_name: 'Studio Nord',
+        your_name: 'Maria Berg',
+        email: 'maria@example.com',
+        password: 'correct horse',
+      };
+      const blocked = await req('/api/signup', { body });
+      expect(blocked.status).toBe(429);
+      expect(blocked.json.error.code).toBe('rate_limited');
+      expect(spy.keys).toEqual(['signup:ip:198.51.100.7', 'signup:all']);
+
+      // A noisy address is stopped first and does not use up the shared allowance.
+      const noisy = spyLimiter((key) => key.startsWith('signup:ip:'));
+      const again = setup({ rateLimiter: noisy, clientIp: () => '198.51.100.7' });
+      expect((await again.req('/api/signup', { body })).status).toBe(429);
+      expect(noisy.keys).toEqual(['signup:ip:198.51.100.7']);
+    });
+
+    it('counts holds per business and address, so the limit survives a cold start', async () => {
+      const spy = spyLimiter();
+      const { req, signup } = setup({ rateLimiter: spy });
+      const { booking_page } = await signup();
+      const api = `${new URL(booking_page).pathname}/book/api`;
+      const avail = await req(`${api}/availability?date=${DAY}&service=haircut`);
+      const slot = avail.json.slots[0].slot_id;
+      const hold = (ip: string, key: string) =>
+        req(`${api}/hold`, { body: { slot_id: slot, idempotency_key: key }, ip });
+      expect((await hold('203.0.113.9', 'hold-key-0001')).status).toBe(200);
+      expect(spy.keys.filter((k) => k.includes(':hold:'))).toEqual([
+        'studio-nord:hold:203.0.113.9',
+      ]);
+    });
+
+    it('refuses holds once the shared limiter says an address is over', async () => {
+      const spy = spyLimiter((key) => key.includes(':hold:'));
+      const { req, signup } = setup({ rateLimiter: spy });
+      const { booking_page } = await signup();
+      const api = `${new URL(booking_page).pathname}/book/api`;
+      const avail = await req(`${api}/availability?date=${DAY}&service=haircut`);
+      const held = await req(`${api}/hold`, {
+        body: { slot_id: avail.json.slots[0].slot_id, idempotency_key: 'hold-key-0002' },
+        ip: '203.0.113.9',
+      });
+      expect(held.json.error.code).toBe('rate_limited');
+    });
   });
 
   it('lists a business in the OpenBooking app only after the owner confirms their email', async () => {

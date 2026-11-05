@@ -13,6 +13,10 @@ export const LIMITS = {
   loginPerEmail: { limit: 10, windowMs: 15 * MIN },
   loginPerIp: { limit: 50, windowMs: 15 * MIN },
   signupPerIp: { limit: 10, windowMs: 60 * MIN },
+  /** Across all addresses; far above real sign-up traffic, so it only trips under a flood. */
+  signupAll: { limit: 100, windowMs: 60 * MIN },
+  /** Holds per address and business; the engine's default, now counted in the shared limiter. */
+  holdPerIp: { limit: 20, windowMs: 10 * MIN },
   resetEmailPerEmail: { limit: 3, windowMs: 60 * MIN },
   resetEmailPerIp: { limit: 20, windowMs: 60 * MIN },
   resetSubmitPerIp: { limit: 20, windowMs: 15 * MIN },

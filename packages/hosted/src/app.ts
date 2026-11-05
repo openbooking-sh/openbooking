@@ -37,6 +37,7 @@ import {
 import { hostHeaderValidation, originValidation } from '@modelcontextprotocol/hono';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { Hono, type Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import * as z from 'zod';
 import {
   OAUTH_STATE_TTL_MS,
@@ -136,8 +137,13 @@ export interface HostedOptions {
   calendarLinks?: CalendarLinkStore;
   /** Host header allow-list for MCP endpoints. Defaults to the baseUrl host plus localhost. */
   allowedHosts?: string[];
-  /** Limits for login, sign-up and password reset. Memory by default; Postgres across instances. */
+  /**
+   * Limits for login, sign-up, password reset and holds. Memory by default; Postgres across
+   * instances (on Vercel every cold start is a new instance, so memory limits reset often).
+   */
   rateLimiter?: RateLimiter;
+  /** Largest request body accepted, in bytes (413 above it). Defaults to 256 KB. */
+  maxBodyBytes?: number;
   /** The caller's IP for rate limits. Defaults to proxy headers (x-real-ip, x-forwarded-for). */
   clientIp?: (request: Request) => string;
   /**
@@ -251,6 +257,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
       }),
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.holdTtlSeconds ? { holdTtlSeconds: options.holdTtlSeconds } : {}),
+    rateLimiter: limiter,
     ...(options.mail ? { mail: options.mail } : {}),
     notificationLog: options.notificationLog ?? new MemoryNotificationLog(),
     suppressions,
@@ -315,6 +322,19 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   };
 
   const app = new Hono<{ Variables: { tenant: Tenant } }>();
+  // Every body here is small JSON (the largest is a Studio settings save). Without a cap a single
+  // request can carry megabytes into a hold, a note or a settings row.
+  app.use(
+    '*',
+    bodyLimit({
+      maxSize: options.maxBodyBytes ?? 256 * 1024,
+      onError: (c) =>
+        c.json(
+          { error: { code: 'payload_too_large', message: 'That request is too large.' } },
+          413,
+        ),
+    }),
+  );
   const err = (c: Context, e: unknown, status: 400 | 401 | 404 | 409 | 500 | 501 = 400) =>
     c.json({ error: toErrorPayload(e) }, status);
 
@@ -455,6 +475,9 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   app.post('/api/signup', async (c) => {
     if (!(await allowed([`signup:ip:${clientIp(c.req.raw)}`, LIMITS.signupPerIp])))
       return tooMany(c);
+    // A circuit breaker for many addresses at once (each sign-up sends an email). Counted only
+    // after the per-IP check, so one noisy address cannot use it up for everybody.
+    if (!(await allowed(['signup:all', LIMITS.signupAll]))) return tooMany(c);
     const parsed = SignupInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return err(c, parsed.error);
     const input = parsed.data;
