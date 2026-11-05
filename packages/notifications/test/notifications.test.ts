@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BookingService, ManualClock, runAsActor, type Booking } from '@openbooking-sh/core';
+import {
+  BookingService,
+  ManualClock,
+  runAsActor,
+  type Booking,
+  type PaymentProvider,
+} from '@openbooking-sh/core';
 import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import {
   MemoryMailer,
   ResendMailer,
   attachNotifications,
   buildIcs,
+  formatAmount,
   type EmailMessage,
   type Mailer,
 } from '../src';
@@ -202,6 +209,77 @@ describe('attachNotifications', () => {
       expect(m.html).not.toContain('<script>');
       expect(m.html).not.toContain('<img src=x>');
     }
+  });
+});
+
+describe('payment confirmation', () => {
+  /** A payment company that says yes to whatever was "paid" through it. */
+  function payingService(mailer: MemoryMailer) {
+    const clock = new ManualClock('2026-10-06T07:00:00Z');
+    const payments: PaymentProvider = {
+      createCheckout: async ({ booking }) => ({
+        url: `https://pay.example/${booking.booking_id}`,
+        token: `tok_${booking.booking_id}`,
+      }),
+      verify: async (token) => ({
+        paid: true,
+        amount: { amount: 30000, currency: 'NOK' },
+        booking_id: token.replace('tok_', ''),
+        reference: 'ref_1',
+      }),
+      refund: async () => undefined,
+    };
+    const service = new BookingService({ provider: createDemoSalonProvider(), clock, payments });
+    const notifications = attachNotifications({
+      service,
+      mailer,
+      config: { from: 'Studio Nord <bookings@openbooking.sh>' },
+      manageUrl: (b) => `https://openbooking.sh/b/studio-nord/manage/${b.booking_id}`,
+    });
+    return { service, notifications };
+  }
+
+  it('tells the customer what was paid and what happens to the deposit if they cancel', async () => {
+    const mailer = new MemoryMailer();
+    const { service, notifications } = payingService(mailer);
+    const { slots } = await service.searchAvailability({
+      date: '2026-10-09',
+      party_size: { total: 1 },
+      offering_id: 'color-cut',
+    });
+    const held = await service.hold({
+      slot_id: slots[0]!.slot_id,
+      idempotency_key: 'hold-0002',
+      customer: ada,
+    });
+    await service.confirm({
+      booking_id: held.booking_id,
+      idempotency_key: 'confirm-0002',
+      user_confirmed: true,
+      payment_token: `tok_${held.booking_id}`,
+    });
+    await notifications.idle();
+
+    const customer = mailer.sent.find((m) => m.to === 'ada@example.com')!;
+    expect(customer.subject).toContain('Booking confirmed: Color & cut');
+    const deposit = formatAmount({ amount: 30000, currency: 'NOK' });
+    expect(customer.text).toContain(`your payment of ${deposit} has gone through`);
+    expect(customer.text).toContain(`Paid online: ${deposit}`);
+    // Free until 24 hours before; the late fee is the whole deposit.
+    expect(customer.text).toContain('What happens to your deposit if you cancel:');
+    expect(customer.text).toContain('Cancel free until');
+    expect(customer.text).toContain('After that, the deposit is not refunded.');
+    expect(customer.html).toContain('What happens to your deposit if you cancel');
+  });
+
+  it('says nothing about a deposit for a booking without one', async () => {
+    const mailer = new MemoryMailer();
+    const { service, notifications } = setup(mailer);
+    await book(service);
+    await notifications.idle();
+    const customer = mailer.sent.find((m) => m.to === 'ada@example.com')!;
+    expect(customer.text).not.toContain('Paid online');
+    expect(customer.text).not.toContain('deposit');
   });
 });
 

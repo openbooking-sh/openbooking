@@ -35,6 +35,7 @@ type Row = [label: string, value: string];
 
 export function renderConfirmationEmail(input: CustomerEmailInput): RenderedEmail {
   const { booking: b, venue } = input;
+  const paid = b.payment.status === 'paid' && b.payment.amount !== null;
   const when = formatWhen(b.slot.start, venue.timezone);
   const rows: Row[] = [
     ['Service', b.slot.offering.name],
@@ -43,14 +44,21 @@ export function renderConfirmationEmail(input: CustomerEmailInput): RenderedEmai
     ...(b.slot.party_size.total > 1 ? [['Guests', String(b.slot.party_size.total)] as Row] : []),
     ['Price', b.slot.price ? formatAmount(b.slot.price) : 'Paid at the venue'],
     ...depositRows(b),
+    ...(paid ? [['Paid online', formatAmount(b.payment.amount!)] as Row] : []),
     ['Confirmation code', b.confirmation_code ?? '-'],
   ];
+  const ifCancelled = depositCancelTerms(b, venue.timezone);
   return compose({
     subject: `Booking confirmed: ${b.slot.offering.name}, ${formatWhenShort(b.slot.start, venue.timezone)} at ${venue.name}`,
     heading: `You're booked at ${venue.name}`,
-    intro: `Hi ${b.customer?.first_name ?? 'there'}, your booking is confirmed. A calendar invite is attached.`,
+    intro: `Hi ${b.customer?.first_name ?? 'there'}, your booking is confirmed${
+      paid ? ` and your payment of ${formatAmount(b.payment.amount!)} has gone through` : ''
+    }. A calendar invite is attached.`,
     rows,
-    sections: [['Cancellation policy', b.slot.cancellation_policy.description]],
+    sections: [
+      ['Cancellation policy', b.slot.cancellation_policy.description],
+      ...(ifCancelled ? [['What happens to your deposit if you cancel', ifCancelled] as Row] : []),
+    ],
     venue,
     ...(input.manageUrl ? { link: [input.manageUrl, 'View or cancel your booking'] } : {}),
     ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
@@ -115,6 +123,34 @@ export function renderOwnerEmail(input: OwnerEmailInput): RenderedEmail {
     footer: 'Sent by OpenBooking. Manage bookings in your Studio.',
     ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
   });
+}
+
+/**
+ * What becomes of a paid deposit if the customer cancels, in words. It reads the fields that
+ * `evaluateCancellation` in core reads, so the email and the refund agree.
+ */
+function depositCancelTerms(b: Booking, timezone: string): string | null {
+  const d = b.slot.deposit;
+  if (!d || b.payment.status !== 'paid') return null;
+  const p = b.slot.cancellation_policy;
+  const fee = p.late_cancellation_fee ?? (p.refundability === 'non_refundable' ? d.amount : null);
+  const until = p.refundability !== 'non_refundable' ? p.free_cancellation_until : null;
+  const parts: string[] = [];
+  if (until) {
+    parts.push(
+      `Cancel free until ${formatWhen(until, timezone)} and the deposit is refunded in full.`,
+    );
+  }
+  if (fee && fee.amount >= d.amount.amount) {
+    parts.push(`${until ? 'After that, the' : 'The'} deposit is not refunded.`);
+  } else if (fee) {
+    parts.push(
+      `${until ? 'After that, ' : 'If you cancel, '}${formatAmount(fee)} of the deposit is kept.`,
+    );
+  } else if (!until) {
+    parts.push('The deposit is refunded if you cancel.');
+  }
+  return parts.join(' ');
 }
 
 function depositRows(b: Booking): Row[] {

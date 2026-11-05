@@ -342,7 +342,7 @@ ${venueHeader(v, m.profile)}
   <div class="field"><label for="notes">Anything we should know? (optional)</label><textarea id="notes" maxlength="500"></textarea></div>
   <div class="err" id="err" role="alert"></div>
   <button class="btn btn-primary" id="confirm">Confirm booking</button>
-  <p class="muted hidden" id="pay-note" style="font-size:13px">A deposit is due. You will pay on a secure Stripe page, then come back here to finish.</p>
+  <p class="muted hidden" id="pay-note" style="font-size:14px">A deposit is due. You will pay on a secure Stripe page, then come back here to finish.</p>
   <p class="muted" style="font-size:13px">By confirming you accept the price and cancellation terms above.</p>
 </section>
 
@@ -386,6 +386,7 @@ ${venueHeader(v, m.profile)}
   <div id="body" class="muted">Loading…</div>
   <div class="err" id="err" role="alert"></div>
   <div id="cancel-box" class="hidden">
+    <p id="now" role="status" style="font-weight:600"></p>
     <div class="warn hidden" id="terms"></div>
     <button class="btn btn-danger" id="cancel">Cancel booking</button>
   </div>

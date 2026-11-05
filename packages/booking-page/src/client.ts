@@ -171,7 +171,8 @@ export const PAGE_SCRIPT = String.raw`
       renderReview($('review'), h.booking);
       var due = !!(h.booking.deposit && h.booking.deposit.due === 'at_confirmation' && D.payments);
       show('pay-note', due);
-      $('confirm').textContent = due ? 'Continue to payment' : 'Confirm booking';
+      if (due) $('pay-note').innerHTML = payTerms(h.booking);
+      $('confirm').textContent = due ? 'Pay ' + money(h.booking.deposit.amount) + ' deposit' : 'Confirm booking';
       show('s-details', true);
       startCountdown();
       $('s-details').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -194,6 +195,20 @@ export const PAGE_SCRIPT = String.raw`
       ['Cancellation', esc(p.description)]
     ].filter(Boolean);
     el.innerHTML = rows.map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('');
+  }
+
+  // What the deposit is and what becomes of it if the customer cancels, said next to the pay
+  // button. It follows the same rules the engine applies when the booking is cancelled.
+  function payTerms(b) {
+    var p = b.cancellation_policy, d = b.deposit, lines = [];
+    lines.push('You pay ' + money(d.amount) + ' now on a secure Stripe page, then come back here to finish. ' + esc(d.description));
+    var fee = p.late_cancellation_fee || (p.refundability === 'non_refundable' ? d.amount : null);
+    var freeWindow = p.refundability !== 'non_refundable' && p.free_cancellation_until;
+    if (freeWindow) lines.push('Cancel free until ' + esc(fmtWhen(p.free_cancellation_until)) + ' and the deposit is refunded in full.');
+    if (fee && fee.amount >= d.amount.amount) lines.push((freeWindow ? 'After that, the' : 'The') + ' deposit is not refunded if you cancel.');
+    else if (fee) lines.push((freeWindow ? 'After that, ' : 'If you cancel, ') + money(fee) + ' of the deposit is kept.');
+    else if (!freeWindow) lines.push('The deposit is refunded if you cancel.');
+    return lines.join('<br>');
   }
 
   function startCountdown() {
@@ -384,6 +399,7 @@ export const MANAGE_SCRIPT = String.raw`
   var id = decodeURIComponent(location.pathname.split('/').pop() || '');
   var code = new URLSearchParams(location.search).get('code') || '';
   var key = null;
+  var shown = null; // what the page said cancelling would cost, from the last load
   function $(x) { return document.getElementById(x); }
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -419,7 +435,15 @@ export const MANAGE_SCRIPT = String.raw`
     ].filter(Boolean);
     $('body').classList.remove('muted');
     $('body').innerHTML = '<dl class="kv">' + rows.map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>';
+    shown = b.cancel_now || null;
+    $('now').textContent = nowText(shown);
     $('cancel-box').classList.toggle('hidden', b.status !== 'confirmed');
+  }
+  // What cancelling would cost right now, said before the button is pressed.
+  function nowText(c) {
+    if (!c) return '';
+    if (c.free) return 'Cancelling now is free.' + (c.refund ? ' Your deposit of ' + money(c.refund) + ' is refunded.' : '');
+    return 'Cancelling now costs ' + (c.fee ? money(c.fee) : 'a fee') + '.' + (c.refund ? ' You get ' + money(c.refund) + ' back.' : '');
   }
   function load() {
     api('/bookings/' + encodeURIComponent(id) + '?code=' + encodeURIComponent(code))
@@ -427,20 +451,27 @@ export const MANAGE_SCRIPT = String.raw`
       .catch(function (e) { $('body').textContent = e.payload && e.payload.code === 'not_found' ? 'We couldn\'t find this booking. Check the link in your confirmation email.' : e.message; });
   }
   var confirming = false;
+  function send(yes) {
+    return api('/bookings/' + encodeURIComponent(id) + '/cancel', { code: code, idempotency_key: key + (yes ? '-yes' : ''), user_confirmed: yes })
+      .then(function (r) { render(r.booking); $('terms').classList.add('hidden'); });
+  }
   $('cancel').onclick = function () {
     $('err').textContent = '';
     $('cancel').disabled = true;
     if (!key) key = 'cancel-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    api('/bookings/' + encodeURIComponent(id) + '/cancel', { code: code, idempotency_key: key + (confirming ? '-yes' : ''), user_confirmed: confirming })
-      .then(function (r) { render(r.booking); $('terms').classList.add('hidden'); })
+    send(confirming)
       .catch(function (e) {
-        if (e.payload && e.payload.code === 'user_confirmation_required' && !confirming) {
-          confirming = true;
-          $('terms').classList.remove('hidden');
-          $('terms').textContent = e.message + ' Are you sure you want to cancel?';
-          $('cancel').textContent = 'Yes, cancel my booking';
-        } else { $('err').textContent = e.message; }
+        var d = e.payload && e.payload.code === 'user_confirmation_required' && !confirming && (e.payload.details || {});
+        if (!d) throw e;
+        confirming = true;
+        // One press is enough when cancelling is free and the page already said so. The server
+        // answered for this very moment: anything else than what was shown asks again.
+        if (d.free && shown && shown.free) return send(true);
+        $('terms').classList.remove('hidden');
+        $('terms').textContent = e.message + (d.refund ? ' You get ' + money(d.refund) + ' back.' : '') + ' Are you sure you want to cancel?';
+        $('cancel').textContent = 'Yes, cancel my booking';
       })
+      .catch(function (e) { $('err').textContent = e.message; })
       .then(function () { $('cancel').disabled = false; });
   };
   load();
