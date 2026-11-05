@@ -1631,7 +1631,29 @@ implements all of them. `postgresStores(db)` returns them ready to pass to `crea
 
 With `DATABASE_URL` set, the Vercel entry (`OPENBOOKING_MODE=hosted`) and `pnpm dev:hosted` use all
 of them and create the tables on start.
-Google refresh tokens are stored in the business record as-is; encrypt them at rest in that store.
+
+### Encrypting stored credentials
+
+A business record holds the owner's Google Calendar tokens and Stripe key (and its webhook secret).
+Set `TOKEN_ENCRYPTION_KEY` and they are encrypted (AES-256-GCM) before they reach the store, so a
+leaked backup or a copied database branch cannot use them. Each value is tied to its business and
+field. Make a key with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+(32 bytes, base64 or 64 hex characters) and keep it in the environment, not in the database.
+
+- **Turning it on for an existing deployment.** Set the key, deploy, then call
+  `GET /api/maintenance/encrypt-secrets` once with `Authorization: Bearer $CRON_SECRET`. It encrypts
+  records written before the key existed (`{ businesses, encrypted }`) and is safe to repeat. Until
+  then old records still work: plain values are read as they are and encrypted the next time their
+  business is saved. A new key never rewrites already encrypted values.
+- **Without the key** new credentials are stored in plain text, and the Vercel entry logs a warning
+  on each cold start in production. Set `TOKEN_ENCRYPTION_REQUIRED=1` to refuse to start without it.
+  A record that already holds encrypted values and no key fails with a clear error instead of
+  handing out ciphertext as a token.
+- **Losing or changing the key** makes the encrypted values unreadable (`could not be decrypted`):
+  the owner reconnects Google and re-enters the Stripe key. There is no rotation yet: changing the
+  key means re-connecting every business. The `enc:v1:` prefix leaves room for a second version.
+- **Not covered.** Backups made before the key was set still hold the old plain values. Session
+  tokens, USP credentials and the password hash are not part of this (the last is a hash already).
 
 ## Customer data
 
@@ -1648,6 +1670,10 @@ email addresses ignore case.
   `retentionDays` ago (default 730). `GET /api/maintenance/purge` applies it; `vercel.json`
   runs it daily. It needs `CRON_SECRET` set (Vercel sends it as a bearer token) and does not exist
   without it.
+- **Lapsed holds.** Nobody runs a job when a hold expires, so `booking.expired` is sent when
+  something notices. The same daily purge now sweeps every business for lapsed holds, and
+  `GET /api/maintenance/sweep` (same secret) does only that, for a more frequent cron. Vercel Hobby
+  allows daily crons only; add a minute-level cron on Pro, or call the endpoint from any scheduler.
 - **What this does not reach.** Events already written to the owner's Google Calendar, emails
   already sent, and anything a webhook already delivered to an integrator are outside OpenBooking's
   storage. The owner has to remove those themselves.
@@ -1670,6 +1696,22 @@ and the id is free to register again.
 - Expired rate-limit windows (keyed by IP address) are deleted by the same daily purge.
 - A store that lacks `BookingRecordStore.deleteVenue` or `BusinessStore.delete` makes closing
   refuse with 501 before anything is touched.
+
+## Agent log and consent evidence
+
+Studio's **Agent log** lists every call an assistant made. For a confirm, a move or a cancellation
+that went through on `user_confirmed: true`, the entry also keeps what the booking said at that
+moment: service, time, party size, price, deposit and the cancellation terms (the text an agent
+must show the user), plus the fee and refund when cancelling. With the agent's name, protocol and
+the time, that answers "what did the customer agree to, and through whom". It shows under the
+action in the log and in the booking's history.
+
+- It names no customer: no name, email, phone or notes. The booking itself holds those and is
+  erased with the customer. An entry is kept as long as the business's activity log is.
+- It records what the caller _claims_ the user approved. OpenBooking cannot see the conversation,
+  so this is evidence of the terms shown to the agent and of the flag it sent, not a signature.
+- Replays (a retry with the same idempotency key) and releasing a hold carry none: nothing new was
+  approved. Entries from before this change have none either.
 
 ## Observability
 
@@ -1772,8 +1814,8 @@ numbers in your own Neon and Vercel dashboards.
 
 - Custom domains or subdomains per business (paths only: `/b/{id}`).
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
-- Encrypting Google refresh tokens at rest (they sit in the business record as-is).
+- Rotating `TOKEN_ENCRYPTION_KEY` (a changed key means businesses reconnect).
 - Outlook (Nylas) and rescheduling.
 - A customer who pays in time but never returns is refunded, not booked (we do not keep their
   details until they come back).
-- Encrypting the Stripe key at rest.
+- Per-agent rate limits beyond the hold limit (see "Abuse and capacity").
