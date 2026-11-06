@@ -21,6 +21,8 @@ export function record(
     status?: Booking['status'];
     expires?: number | null;
     created?: number;
+    party?: number;
+    caps?: BookingRecord['caps'];
   } = {},
 ): BookingRecord {
   const start = over.start ?? T0;
@@ -40,7 +42,7 @@ export function record(
         offering: { id: 'cut', name: 'Haircut' },
         start: new Date(start).toISOString(),
         end: new Date(end).toISOString(),
-        party_size: { total: 1 },
+        party_size: { total: over.party ?? 1 },
         resource: { id: over.resource ?? 'r1', kind: 'staff', label: 'Maria', tags: [] },
         price: null,
         deposit: null,
@@ -66,6 +68,7 @@ export function record(
     resource_id: over.resource ?? 'r1',
     start_ms: start,
     end_ms: end,
+    ...(over.caps ? { caps: over.caps } : {}),
   };
 }
 
@@ -97,6 +100,45 @@ export function describeBookingStore(
         ),
       );
       expect(results.filter(Boolean)).toHaveLength(1);
+    });
+
+    it('enforces guest caps across resources, atomically, counting only live bookings', async () => {
+      const store = await factory();
+      // 6 guests may start within [T0, T0 + 15 min), whichever table they take.
+      const caps = [{ from_ms: T0, to_ms: T0 + 15 * MIN, max_guests: 6 }];
+      const results = await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          store.insertIfFree(
+            record({
+              id: `cap_${i}`,
+              resource: `t${i}`,
+              party: 2,
+              start: T0 + (i % 3) * MIN,
+              caps,
+            }),
+            NOW,
+          ),
+        ),
+      );
+      expect(results.filter(Boolean)).toHaveLength(3);
+      // A start outside the window is not counted against it.
+      expect(
+        await store.insertIfFree(
+          record({ id: 'cap_out', resource: 'tx', party: 2, start: T0 + 15 * MIN, caps }),
+          NOW,
+        ),
+      ).toBe(true);
+      // Another venue's guests do not count.
+      expect(
+        await store.insertIfFree(record({ id: 'cap_v2', venue: 'v2', party: 6, caps }), NOW),
+      ).toBe(true);
+      // A hold that has lapsed frees its guests.
+      const lapsed = await factory();
+      await lapsed.insertIfFree(record({ id: 'l1', party: 6, expires: T0 - MIN, caps }), NOW);
+      const later = at(T0 - 30_000);
+      expect(
+        await lapsed.insertIfFree(record({ id: 'l2', resource: 'r2', party: 6, caps }), later),
+      ).toBe(true);
     });
 
     it('reports lapsed holds as expired and stops them blocking', async () => {

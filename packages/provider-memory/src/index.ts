@@ -18,11 +18,13 @@ export {
   type AnonymizeResult,
   type BookingRecord,
   type BookingRecordStore,
+  type GuestCap,
   type BookingListQuery,
   type CustomerMatch,
 } from './store';
 export { demoRestaurantConfig, demoRestaurantVenue } from './seed';
 export { demoSalonConfig, demoSalonVenue } from './salon';
+export { durationFor } from './config';
 export type * from './config';
 
 import { MemoryBookingProvider, type MemoryProviderOptions } from './provider';
