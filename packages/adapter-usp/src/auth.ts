@@ -10,6 +10,8 @@ import type { PlatformProfile } from './profile-fetch';
 export interface UspPrincipal {
   /** Stable identity of the calling platform (for example the thumbprint of its proof key). */
   id: string;
+  /** How the caller proved it (`platform_key_pop`, `http_message_signature`, ...). */
+  mechanism?: string;
   /** Set when the request presented a booking-scoped credential: what it may act on. */
   credential?: { scope: readonly string[] };
   /** The platform's profile, when profiles are fetched: what it says it can use. */

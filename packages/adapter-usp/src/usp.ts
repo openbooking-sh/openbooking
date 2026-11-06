@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import type { UspBusinessAuth } from './auth';
 import type { ConsentMode } from './booking-mapping';
 import { bridgeAuth, createUspMcp } from './mcp';
-import { createPopAuthenticator } from './pop-auth';
+import { createPopAuthenticator, type PopAuthenticatorOptions } from './pop-auth';
 import { createProfileFetcher, type ProfileFetcher } from './profile-fetch';
 import { buildUspProfileFor } from './profile';
 import { createUspRouter } from './router';
@@ -44,6 +44,15 @@ export interface UspOptions {
    * development and tests).
    */
   platformProfiles?: ProfileFetcher | false;
+  /**
+   * How platforms may prove who they are, beyond the default (a `platform_key_pop` proof with an
+   * Ed25519 key):
+   *  - `proofAlgorithms: ['EdDSA', 'ES256']` also accepts P-256 proof keys;
+   *  - `nonces: { secret }` makes platforms prove freshness with a server-issued nonce;
+   *  - `httpSignatures: true` also accepts RFC 9421 signed requests (REST), keyed off the keys in
+   *    the platform's own profile. Needs `platformProfiles` not to be `false`.
+   */
+  platformAuth?: Pick<PopAuthenticatorOptions, 'proofAlgorithms' | 'nonces' | 'httpSignatures'>;
   /** Display name in the profile. Default: the booking system's name. */
   name?: string;
   /**
@@ -74,6 +83,7 @@ export function createUsp(options: UspOptions): Usp {
     baseUrl: base,
     state,
     clock: service.clock,
+    ...options.platformAuth,
     ...(options.platformProfiles === false
       ? {}
       : { fetchProfile: options.platformProfiles ?? createProfileFetcher() }),
