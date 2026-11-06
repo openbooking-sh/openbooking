@@ -362,20 +362,21 @@ await listen(app, { port: 3000 });
 // MCP at /mcp · booking page at /book · Studio at /studio · UCP at /.well-known/ucp
 ```
 
-| Package                                                                                                                                                                    | What it is                                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`@openbooking-sh/core`](packages/core)                                                                                                                                    | The engine and the `BookingProvider` interface                           |
-| [`@openbooking-sh/server`](packages/server)                                                                                                                                | One app for MCP, UCP, A2A, booking page and Studio                       |
-| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                                                              | Configured provider (services, staff, hours, rules) on a pluggable store |
-| [`@openbooking-sh/postgres`](packages/postgres)                                                                                                                            | Postgres storage for everything                                          |
-| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                                                                    | Booking page, embed snippet and WebMCP                                   |
-| [`@openbooking-sh/client`](packages/client)                                                                                                                                | Typed fetch client for the booking API (and its OpenAPI document)        |
-| [`@openbooking-sh/studio`](packages/studio)                                                                                                                                | Dashboard for the business                                               |
-| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-usp`](packages/adapter-usp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                    |
-| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                                                              | Cal.com connector (beta)                                                 |
-| [`@openbooking-sh/conformance`](packages/conformance)                                                                                                                      | Test suite that proves your `BookingProvider` never double-books         |
-| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                                                                   | Emails with .ics, Google Calendar sync                                   |
-| [`@openbooking-sh/hosted`](packages/hosted)                                                                                                                                | Multi-business hosting (what runs app.openbooking.sh)                    |
+| Package                                                                                                                                                                    | What it is                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`@openbooking-sh/core`](packages/core)                                                                                                                                    | The engine and the `BookingProvider` interface                                          |
+| [`@openbooking-sh/server`](packages/server)                                                                                                                                | One app for MCP, UCP, A2A, booking page and Studio                                      |
+| [`@openbooking-sh/provider-memory`](packages/provider-memory)                                                                                                              | Configured provider (services, staff, hours, rules) on a pluggable store                |
+| [`@openbooking-sh/postgres`](packages/postgres)                                                                                                                            | Postgres storage for everything                                                         |
+| [`@openbooking-sh/booking-page`](packages/booking-page)                                                                                                                    | Booking page, embed snippet and WebMCP                                                  |
+| [`@openbooking-sh/client`](packages/client)                                                                                                                                | Typed fetch client for the booking API (and its OpenAPI document)                       |
+| [`@openbooking-sh/react`](packages/react)                                                                                                                                  | React `<BookingWidget>` and hooks (`useAvailability`, `useBooking`) on the typed client |
+| [`@openbooking-sh/studio`](packages/studio)                                                                                                                                | Dashboard for the business                                                              |
+| [`@openbooking-sh/adapter-mcp`](packages/adapter-mcp), [`adapter-ucp`](packages/adapter-ucp), [`adapter-usp`](packages/adapter-usp), [`adapter-a2a`](packages/adapter-a2a) | The protocol adapters                                                                   |
+| [`@openbooking-sh/provider-calcom`](packages/provider-calcom)                                                                                                              | Cal.com connector (beta)                                                                |
+| [`@openbooking-sh/conformance`](packages/conformance)                                                                                                                      | Test suite that proves your `BookingProvider` never double-books                        |
+| [`@openbooking-sh/notifications`](packages/notifications), [`google-calendar`](packages/google-calendar)                                                                   | Emails with .ics, Google Calendar sync                                                  |
+| [`@openbooking-sh/hosted`](packages/hosted)                                                                                                                                | Multi-business hosting (what runs app.openbooking.sh)                                   |
 
 **More:** [recipes](docs/RECIPES.md) (Postgres, Vercel, website snippet, your own booking system) · [docs for AI coding tools](llms.txt) · [contributing](CONTRIBUTING.md)
 
@@ -641,6 +642,7 @@ packages/
   studio/           OpenBooking Studio dashboard (/studio), incl. business settings
   booking-page/     Public booking page: pre-filled links, JSON-LD, WebMCP, manage links, OpenAPI
   client/           Typed fetch client for the booking page API
+  react/            React booking widget and hooks, on the client
   notifications/    Confirmation/cancellation emails with .ics invites
   google-calendar/  Google Calendar sync (busy times, bookings as events)
   server/           One Hono app mounting everything
@@ -1227,6 +1229,47 @@ Apache-2.0
 
 ---
 
+<!-- @openbooking-sh/react (packages/react/README.md) -->
+
+# @openbooking-sh/react
+
+**React booking widget and hooks.** A drop-in `<BookingWidget>` and the hooks under it (`useInfo`, `useAvailability`, `useBooking`), built on `@openbooking-sh/client`. The customer picks a time (held for a few minutes), reads the price and cancellation terms, ticks a box and confirms: nothing is booked before they do. Each action carries one idempotency key until it succeeds, so a retry after a network error never books twice. Times that need an online deposit are sent to the booking page. Works with React 18 and 19, renders on the server, and has no other dependencies.
+
+Part of [OpenBooking](https://openbooking.sh): open-source booking that every AI assistant can use.
+
+```sh
+npm install @openbooking-sh/react
+```
+
+## Usage
+
+```ts
+import { BookingWidget } from '@openbooking-sh/react';
+
+export function Book() {
+  return (
+    <BookingWidget
+      baseUrl="https://app.openbooking.sh/b/studio-nord/book"
+      onBooked={(booking) => console.log(booking.confirmation_code)}
+    />
+  );
+}
+
+// Or build your own form on the hooks:
+// <OpenBookingProvider baseUrl="…"> … useAvailability({ date, service }) · useBooking()
+```
+
+Style it with CSS variables (`--ob-accent`, `--ob-bg`, `--ob-fg`, `--ob-radius`, `--ob-font`), or pass `unstyled` and write your own CSS against the `ob-*` class names and `data-ob-*` attributes.
+
+## Learn more
+
+- [OpenBooking on GitHub](https://github.com/openbooking-sh/openbooking): the full SDK, docs and examples
+- [openbooking.sh](https://openbooking.sh)
+
+Apache-2.0
+
+---
+
 <!-- @openbooking-sh/server (packages/server/README.md) -->
 
 # @openbooking-sh/server
@@ -1333,6 +1376,7 @@ Apache-2.0
 | `examples/demo`                   | `pnpm dev`                                                                                                          | server, provider-memory                                                 |
 | `@openbooking-sh/booking-page`    | Public booking page and its JSON API (zod schemas, OpenAPI 3.1), manage links, JSON-LD, WebMCP                      | core, `hono`, `zod`                                                     |
 | `@openbooking-sh/client`          | Typed fetch client for the booking page API; no dependencies, runs in browsers, edge and Node                       | none                                                                    |
+| `@openbooking-sh/react`           | React `BookingWidget` and hooks on the client; React is a peer dependency                                           | client                                                                  |
 | `@openbooking-sh/notifications`   | Booking emails with .ics invites (`Mailer`: Resend, console, memory)                                                | core                                                                    |
 | `@openbooking-sh/google-calendar` | Google OAuth, busy-time source, bookings → events                                                                   | core, provider-memory                                                   |
 | `@openbooking-sh/hosted`          | Many businesses: accounts, settings → catalog, per-business runtime, the OpenBooking MCP app (`find_business`)      | all of the above                                                        |

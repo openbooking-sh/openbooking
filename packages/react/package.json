@@ -1,0 +1,65 @@
+{
+  "name": "@openbooking-sh/react",
+  "version": "0.0.0",
+  "description": "React components for OpenBooking: a drop-in BookingWidget and headless hooks (useAvailability, useBooking) on the typed client.",
+  "license": "Apache-2.0",
+  "homepage": "https://openbooking.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbooking-sh/openbooking.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/openbooking-sh/openbooking/issues"
+  },
+  "keywords": [
+    "openbooking",
+    "booking",
+    "appointments",
+    "scheduling",
+    "react",
+    "hooks",
+    "widget"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@openbooking/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@openbooking-sh/client": "workspace:^"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@openbooking-sh/core": "workspace:^",
+    "@openbooking-sh/provider-memory": "workspace:^",
+    "@openbooking-sh/server": "workspace:^",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^21.0.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

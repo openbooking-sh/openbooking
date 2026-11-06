@@ -111,6 +111,27 @@ const confirmed = await booking.confirm({
 console.log(confirmed.confirmation_code);`,
     more: 'Pass your own `idempotency_key` (and keep it) to retry a write safely after a network error: the same key never books twice.',
   },
+  react: {
+    title: 'React booking widget and hooks',
+    intro:
+      'A drop-in `<BookingWidget>` and the hooks under it (`useInfo`, `useAvailability`, `useBooking`), built on `' +
+      S +
+      '/client`. The customer picks a time (held for a few minutes), reads the price and cancellation terms, ticks a box and confirms: nothing is booked before they do. Each action carries one idempotency key until it succeeds, so a retry after a network error never books twice. Times that need an online deposit are sent to the booking page. Works with React 18 and 19, renders on the server, and has no other dependencies.',
+    usage: `import { BookingWidget } from '${S}/react';
+
+export function Book() {
+  return (
+    <BookingWidget
+      baseUrl="https://app.openbooking.sh/b/studio-nord/book"
+      onBooked={(booking) => console.log(booking.confirmation_code)}
+    />
+  );
+}
+
+// Or build your own form on the hooks:
+// <OpenBookingProvider baseUrl="…"> … useAvailability({ date, service }) · useBooking()`,
+    more: 'Style it with CSS variables (`--ob-accent`, `--ob-bg`, `--ob-fg`, `--ob-radius`, `--ob-font`), or pass `unstyled` and write your own CSS against the `ob-*` class names and `data-ob-*` attributes.',
+  },
   'booking-page': {
     title: 'Public booking page, embed and WebMCP',
     intro:
