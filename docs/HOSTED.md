@@ -118,13 +118,27 @@ only ever shows its last four characters.
 - **Agents** get `payment_required` with `payment_url` and `payment_token` (see
   [RECIPES](RECIPES.md)).
 - **Refunds** follow the cancellation rules and run automatically. If Stripe is down the booking is
-  still cancelled and the call answers `refund_failed`; cancelling again retries safely.
+  still cancelled and the call answers `refund_failed`; cancelling again retries safely. A late
+  cancellation refunds the deposit minus the fee (a partial refund). Before it refunds, OpenBooking
+  asks Stripe what has already been refunded on that payment (including refunds the owner made in
+  the Stripe dashboard) and sends only the difference, so a retry never pays twice, even after
+  Stripe has forgotten the idempotency key (it does after 24 hours). If it cannot read the refunds
+  already made, it refunds nothing and answers `refund_failed` rather than guess. This needs the
+  key to be able to read Refunds as well as write them.
 - **Customers who never come back.** Connecting the key also registers a webhook at
   `/b/{id}/stripe/webhook` (the key needs the Webhook Endpoints permission; Studio says when it
-  could not). The signature is checked, and a payment for a hold that has since expired is refunded
-  in full. While the hold is still live the webhook answers 503, so Stripe delivers it again later.
-  The refund uses the same idempotency key as every other refund of that booking, so duplicate
-  deliveries never refund twice.
+  could not). The signature is checked, and a payment for a hold that has since expired or been
+  released is refunded in full. While the hold is still live the webhook answers 503, so Stripe
+  delivers it again later. Duplicate or out-of-order deliveries never refund twice. Events for
+  payments that did not happen (failed, expired, or a delayed payment not yet received) are
+  acknowledged and ignored.
+- **A checkout nobody pays.** The customer pays nothing and the hold simply runs out, so the slot is
+  free again. The Stripe payment page itself stays open for up to 24 hours; a payment made on it
+  after the hold ran out is refunded as above.
+- **What the owner sees.** The booking drawer in Studio has a Payment line: waiting for payment,
+  not paid, paid online or in person, and for a cancelled booking the refund the terms gave and what
+  was kept. It says what is due, not that the money has arrived: check the payment in Stripe when
+  in doubt. A deposit taken in person is never refunded by Stripe, so the owner hands it back.
 - **Staff in Studio** record a deposit taken in person without Stripe.
 - **Disconnecting** Stripe stops new deposits. Deposits already paid can then no longer be refunded
   automatically.
@@ -151,6 +165,28 @@ block and count as off. For several instances or serverless, pass `uspState` (`p
 which the Vercel entry does when `DATABASE_URL` is set): it holds owners, credentials and replay
 protection, shared by every instance and kept apart per business. When a platform calls, hosted fetches the platform's own profile (public internet only, cached, shared by all businesses) and uses only what both sides support. Protocol details are in
 [SPEC-NOTES.md](SPEC-NOTES.md#6-usp-universal-scheduling-protocol-draft).
+
+## API keys for the business's own website
+
+A site with no backend (an AI-built static page, say) can call its business's booking API straight
+from the browser or from a function. In Studio → Settings → API keys the owner makes a key and gives it
+a name and one of two scopes:
+
+- **Read availability:** `GET /b/{id}/book/api/info`, `/availability` and `/openapi.json`.
+- **Read and book:** also holds, confirming, cancelling and reading a hold or booking
+  (`/b/{id}/book/api/*`), and the business's MCP endpoint (`/b/{id}/mcp`).
+
+Send it as `x-openbooking-key: obk_…` or as `Authorization: Bearer obk_…`. A key works for its own
+business only. The secret is shown once; only a hash is stored. Studio lists each key with when it was last
+used and revokes it on its own, and each key is limited to 300 calls a minute. A bad, revoked or
+other business's key gets `401 invalid_api_key`, and a read key asked to book gets
+`403 insufficient_scope`. A business holds at most ten active keys, and closing the account deletes them.
+
+**A key is not a lock.** Public access still works without one, as before, so a visitor (or a scraper)
+can call the same endpoints with no key. What a key adds is a name for who is calling, a way to give a
+site read-only access, a limit per site, and a way to cut one site off. A key in a browser's JavaScript is
+visible to anyone who opens the page, so give a site that only shows availability a read key. UCP,
+A2A and USP are not governed by keys. Studio never accepts one.
 
 ## Emails
 
@@ -196,6 +232,7 @@ implements all of them. `postgresStores(db)` returns them ready to pass to `crea
 | `activityFor`     | `(id) => ActivityLog` | `PostgresActivityLog`       | One `scope` per business.                                    |
 | `notificationLog` | `NotificationLog`     | `PostgresNotificationLog`   | Insert-if-absent, so no email goes out twice.                |
 | `suppressions`    | `SuppressionList`     | `PostgresSuppressionList`   | Unsubscribed addresses as hashes, per business.              |
+| `apiKeys`         | `ApiKeyStore`         | `PostgresApiKeyStore`       | Website API keys as hashes, per business.                    |
 | `calendarLinks`   | `CalendarLinkStore`   | `PostgresCalendarLinkStore` | Booking id → Google event.                                   |
 | `rateLimiter`     | `RateLimiter`         | `PostgresRateLimiter`       | Fixed windows shared by every instance.                      |
 | `uspState`        | `UspStateStore`       | `PostgresUspState`          | USP owners, credentials, replay memory; scoped per business. |
@@ -383,6 +420,8 @@ numbers in your own Neon and Vercel dashboards.
 
 ## Not done yet
 
+- A per-business "require a key" switch (today keys identify and limit callers but do not lock
+  the public API), and a key restricted to named website origins.
 - Custom domains or subdomains per business (paths only: `/b/{id}`).
 - Inbound calendar changes: an event moved or deleted in Google doesn't change the booking.
 - Rotating `TOKEN_ENCRYPTION_KEY` (a changed key means businesses reconnect).

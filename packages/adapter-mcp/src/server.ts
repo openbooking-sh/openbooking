@@ -120,7 +120,7 @@ function tool<S extends z.ZodType>(
   };
 }
 
-/** Build an McpServer exposing the six OpenBooking tools on top of a BookingService. */
+/** Build an McpServer exposing the seven OpenBooking tools on top of a BookingService. */
 export function createMcpServer(options: McpAdapterOptions): McpServer {
   const { service } = options;
   const server = new McpServer(
@@ -151,7 +151,7 @@ const BUSINESS_ID = z
   .describe('business_id from find_business. Required on every booking call.');
 
 /**
- * Register the six booking tools on `server`. `createMcpServer` does this for one business; a
+ * Register the seven booking tools on `server`. `createMcpServer` does this for one business; a
  * directory server registers them `scoped` next to its own discovery tools.
  */
 export function registerBookingTools(server: McpServer, options: BookingToolsOptions): void {

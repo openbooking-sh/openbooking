@@ -40,6 +40,7 @@ const hosted = createHostedApp({
         calendarLinks: stores.calendarLinks,
         notificationLog: stores.notificationLog,
         suppressions: stores.suppressions,
+        apiKeys: stores.apiKeys,
         rateLimiter: stores.rateLimiter,
       }
     : {}),

@@ -132,6 +132,7 @@ async function boot(): Promise<Runtime> {
             calendarLinks: stores.calendarLinks,
             notificationLog: stores.notificationLog,
             suppressions: stores.suppressions,
+            apiKeys: stores.apiKeys,
             rateLimiter: stores.rateLimiter,
           }
         : {}),
