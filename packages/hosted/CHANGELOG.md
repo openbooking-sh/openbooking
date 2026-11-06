@@ -1,5 +1,60 @@
 # @openbooking-sh/hosted
 
+## 0.13.0
+
+### Minor Changes
+
+- 45b5786: Age rules on hosted. Sign-up says you must be 18 or older to create an account, and every hosted booking page shows a notice above the confirm button for bookings made on behalf of a child (a parent or guardian books, with the child's name in the notes). For your own deployment the notice is an option and off by default: `childNotice` on the booking page (and `bookingPage.childNotice` in the server).
+- e6a751c: Add the `booking.expired` webhook event, and an `expire` engine event, for holds that lapse without being confirmed or cancelled. Nothing runs when a hold expires, so the event is sent when a read first notices it or when `service.sweepExpired()` runs (call it from a cron or timer to report lapses nobody reads). Each expiry is announced at most once across instances through a new `expiryClaims` option (hosted reuses its email dedupe log; pass `PostgresNotificationLog` when running several instances on one database). The event carries no actor, and Studio shows it as a system entry.
+- 8e2e69d: Encrypt owners' Google tokens and Stripe keys at rest. Set `tokenEncryptionKey` (`TOKEN_ENCRYPTION_KEY` in the Vercel entry; 32 bytes, base64 or hex) and `createHostedApp` encrypts those values (AES-256-GCM, each tied to its business and field) before they reach the business store, and decrypts them on the way out. `GET /api/maintenance/encrypt-secrets` (same `CRON_SECRET`) encrypts records written before the key was set; until then they still read fine. `requireTokenEncryption` (`TOKEN_ENCRYPTION_REQUIRED=1`) refuses to start without a key. A record holding encrypted values with no key, or the wrong key, fails with a clear error instead of passing ciphertext on as a token. New exports: `encryptedBusinessStore`, `parseEncryptionKey`, `SecretsError`.
+- dd8e9ca: API keys for hosted businesses, so a site with no backend can call its own booking API. Owners make keys in Studio → Settings → API keys (a name, and `read` or `book`); the secret is shown once and only a hash is stored. Send it as `x-openbooking-key` or `Authorization: Bearer obk_…` to `/b/{id}/book/api/*` or `/b/{id}/mcp`. Each key works for one business, is rate-limited on its own (300 a minute), shows when it was last used and can be revoked. Calls without a key stay public as before: a key identifies and limits a caller, it does not lock the API. New `apiKeys` option on `createHostedApp` (memory by default), `PostgresApiKeyStore` and `postgresStores(db).apiKeys` with migration 6 (`ob_api_keys`), and `api_keys` on Studio's `SettingsView`. The booking page's CORS preflight now allows the `x-openbooking-key` header.
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+- 3faa27f: Announce lapsed holds without anyone having to look at them. `server` gets an opt-in `sweepExpiredEveryMs` option that runs `service.sweepExpired()` on a timer (long-running processes; the timer never keeps the process alive and stops on `close()`). `hosted` gets `GET /api/maintenance/sweep` and `hosted.sweepExpiredHolds()`, protected by the same `CRON_SECRET` as the purge endpoint, and the daily purge now also sweeps, so `booking.expired` and its emails go out even on a daily cron. For minute-level timeliness, point a more frequent cron at `/api/maintenance/sweep` (Vercel Hobby only allows daily crons).
+- edba76d: Customers can unsubscribe from a business's emails. Customer emails carry an unsubscribe link and the RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers (`EmailMessage.headers`, passed on by `ResendMailer`). Hosted serves `/unsubscribe`: a GET shows a button, the POST records a hash of the address for that business, and nothing more is sent to it. New `SuppressionList` (`MemorySuppressionList`, `PostgresSuppressionList`, migration 5), `isSuppressed` and `unsubscribeUrl` options in `attachNotifications`, and a `suppressions` option on `createHostedApp` (`stores.suppressions` with Postgres).
+- db42a3d: Owners can let AI assistants and platforms book them through USP: Studio → Settings → AI assistants, off by default, either the customer confirms on a page or the assistant books immediately. The profile is at `/b/{id}/.well-known/usp`. Businesses saved before the setting count as off. Pass `uspState` (`postgresStores(db).usp`) when running more than one instance; the Vercel entry does.
+- 89789c9: USP over MCP. `createUsp({ mcp: true })` serves the spec's `usp_*` tools at `<path>/mcp` (a stateless Streamable HTTP MCP endpoint) and advertises it in the profile. It is the REST engine behind a different wrapper: same consent modes, idempotency, ownership, capability negotiation and state. Platforms authenticate with the MCP form of the key proof inside `_meta.usp.authorization`, results come back as `structuredContent` plus text, and protocol errors are JSON-RPC errors with `data.code`. Off by default: `usp: { mcp: true }` in the server, `uspMcp` in the hosted app.
+
+  Also: `If-Match` (REST) and `_meta.usp.if_match` (MCP) on a booking write are now refused with `revision_mismatch` (412), because bookings carry no revision to match; REST used to ignore them.
+
+### Patch Changes
+
+- 6ae5bb8: Abuse limits for hosted. Request bodies over 256 KB get a 413 (`maxBodyBytes` to change it). Holds are now counted in the shared rate limiter (Postgres in production), per business and IP, so the limit holds across instances and cold starts instead of resetting in each process. Sign-ups also have a cap of 100 an hour across all addresses, counted after the per-IP check. In core, customer names (100), email (254), ids (200) and payment tokens (500) in booking requests have length caps.
+- 5dc9991: The same idempotency key sent to two server instances at the same instant now runs once. Before, both instances ran, so one customer could end up with two holds (on two staff members; no slot was ever given out twice). `IdempotencyStore` gets an optional `claim()` and `release()`: the first instance to claim the key runs, the other waits for its result and replays it, and a claim whose instance died expires after 60 seconds. `PostgresIdempotencyStore` implements them with one `insert … on conflict` statement (no migration), and hosted passes them through its per-business key prefix. A custom store without `claim()` keeps the old per-process behaviour.
+- 787f01c: USP: platform profiles are now fetched (safely, public internet only) and capabilities negotiated. `usp.platformProfiles` on `createOpenBookingApp` and `uspPlatformProfiles` on `createHostedApp` take a fetcher or `false`; hosted shares one fetcher, and so one cache, across all businesses.
+- Updated dependencies [6ae5bb8]
+- Updated dependencies [45b5786]
+- Updated dependencies [3d98490]
+- Updated dependencies [e6a751c]
+- Updated dependencies [5b1fb9a]
+- Updated dependencies [8e2e69d]
+- Updated dependencies [3825c49]
+- Updated dependencies [dd8e9ca]
+- Updated dependencies [c8d546c]
+- Updated dependencies [bb06329]
+- Updated dependencies [aaba0ca]
+- Updated dependencies [92f6c50]
+- Updated dependencies [5dc9991]
+- Updated dependencies [3faa27f]
+- Updated dependencies [edba76d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [89789c9]
+- Updated dependencies [b598d10]
+- Updated dependencies [787f01c]
+- Updated dependencies [787f01c]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/booking-page@0.13.0
+  - @openbooking-sh/server@0.13.0
+  - @openbooking-sh/studio@0.13.0
+  - @openbooking-sh/provider-memory@0.13.0
+  - @openbooking-sh/notifications@0.13.0
+  - @openbooking-sh/payments-stripe@0.13.0
+  - @openbooking-sh/adapter-usp@0.13.0
+  - @openbooking-sh/adapter-mcp@0.13.0
+  - @openbooking-sh/google-calendar@0.13.0
+
 ## 0.12.1
 
 ### Patch Changes

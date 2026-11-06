@@ -1,5 +1,19 @@
 # @openbooking-sh/core
 
+## 0.13.0
+
+### Minor Changes
+
+- e6a751c: Add the `booking.expired` webhook event, and an `expire` engine event, for holds that lapse without being confirmed or cancelled. Nothing runs when a hold expires, so the event is sent when a read first notices it or when `service.sweepExpired()` runs (call it from a cron or timer to report lapses nobody reads). Each expiry is announced at most once across instances through a new `expiryClaims` option (hosted reuses its email dedupe log; pass `PostgresNotificationLog` when running several instances on one database). The event carries no actor, and Studio shows it as a system entry.
+- 8e2e69d: Consent evidence in the agent log. A confirm, move or cancellation that went through on `user_confirmed: true` now emits a `consent` field on its `BookingEvent` (`ConsentEvidence`): the service, time, party size, price, deposit and cancellation terms the booking carried at that moment, and for a cancellation the fee and refund. Studio keeps it on the activity entry (`ActivityEntry.consent`, no database change: entries are JSON) and shows it under the action in the Agent log and in a booking's history. It holds no customer name, email or phone. Replays and releasing a hold carry none.
+- 5dc9991: The same idempotency key sent to two server instances at the same instant now runs once. Before, both instances ran, so one customer could end up with two holds (on two staff members; no slot was ever given out twice). `IdempotencyStore` gets an optional `claim()` and `release()`: the first instance to claim the key runs, the other waits for its result and replays it, and a claim whose instance died expires after 60 seconds. `PostgresIdempotencyStore` implements them with one `insert … on conflict` statement (no migration), and hosted passes them through its per-business key prefix. A custom store without `claim()` keeps the old per-process behaviour.
+
+### Patch Changes
+
+- 6ae5bb8: Abuse limits for hosted. Request bodies over 256 KB get a 413 (`maxBodyBytes` to change it). Holds are now counted in the shared rate limiter (Postgres in production), per business and IP, so the limit holds across instances and cold starts instead of resetting in each process. Sign-ups also have a cap of 100 an hour across all addresses, counted after the per-IP check. In core, customer names (100), email (254), ids (200) and payment tokens (500) in booking requests have length caps.
+- 3825c49: Two fixes found by the new concurrency and daylight-saving fuzz tests. On the night clocks jump forward, a venue open through the missing hour was offered duplicate slots (02:00 and 02:30 collapsed onto 03:00 and 03:30); times that do not exist are now skipped. And releasing a hold (which needs no consent) while the customer confirms it could cancel the booking they had just confirmed; the release now loses that race (`release_hold` on `CancelBookingRequest`, honoured by the memory and Postgres stores).
+- db42a3d: Add `usp` to the actor protocols, so bookings made through the Universal Scheduling Protocol are credited to their own channel.
+
 ## 0.12.0
 
 ### Minor Changes
