@@ -13,6 +13,9 @@
  *
  * Data retention: set CRON_SECRET so the daily Vercel cron can call /api/maintenance/purge, which
  * removes customer data from bookings that ended more than two years ago.
+ *
+ * Credentials: set TOKEN_ENCRYPTION_KEY (32 bytes, base64) to keep owners' Google tokens and Stripe
+ * keys encrypted in the database (TOKEN_ENCRYPTION_REQUIRED=1 refuses to start without it).
  */
 import * as Sentry from '@sentry/node';
 import { waitUntil } from '@vercel/functions';
@@ -129,6 +132,7 @@ async function boot(): Promise<Runtime> {
             calendarLinks: stores.calendarLinks,
             notificationLog: stores.notificationLog,
             suppressions: stores.suppressions,
+            apiKeys: stores.apiKeys,
             rateLimiter: stores.rateLimiter,
           }
         : {}),
@@ -163,10 +167,19 @@ async function boot(): Promise<Runtime> {
           }
         : {}),
       ...(env.CRON_SECRET ? { cronSecret: env.CRON_SECRET } : {}),
+      ...(env.TOKEN_ENCRYPTION_KEY ? { tokenEncryptionKey: env.TOKEN_ENCRYPTION_KEY } : {}),
+      ...(env.TOKEN_ENCRYPTION_REQUIRED === '1' ? { requireTokenEncryption: true } : {}),
       ...(env.SENTRY_DSN ? { onError: (e: unknown) => Sentry.captureException(e) } : {}),
     });
     timer.mark('app');
     timer.done();
+    if (production && !env.TOKEN_ENCRYPTION_KEY) {
+      // One line per cold start, and no secrets in it: owners' Google and Stripe credentials are
+      // stored in plain text until the key is set (docs/HOSTED.md, "Encrypting stored credentials").
+      console.warn(
+        '[openbooking] TOKEN_ENCRYPTION_KEY is not set: stored credentials are not encrypted',
+      );
+    }
     return { fetch: (r) => hosted.app.fetch(r), idle: () => hosted.idle() };
   }
 

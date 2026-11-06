@@ -192,6 +192,11 @@ export interface SettingsView {
     /** One line for their website: `<script src=".../embed.js" async></script>`. */
     snippet: string;
   };
+  /** Keys for the business's own website to call its booking API (hosted). */
+  api_keys?: {
+    /** GET lists, POST `{ name, scope: 'read' | 'book' }` creates (the secret comes back once), DELETE `<path>/<id>` revokes. */
+    path: string;
+  };
   /** Account email (hosted). */
   account?: {
     email: string;

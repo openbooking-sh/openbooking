@@ -21,6 +21,9 @@ export const LIMITS = {
   resetEmailPerIp: { limit: 20, windowMs: 60 * MIN },
   resetSubmitPerIp: { limit: 20, windowMs: 15 * MIN },
   unsubscribePerIp: { limit: 60, windowMs: 15 * MIN },
+  /** Calls per API key: a busy site's visitors share one key, so well above a person's pace. */
+  apiKeyPerMinute: { limit: 300, windowMs: MIN },
+  apiKeyCreatePerBusiness: { limit: 20, windowMs: 60 * MIN },
 } as const;
 
 /**

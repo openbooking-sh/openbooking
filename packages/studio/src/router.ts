@@ -14,6 +14,7 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ActivityStore, recordActivity, type ActivityLog } from './activity';
 import { CustomerMatchSchema, type DataRightsAdapter } from './data-rights';
+import { paymentSummary } from './payment-summary';
 import { BusinessSettingsSchema, type StudioSettingsAdapter } from './settings';
 import { computeOverview } from './stats';
 import { studioHtml, type StudioLegal } from './ui';
@@ -169,6 +170,7 @@ export function createStudio(options: StudioOptions): Studio {
       const booking = await service.getBooking(id);
       return {
         booking: await oneWithVia(booking),
+        payment_summary: paymentSummary(booking),
         activity: await activity.list({ booking_id: id, limit: 50 }),
       };
     }),

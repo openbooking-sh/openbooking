@@ -35,7 +35,7 @@ async function connect(holdTtlSeconds = 300) {
 }
 
 describe('MCP adapter', () => {
-  it('exposes exactly the five agent tools with schemas and annotations', async () => {
+  it('exposes exactly the seven agent tools with schemas and annotations', async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());

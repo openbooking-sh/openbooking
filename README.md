@@ -13,7 +13,7 @@ safe:
 
 | Protocol                              | Status       | What you get                                                                                                                        |
 | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **MCP** (Model Context Protocol)      | ✅ Supported | 6 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
+| **MCP** (Model Context Protocol)      | ✅ Supported | 7 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
 | **A2A** (Agent2Agent)                 | 🟡 Beta      | v1.0 Agent Card plus a JSON-RPC `SendMessage` endpoint (`/a2a`) for search, hold, confirm and cancel; no streaming or tasks         |
 

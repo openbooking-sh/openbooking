@@ -289,6 +289,9 @@ describe('Studio as a booking system (salon)', () => {
       status: 'paid',
       reference: 'manual:collected-in-studio',
     });
+    // The booking drawer says it was taken in person.
+    const detail = await call('GET', `/api/bookings/${ok.json.booking.booking_id}`);
+    expect(detail.json.payment_summary).toMatch(/^Paid in person: \d+\.\d\d NOK\.$/);
   });
 
   it('aggregates customers across bookings', async () => {

@@ -151,7 +151,7 @@ export interface OpenBookingApp {
  *
  *   GET  /                              index (links to everything below); the booking page for browsers
  *   *    /book/...                      public booking page, its JSON API and manage links
- *   ALL  /mcp                           MCP Streamable HTTP (6 booking tools)
+ *   ALL  /mcp                           MCP Streamable HTTP (7 booking tools)
  *   *    /ucp/...                       UCP lodging booking-session REST (+ availability extension)
  *   GET  /.well-known/ucp               UCP business profile
  *   *    /usp/...                       USP catalog, availability, holds, bookings (when `usp` is set)

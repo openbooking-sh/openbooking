@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue tests each PR on top of the PRs ahead of it; without this
+  # trigger the required checks never start and queued PRs wait forever.
+  merge_group:
 
 jobs:
   check:

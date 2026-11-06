@@ -1,4 +1,4 @@
-import type { BookingEvent, BookingService } from '@openbooking-sh/core';
+import type { BookingEvent, BookingService, ConsentEvidence } from '@openbooking-sh/core';
 
 export interface ActivityEntry {
   id: number;
@@ -12,6 +12,8 @@ export interface ActivityEntry {
   agent: string;
   protocol: string;
   client?: string;
+  /** What the user approved, on a confirm, reschedule or cancel. Holds no customer details. */
+  consent?: ConsentEvidence;
 }
 
 export interface ActivityQuery {
@@ -54,6 +56,7 @@ export function toActivityEntry(e: BookingEvent): Omit<ActivityEntry, 'id'> {
     agent: e.actor?.agent ?? (e.operation === 'expire' ? 'System' : 'Direct API'),
     protocol: e.actor?.protocol ?? (e.operation === 'expire' ? 'system' : 'api'),
     ...(e.actor?.client ? { client: e.actor.client } : {}),
+    ...(e.consent ? { consent: e.consent } : {}),
   };
 }
 

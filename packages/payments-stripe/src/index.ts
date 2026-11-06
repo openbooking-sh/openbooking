@@ -143,11 +143,38 @@ export class StripePayments implements PaymentProvider {
     };
   }
 
+  /**
+   * Make sure the customer has been refunded `req.amount` in total on this payment. Stripe forgets
+   * an idempotency key after 24 hours, so a cancellation retried the next day would otherwise
+   * refund a partial amount twice. Refunds already made (ours, or the owner's in the Stripe
+   * dashboard) count, and only the rest is sent.
+   */
   async refund(req: RefundRequest): Promise<void> {
+    const due = req.amount.amount - (await this.#refundedSoFar(req.reference));
+    if (due <= 0) return;
     await this.#call('POST', '/v1/refunds', {
-      body: form({ payment_intent: req.reference, amount: req.amount.amount }),
-      idempotencyKey: req.idempotency_key,
+      body: form({ payment_intent: req.reference, amount: due }),
+      // The same key for the same request, as before. A different amount is a different request.
+      idempotencyKey:
+        due === req.amount.amount ? req.idempotency_key : `${req.idempotency_key}:${due}`,
     });
+  }
+
+  /** What Stripe has refunded, or is refunding, on a payment. Failed and cancelled refunds don't count. */
+  async #refundedSoFar(paymentIntent: string): Promise<number> {
+    const list = await this.#call('GET', '/v1/refunds', {
+      query: new URLSearchParams({ payment_intent: paymentIntent, limit: '100' }).toString(),
+    });
+    if (!Array.isArray(list.data)) {
+      throw new StripeError(502, 'Stripe returned a refund list we could not read.');
+    }
+    // Never guess when the list is cut off: refunding blind could pay the customer twice.
+    if (list.has_more === true) {
+      throw new StripeError(502, 'This payment has too many refunds to check; refund it by hand.');
+    }
+    return (list.data as Array<{ amount?: unknown; status?: unknown }>)
+      .filter((r) => r.status !== 'failed' && r.status !== 'canceled')
+      .reduce((sum, r) => sum + (typeof r.amount === 'number' ? r.amount : 0), 0);
   }
 
   async #call(

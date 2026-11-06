@@ -71,6 +71,51 @@ export interface BookingEvent {
   actor?: Actor;
   /** The booking as the operation left it (successful single-booking operations only). */
   booking?: Booking;
+  /**
+   * What the caller said the user approved, set on a confirm, reschedule or cancel that went
+   * through on `user_confirmed: true` (not on replays, which change nothing).
+   */
+  consent?: ConsentEvidence;
+}
+
+/**
+ * Evidence that the user agreed, kept in the activity log: the terms the booking carried at the
+ * moment the caller sent `user_confirmed: true`. It names no customer, so it can stay in logs.
+ * The caller (agent) and time are on the event itself.
+ */
+export interface ConsentEvidence {
+  user_confirmed: true;
+  /** The slot as held: time, party size, price, deposit and cancellation terms. */
+  terms: {
+    start: string;
+    end: string;
+    party_size: number;
+    offering: string;
+    price: Money | null;
+    deposit: DepositTerms | null;
+    cancellation_policy: Slot['cancellation_policy'];
+  };
+  /** Cancel only: what cancelling cost at that moment. */
+  fee?: Money | null;
+  refund?: Money | null;
+}
+
+function consentFor(booking: Booking, outcome?: { fee: Money | null; refund: Money | null }) {
+  const s = booking.slot;
+  const evidence: ConsentEvidence = {
+    user_confirmed: true,
+    terms: {
+      start: s.start,
+      end: s.end,
+      party_size: s.party_size.total,
+      offering: s.offering.name,
+      price: s.price,
+      deposit: s.deposit,
+      cancellation_policy: s.cancellation_policy,
+    },
+    ...(outcome ? { fee: outcome.fee, refund: outcome.refund } : {}),
+  };
+  return evidence;
 }
 
 export interface ListBookingsQuery {
@@ -380,6 +425,8 @@ export class BookingService {
             );
           }
 
+          meta.consent = consentFor(booking);
+
           const customer = req.customer ?? booking.customer;
           if (!customer) {
             throw new BookingError(
@@ -518,6 +565,8 @@ export class BookingService {
             { booking_id: booking.booking_id, slot_id: req.slot_id },
             ctx,
           );
+          // The user approved the new time and terms, so that is what the evidence shows.
+          meta.consent = consentFor(moved);
           return this.#observe(moved);
         });
       },
@@ -581,6 +630,7 @@ export class BookingService {
               },
             );
           }
+          meta.consent = consentFor(booking, { fee: outcome.fee, refund: outcome.refund });
           const cancelled = await this.provider.cancelBooking(
             {
               booking_id: booking.booking_id,
@@ -810,6 +860,7 @@ export class BookingService {
         at: this.clock.now().toISOString(),
         ...(booking ? { booking_id: booking.booking_id, status: booking.status, booking } : hint),
         ...(meta.replayed ? { replayed: true } : {}),
+        ...(meta.consent ? { consent: meta.consent } : {}),
         ...((result as Partial<CancelResult> | undefined)?.already_inactive
           ? { unchanged: true }
           : {}),
@@ -835,6 +886,7 @@ export class BookingService {
 
 interface CallMeta {
   replayed: boolean;
+  consent?: ConsentEvidence;
 }
 
 class MemoryExpiryClaims implements ExpiryClaims {
