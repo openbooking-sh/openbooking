@@ -1,5 +1,27 @@
 # @openbooking-sh/booking-page
 
+## 0.13.0
+
+### Minor Changes
+
+- 45b5786: Age rules on hosted. Sign-up says you must be 18 or older to create an account, and every hosted booking page shows a notice above the confirm button for bookings made on behalf of a child (a parent or guardian books, with the child's name in the notes). For your own deployment the notice is an option and off by default: `childNotice` on the booking page (and `bookingPage.childNotice` in the server).
+- 3d98490: The booking page API now describes itself: an OpenAPI 3.1 document at `<page>/book/api/openapi.json`, generated from zod schemas that every real response is tested against. The schemas are exported as `api` and the generator as `buildOpenApi`. Call the API with the new `@openbooking-sh/client`.
+- 5b1fb9a: Add a confirm page (`/confirm/:id`) for a booking an assistant is holding: it shows the time, price and cancellation terms and confirms only when the person presses the button. `BookingPage.confirmUrl(booking)` returns its link, and `GET /api/holds/:id` returns what the page shows (a confirmed booking reveals no code or name).
+- bb06329: Payment terms where the customer pays, and a clearer way out. The booking page's pay button names the deposit amount, and the lines under it say what happens to the deposit if they cancel. The confirmation email for a paid booking says what was paid and what happens to the deposit on cancellation. The manage page says what cancelling costs right now, and one press cancels while it is free (it still asks once more when a fee applies). The booking API's booking detail gains `cancel_now` (free, fee, refund) for confirmed bookings, and the client types follow.
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+
+### Patch Changes
+
+- dd8e9ca: API keys for hosted businesses, so a site with no backend can call its own booking API. Owners make keys in Studio → Settings → API keys (a name, and `read` or `book`); the secret is shown once and only a hash is stored. Send it as `x-openbooking-key` or `Authorization: Bearer obk_…` to `/b/{id}/book/api/*` or `/b/{id}/mcp`. Each key works for one business, is rate-limited on its own (300 a minute), shows when it was last used and can be revoked. Calls without a key stay public as before: a key identifies and limits a caller, it does not lock the API. New `apiKeys` option on `createHostedApp` (memory by default), `PostgresApiKeyStore` and `postgresStores(db).apiKeys` with migration 6 (`ob_api_keys`), and `api_keys` on Studio's `SettingsView`. The booking page's CORS preflight now allows the `x-openbooking-key` header.
+- c8d546c: The booking, manage and confirm pages now wrap their content in a `<main>` landmark, so screen readers can jump to it.
+- Updated dependencies [6ae5bb8]
+- Updated dependencies [e6a751c]
+- Updated dependencies [8e2e69d]
+- Updated dependencies [3825c49]
+- Updated dependencies [5dc9991]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

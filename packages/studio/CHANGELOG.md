@@ -1,5 +1,26 @@
 # @openbooking-sh/studio
 
+## 0.13.0
+
+### Minor Changes
+
+- e6a751c: Add the `booking.expired` webhook event, and an `expire` engine event, for holds that lapse without being confirmed or cancelled. Nothing runs when a hold expires, so the event is sent when a read first notices it or when `service.sweepExpired()` runs (call it from a cron or timer to report lapses nobody reads). Each expiry is announced at most once across instances through a new `expiryClaims` option (hosted reuses its email dedupe log; pass `PostgresNotificationLog` when running several instances on one database). The event carries no actor, and Studio shows it as a system entry.
+- 8e2e69d: Consent evidence in the agent log. A confirm, move or cancellation that went through on `user_confirmed: true` now emits a `consent` field on its `BookingEvent` (`ConsentEvidence`): the service, time, party size, price, deposit and cancellation terms the booking carried at that moment, and for a cancellation the fee and refund. Studio keeps it on the activity entry (`ActivityEntry.consent`, no database change: entries are JSON) and shows it under the action in the Agent log and in a booking's history. It holds no customer name, email or phone. Replays and releasing a hold carry none.
+- dd8e9ca: API keys for hosted businesses, so a site with no backend can call its own booking API. Owners make keys in Studio → Settings → API keys (a name, and `read` or `book`); the secret is shown once and only a hash is stored. Send it as `x-openbooking-key` or `Authorization: Bearer obk_…` to `/b/{id}/book/api/*` or `/b/{id}/mcp`. Each key works for one business, is rate-limited on its own (300 a minute), shows when it was last used and can be revoked. Calls without a key stay public as before: a key identifies and limits a caller, it does not lock the API. New `apiKeys` option on `createHostedApp` (memory by default), `PostgresApiKeyStore` and `postgresStores(db).apiKeys` with migration 6 (`ob_api_keys`), and `api_keys` on Studio's `SettingsView`. The booking page's CORS preflight now allows the `x-openbooking-key` header.
+- 92f6c50: Link the privacy policy and terms where people give or see their data. Hosted sign-up asks owners to accept the terms and privacy policy, and hosted booking pages, Studio and every email link to them. For your own deployment, the links are options and off by default (a self-hosted business owns its own policy): `privacyUrl` on the booking page (and `bookingPage.privacyUrl` in the server), `legal: { privacyUrl, termsUrl }` on Studio, and `privacyUrl` in the notification config.
+- db42a3d: Add the "Let assistants and platforms book me directly (USP)" setting (`assistants.usp`: off, confirm, instant), and show bookings made through USP as their own channel with the calling platform's name.
+
+### Patch Changes
+
+- aaba0ca: A refund now checks what Stripe has already refunded on the payment and sends only the difference, so a partial refund retried after Stripe's 24 hour idempotency window no longer pays the customer twice (and refunds made by hand in the Stripe dashboard count). If the refunds already made cannot be read, nothing is refunded and the call fails instead of guessing; the Stripe key must be able to read Refunds. Studio's booking drawer gains a Payment line: waiting, not paid, paid online or in person, and the refund and amount kept after a cancellation.
+- Updated dependencies [6ae5bb8]
+- Updated dependencies [e6a751c]
+- Updated dependencies [8e2e69d]
+- Updated dependencies [3825c49]
+- Updated dependencies [5dc9991]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/core@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

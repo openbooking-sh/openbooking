@@ -1,5 +1,43 @@
 # @openbooking-sh/postgres
 
+## 0.13.0
+
+### Minor Changes
+
+- dd8e9ca: API keys for hosted businesses, so a site with no backend can call its own booking API. Owners make keys in Studio → Settings → API keys (a name, and `read` or `book`); the secret is shown once and only a hash is stored. Send it as `x-openbooking-key` or `Authorization: Bearer obk_…` to `/b/{id}/book/api/*` or `/b/{id}/mcp`. Each key works for one business, is rate-limited on its own (300 a minute), shows when it was last used and can be revoked. Calls without a key stay public as before: a key identifies and limits a caller, it does not lock the API. New `apiKeys` option on `createHostedApp` (memory by default), `PostgresApiKeyStore` and `postgresStores(db).apiKeys` with migration 6 (`ob_api_keys`), and `api_keys` on Studio's `SettingsView`. The booking page's CORS preflight now allows the `x-openbooking-key` header.
+- 5dc9991: The same idempotency key sent to two server instances at the same instant now runs once. Before, both instances ran, so one customer could end up with two holds (on two staff members; no slot was ever given out twice). `IdempotencyStore` gets an optional `claim()` and `release()`: the first instance to claim the key runs, the other waits for its result and replays it, and a claim whose instance died expires after 60 seconds. `PostgresIdempotencyStore` implements them with one `insert … on conflict` statement (no migration), and hosted passes them through its per-business key prefix. A custom store without `claim()` keeps the old per-process behaviour.
+- edba76d: Customers can unsubscribe from a business's emails. Customer emails carry an unsubscribe link and the RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers (`EmailMessage.headers`, passed on by `ResendMailer`). Hosted serves `/unsubscribe`: a GET shows a button, the POST records a hash of the address for that business, and nothing more is sent to it. New `SuppressionList` (`MemorySuppressionList`, `PostgresSuppressionList`, migration 5), `isSuppressed` and `unsubscribeUrl` options in `attachNotifications`, and a `suppressions` option on `createHostedApp` (`stores.suppressions` with Postgres).
+- 65bea74: Add `PostgresUspState` (also `postgresStores(db).usp`): durable state for the USP adapter, so owners, booking credentials (by hash), replay memory and request keys are shared by every server instance. Migration 4 adds five `ob_usp_*` tables, with row level security like the rest; `migrate(db)` applies it. No customer details are stored in them.
+
+### Patch Changes
+
+- a5cd2c1: `migrate()` recognises an up-to-date database with a single query instead of a transaction, an advisory lock and three more statements, which trims serverless cold starts by four database round trips. Databases with pending migrations (including fresh ones) still take the lock, so instances booting at the same time stay serialised.
+- Updated dependencies [6ae5bb8]
+- Updated dependencies [45b5786]
+- Updated dependencies [e6a751c]
+- Updated dependencies [8e2e69d]
+- Updated dependencies [3825c49]
+- Updated dependencies [8e2e69d]
+- Updated dependencies [dd8e9ca]
+- Updated dependencies [bb06329]
+- Updated dependencies [aaba0ca]
+- Updated dependencies [92f6c50]
+- Updated dependencies [5dc9991]
+- Updated dependencies [3faa27f]
+- Updated dependencies [edba76d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [db42a3d]
+- Updated dependencies [89789c9]
+- Updated dependencies [787f01c]
+- Updated dependencies [db42a3d]
+  - @openbooking-sh/hosted@0.13.0
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/studio@0.13.0
+  - @openbooking-sh/provider-memory@0.13.0
+  - @openbooking-sh/notifications@0.13.0
+  - @openbooking-sh/google-calendar@0.13.0
+  - @openbooking-sh/provider-calcom@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes
