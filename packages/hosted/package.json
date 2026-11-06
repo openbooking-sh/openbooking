@@ -62,7 +62,10 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "jose": "^6.2.12"
+    "@types/jsdom": "^30.0.0",
+    "axe-core": "4.11.4",
+    "jose": "^6.2.12",
+    "jsdom": "^29.1.1"
   },
   "publishConfig": {
     "access": "public"

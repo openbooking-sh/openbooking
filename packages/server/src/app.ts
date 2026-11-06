@@ -16,6 +16,7 @@ import {
   type ConsentMode,
   type ProfileFetcher,
   type UspBusinessAuth,
+  type UspOptions,
   type UspStateStore,
 } from '@openbooking-sh/adapter-usp';
 import {
@@ -83,6 +84,11 @@ export interface OpenBookingServerOptions {
          */
         platformProfiles?: ProfileFetcher | false;
         /**
+         * How platforms may prove who they are beyond the default (an Ed25519 key proof): ES256
+         * proof keys, a server-issued nonce, and RFC 9421 signed requests. See `createUsp`.
+         */
+        platformAuth?: UspOptions['platformAuth'];
+        /**
          * Also serve USP's MCP binding (the `usp_*` tools) at `<path>/mcp`. Off by default: it is
          * a second public endpoint, though it shares the REST binding's rules and state.
          */
@@ -145,7 +151,7 @@ export interface OpenBookingApp {
  *
  *   GET  /                              index (links to everything below); the booking page for browsers
  *   *    /book/...                      public booking page, its JSON API and manage links
- *   ALL  /mcp                           MCP Streamable HTTP (6 booking tools)
+ *   ALL  /mcp                           MCP Streamable HTTP (7 booking tools)
  *   *    /ucp/...                       UCP lodging booking-session REST (+ availability extension)
  *   GET  /.well-known/ucp               UCP business profile
  *   *    /usp/...                       USP catalog, availability, holds, bookings (when `usp` is set)
@@ -301,6 +307,7 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
       ...(options.usp.businessAuth ? { businessAuth: options.usp.businessAuth } : {}),
       ...(options.usp.businessId ? { businessId: options.usp.businessId } : {}),
       ...(options.usp.mcp ? { mcp: true } : {}),
+      ...(options.usp.platformAuth ? { platformAuth: options.usp.platformAuth } : {}),
       ...(options.usp.platformProfiles !== undefined
         ? { platformProfiles: options.usp.platformProfiles }
         : {}),

@@ -29,11 +29,13 @@ export async function platform(
   profile = 'https://agent.example/profile.json',
   /** The public origin and path prefix platforms sign URLs for. */
   publicBase = ORIGIN,
+  /** The proof algorithm: Ed25519 (the spec floor) or P-256. */
+  alg: 'EdDSA' | 'ES256' = 'EdDSA',
 ) {
-  const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
-    crv: 'Ed25519',
-    extractable: true,
-  });
+  const { publicKey, privateKey } = await generateKeyPair(
+    alg,
+    alg === 'EdDSA' ? { crv: 'Ed25519', extractable: true } : { extractable: true },
+  );
   const jwk = await exportJWK(publicKey);
   const jkt = await calculateJwkThumbprint(jwk);
   let n = 0;
@@ -51,6 +53,7 @@ export async function platform(
       htm?: string;
       htu?: string;
       ath?: string;
+      nonce?: string;
       key?: Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
       jwk?: typeof jwk;
     } = {},
@@ -63,8 +66,9 @@ export async function platform(
       ...(extra.credential !== undefined || extra.ath
         ? { ath: extra.ath ?? b64(extra.credential!) }
         : {}),
+      ...(extra.nonce !== undefined ? { nonce: extra.nonce } : {}),
     })
-      .setProtectedHeader({ alg: 'EdDSA', typ: 'dpop+jwt', jwk: extra.jwk ?? jwk })
+      .setProtectedHeader({ alg, typ: 'dpop+jwt', jwk: extra.jwk ?? jwk })
       .sign(extra.key ?? privateKey);
 
   const call = async (

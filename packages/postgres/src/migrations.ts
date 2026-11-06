@@ -176,6 +176,27 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       alter table ob_email_suppressions enable row level security;
     `,
   },
+  {
+    version: 6,
+    name: 'api-keys',
+    // Keys a business's own website uses to call its booking API. Only a hash of the secret is
+    // stored; the key is shown once when it is made. Revoked keys stay, so "last used" is kept.
+    sql: `
+      create table ob_api_keys (
+        id           text primary key,
+        business_id  text not null,
+        name         text not null,
+        scope        text not null,
+        secret_hash  text not null,
+        created_at   timestamptz not null,
+        last_used_at timestamptz,
+        revoked_at   timestamptz
+      );
+      create index ob_api_keys_business on ob_api_keys (business_id, created_at desc);
+
+      alter table ob_api_keys enable row level security;
+    `,
+  },
 ];
 
 /**
