@@ -62,6 +62,7 @@ import {
   type SettingsView,
   type Studio,
 } from '@openbooking-sh/studio';
+import type { ApiKeyStore } from './api-keys';
 import type { Business, BusinessStore } from './business';
 import { providerConfig } from './catalog';
 import { CHILD_BOOKING_NOTICE, PRIVACY_URL, TERMS_URL } from './legal';
@@ -79,6 +80,8 @@ export interface TenantDeps {
   notificationLog: NotificationLog;
   /** Customers who unsubscribed, per business (by hash). */
   suppressions: SuppressionList;
+  /** API keys per business; closing the account removes them. */
+  apiKeys: ApiKeyStore;
   /** The signed one-click unsubscribe link for a customer address of a business. */
   unsubscribeUrl: (businessId: string, email: string) => string;
   google?: GoogleCredentials & { fetch?: typeof fetch };
@@ -233,6 +236,7 @@ export class Tenant {
     await d.activityFor(this.id).clear?.();
     await d.idempotency.deletePrefix?.(`${this.id}:`);
     await d.suppressions.deleteScope(this.id);
+    await d.apiKeys.deleteScope(this.id);
     await d.bookings.deleteVenue?.(this.id);
     await d.businesses.delete?.(this.id);
   }
@@ -341,6 +345,7 @@ export class Tenant {
         booking_page: this.pageUrl,
         snippet: `<script src="${this.pageUrl}/embed.js" async></script>`,
       },
+      api_keys: { path: '/api-keys' },
       account: {
         email: b.owner.email,
         ...(this.#deps.requireVerifiedEmail

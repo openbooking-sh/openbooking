@@ -3,7 +3,13 @@
  * and rate limits.
  */
 import type { CalendarLink, CalendarLinkStore } from '@openbooking-sh/google-calendar';
-import type { Business, BusinessStore, RateLimiter } from '@openbooking-sh/hosted';
+import type {
+  ApiKeyStore,
+  Business,
+  BusinessStore,
+  RateLimiter,
+  StoredApiKey,
+} from '@openbooking-sh/hosted';
 import type { NotificationLog, SuppressionList } from '@openbooking-sh/notifications';
 import { json, type Db, type Queryable } from './db';
 
@@ -180,6 +186,82 @@ export class PostgresSuppressionList implements SuppressionList {
 
   async deleteScope(scope: string): Promise<void> {
     await this.#db.query('delete from ob_email_suppressions where business_id = $1', [scope]);
+  }
+}
+
+interface ApiKeyRow {
+  id: string;
+  business_id: string;
+  name: string;
+  scope: string;
+  secret_hash: string;
+  created_at: Date | string;
+  last_used_at: Date | string | null;
+  revoked_at: Date | string | null;
+}
+
+const iso = (v: Date | string) => new Date(v).toISOString();
+
+const apiKeyFromRow = (r: ApiKeyRow): StoredApiKey => ({
+  id: r.id,
+  business_id: r.business_id,
+  name: r.name,
+  scope: r.scope === 'book' ? 'book' : 'read',
+  secret_hash: r.secret_hash,
+  created_at: iso(r.created_at),
+  ...(r.last_used_at ? { last_used_at: iso(r.last_used_at) } : {}),
+  ...(r.revoked_at ? { revoked_at: iso(r.revoked_at) } : {}),
+});
+
+/** A business's API keys, as hashes. Shared by every instance, so a revoked key stops everywhere. */
+export class PostgresApiKeyStore implements ApiKeyStore {
+  readonly #db: Queryable;
+
+  constructor(db: Queryable) {
+    this.#db = db;
+  }
+
+  async create(key: StoredApiKey): Promise<void> {
+    await this.#db.query(
+      `insert into ob_api_keys (id, business_id, name, scope, secret_hash, created_at)
+       values ($1, $2, $3, $4, $5, $6::timestamptz)`,
+      [key.id, key.business_id, key.name, key.scope, key.secret_hash, key.created_at],
+    );
+  }
+
+  async get(id: string): Promise<StoredApiKey | undefined> {
+    const { rows } = await this.#db.query<ApiKeyRow>('select * from ob_api_keys where id = $1', [
+      id,
+    ]);
+    return rows[0] && apiKeyFromRow(rows[0]);
+  }
+
+  async list(businessId: string): Promise<StoredApiKey[]> {
+    const { rows } = await this.#db.query<ApiKeyRow>(
+      'select * from ob_api_keys where business_id = $1 order by created_at desc, id',
+      [businessId],
+    );
+    return rows.map(apiKeyFromRow);
+  }
+
+  async revoke(businessId: string, id: string, at: string): Promise<boolean> {
+    const { rows } = await this.#db.query(
+      `update ob_api_keys set revoked_at = $3::timestamptz
+       where id = $2 and business_id = $1 and revoked_at is null returning id`,
+      [businessId, id, at],
+    );
+    return rows.length > 0;
+  }
+
+  async touch(id: string, at: string): Promise<void> {
+    await this.#db.query('update ob_api_keys set last_used_at = $2::timestamptz where id = $1', [
+      id,
+      at,
+    ]);
+  }
+
+  async deleteScope(businessId: string): Promise<void> {
+    await this.#db.query('delete from ob_api_keys where business_id = $1', [businessId]);
   }
 }
 

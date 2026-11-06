@@ -24,6 +24,14 @@ export {
   findBusinesses,
   type DirectoryOptions,
 } from './directory';
+export {
+  MAX_ACTIVE_API_KEYS,
+  MemoryApiKeyStore,
+  type ApiKeyScope,
+  type ApiKeyStore,
+  type ApiKeyView,
+  type StoredApiKey,
+} from './api-keys';
 export { createSigner, hashPassword, verifyPassword, type Signer } from './auth';
 export { Tenant, TenantProvider, type TenantDeps } from './tenant';
 export { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';

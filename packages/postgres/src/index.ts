@@ -6,6 +6,7 @@ export { PostgresActivityLog } from './activity';
 export { PostgresCalcomStore } from './calcom';
 export { PostgresUspState, type PostgresUspStateOptions, type UspCredentialRecord } from './usp';
 export {
+  PostgresApiKeyStore,
   PostgresBusinessStore,
   PostgresCalendarLinkStore,
   PostgresNotificationLog,
@@ -18,6 +19,7 @@ import { PostgresActivityLog } from './activity';
 import { PostgresBookingStore } from './bookings';
 import { PostgresCalcomStore } from './calcom';
 import {
+  PostgresApiKeyStore,
   PostgresBusinessStore,
   PostgresCalendarLinkStore,
   PostgresNotificationLog,
@@ -44,6 +46,7 @@ export interface PostgresStores {
   calendarLinks: PostgresCalendarLinkStore;
   notificationLog: PostgresNotificationLog;
   suppressions: PostgresSuppressionList;
+  apiKeys: PostgresApiKeyStore;
   rateLimiter: PostgresRateLimiter;
 }
 
@@ -63,6 +66,7 @@ export function postgresStores(
     calendarLinks: new PostgresCalendarLinkStore(db),
     notificationLog: new PostgresNotificationLog(db),
     suppressions: new PostgresSuppressionList(db),
+    apiKeys: new PostgresApiKeyStore(db),
     rateLimiter: new PostgresRateLimiter(db),
   };
 }
