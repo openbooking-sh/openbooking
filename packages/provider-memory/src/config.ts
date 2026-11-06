@@ -36,6 +36,56 @@ export interface OfferingConfig extends Offering {
   last_start?: string;
   cancellation: CancellationRule;
   deposit: DepositRule | null;
+  /**
+   * Table time that depends on the party, e.g. `[{ min_party_size: 1, duration_minutes: 90 },
+   * { min_party_size: 6, duration_minutes: 150 }]`. The entry with the largest `min_party_size`
+   * that is at most the party wins; a party smaller than every entry uses `duration_minutes`,
+   * which stays the default (and what listings show).
+   */
+  duration_by_party?: DurationByParty[];
+}
+
+export interface DurationByParty {
+  min_party_size: number;
+  duration_minutes: number;
+}
+
+/** How long this offering takes for this party. The one place that decides it. */
+export function durationFor(o: OfferingConfig, party: number): number {
+  let best: DurationByParty | undefined;
+  for (const d of o.duration_by_party ?? []) {
+    if (d.min_party_size <= party && (!best || d.min_party_size > best.min_party_size)) best = d;
+  }
+  return best ? best.duration_minutes : o.duration_minutes;
+}
+
+/**
+ * A shift (lunch, dinner). When a venue lists service periods, bookings can only start inside one
+ * of them (on its weekdays), and still within opening hours.
+ */
+export interface ServicePeriod {
+  name: string;
+  /** Restrict to these weekdays (0 = Sunday). Default: every day. */
+  weekdays?: number[];
+  /** Starts are allowed from `open` up to (not including) `close`, venue-local `HH:mm`. */
+  open: string;
+  close: string;
+  /** Fixed start times (`HH:mm`) instead of every `slot_interval_minutes`. */
+  seatings?: string[];
+  /** Overrides the venue's pacing cap for starts in this period. */
+  max_guests_per_interval?: number;
+  /**
+   * Most guests bookable online across the whole period (counted by start time). The rest of the
+   * room is held back for walk-ins and phone bookings.
+   */
+  max_online_guests?: number;
+}
+
+/** Cap on guests starting together, so the kitchen is not hit by every table at once. */
+export interface Pacing {
+  max_guests_per_interval: number;
+  /** Length of the window in minutes, aligned to midnight. Default 15. */
+  interval_minutes?: number;
 }
 
 /**
@@ -66,6 +116,10 @@ export interface VenueConfig {
   closed_dates?: string[];
   /** Working hours and time off per resource id (e.g. each stylist). */
   schedules?: Record<string, ResourceSchedule>;
+  /** Shifts with optional fixed seatings, pacing and a walk-in reserve. Default: none. */
+  service_periods?: ServicePeriod[];
+  /** Default cap on guests per start interval (held + confirmed bookings). Default: none. */
+  pacing?: Pacing;
   slot_interval_minutes: number;
   /** Cleaning/turnover time between bookings on the same resource. */
   buffer_minutes: number;

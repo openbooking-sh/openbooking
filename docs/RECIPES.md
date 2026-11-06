@@ -291,6 +291,47 @@ Stripe involved. For a connected account (Stripe Connect) pass `stripeAccount`.
 Not built yet: per-business Stripe accounts and the payment page in the hosted booking page and
 Studio. For now `payments` is for self-hosted setups.
 
+## 8. Restaurants: table time, shifts and pacing
+
+All of this is optional config on the provider; a config without it behaves exactly as before.
+
+```ts
+const bistro: VenueConfig = {
+  // …venue, resources, opening_hours as usual
+  offerings: [
+    {
+      // …
+      duration_minutes: 90, // the default, also what listings show
+      // The entry with the largest min_party_size that fits wins: 2 guests 90 min, 6 guests 2.5 h.
+      duration_by_party: [
+        { min_party_size: 1, duration_minutes: 90 },
+        { min_party_size: 6, duration_minutes: 150 },
+      ],
+    },
+  ],
+  // Lunch and dinner. Starts are only offered inside a period (and opening hours).
+  service_periods: [
+    { name: 'Lunch', open: '11:30', close: '14:00', seatings: ['12:00', '13:15'] },
+    {
+      name: 'Dinner',
+      open: '17:00',
+      close: '22:00',
+      max_online_guests: 60, // the rest is held for walk-ins and phone bookings
+      max_guests_per_interval: 12, // overrides the venue pacing for this period
+    },
+  ],
+  // At most 16 guests may arrive in the same 15 minutes, across all tables.
+  pacing: { max_guests_per_interval: 16, interval_minutes: 15 },
+};
+```
+
+- The table is blocked for the party's table time plus `buffer_minutes`, in search, holds and rescheduling.
+- `seatings` are fixed start times (`HH:mm`) instead of every `slot_interval_minutes`. A period without them uses the grid. If a venue lists service periods, starts outside them are not offered.
+- Pacing and `max_online_guests` count guests of held and confirmed bookings by their start time. Expired holds stop counting. Search never offers a start that a hold would then refuse, and the limit is checked atomically with the reservation (also across server instances and with the Postgres store), so a race cannot exceed it.
+- When a limit is hit the agent gets `slot_unavailable` with a `suggested_next_action`: offer an earlier or later time, or (for the walk-in reserve) another date or the venue's phone number.
+- `max_online_guests` is a number of guests per period. Not built: a share (percent), and a limit per table size.
+- Hosted businesses store the simpler settings shape and do not use these fields yet.
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:
