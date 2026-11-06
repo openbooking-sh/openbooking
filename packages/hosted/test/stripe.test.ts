@@ -19,7 +19,11 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-/** A Stripe that remembers sessions; `pay` is the customer paying. */
+/**
+ * A Stripe that remembers sessions; `pay` is the customer paying. It also keeps the refunds made
+ * per payment and, like Stripe, replays the first answer for a repeated idempotency key until
+ * `dayPasses` (Stripe forgets keys after 24 hours).
+ */
 function fakeStripe(options: { webhooks?: boolean } = {}) {
   const calls: Array<{
     method: string;
@@ -29,6 +33,8 @@ function fakeStripe(options: { webhooks?: boolean } = {}) {
     idempotency?: string;
   }> = [];
   const sessions = new Map<string, Record<string, unknown>>();
+  const refunds: Array<{ id: string; payment_intent: string; amount: number; status: string }> = [];
+  const keys = new Map<string, unknown>();
   const fetch = (async (url: string, init: RequestInit) => {
     const u = new URL(url);
     const body = new URLSearchParams(String(init.body ?? ''));
@@ -64,7 +70,22 @@ function fakeStripe(options: { webhooks?: boolean } = {}) {
       const found = sessions.get(u.pathname.split('/').pop()!);
       return found ? json(found) : json({ error: { message: 'No such session' } }, 404);
     }
-    if (u.pathname === '/v1/refunds') return json({ id: 're_1' });
+    if (u.pathname === '/v1/refunds' && init.method === 'GET') {
+      const pi = u.searchParams.get('payment_intent');
+      return json({ data: refunds.filter((r) => r.payment_intent === pi), has_more: false });
+    }
+    if (u.pathname === '/v1/refunds') {
+      if (idempotency && keys.has(idempotency)) return json(keys.get(idempotency));
+      const refund = {
+        id: `re_${refunds.length + 1}`,
+        payment_intent: String(body.get('payment_intent')),
+        amount: Number(body.get('amount')),
+        status: 'succeeded',
+      };
+      refunds.push(refund);
+      if (idempotency) keys.set(idempotency, refund);
+      return json(refund);
+    }
     if (u.pathname === '/v1/webhook_endpoints' && init.method === 'POST') {
       return options.webhooks === false
         ? json({ error: { message: 'This key cannot write webhook endpoints.' } }, 403)
@@ -77,6 +98,8 @@ function fakeStripe(options: { webhooks?: boolean } = {}) {
     fetch,
     calls,
     sessions,
+    refunds,
+    dayPasses: () => keys.clear(),
     pay: (id: string) => (sessions.get(id)!.payment_status = 'paid'),
   };
 }
@@ -236,7 +259,7 @@ describe('deposits on hosted', () => {
       },
     });
     expect(cancelled.status, cancelled.text).toBe(200);
-    const refund = stripe.calls.find((c) => c.url === '/v1/refunds')!;
+    const refund = stripe.calls.find((c) => c.url === '/v1/refunds' && c.method === 'POST')!;
     expect(Object.fromEntries(refund.body)).toEqual({
       payment_intent: `pi_${payment_token}`,
       amount: '72500',
@@ -314,13 +337,12 @@ describe('Stripe webhooks', () => {
     clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
     const first = await webhook(paidEvent(session, held.booking_id));
     expect(first).toMatchObject({ status: 200, json: { result: 'refunded' } });
-    // Stripe delivers events more than once: the same refund key, so no second refund.
+    // Stripe delivers events more than once: the customer is still refunded only once.
     await webhook(paidEvent(session, held.booking_id));
-    const refunds = stripe.calls.filter((c) => c.url === '/v1/refunds');
-    expect(refunds.length).toBeGreaterThan(0);
-    expect(new Set(refunds.map((r) => r.idempotency))).toEqual(
-      new Set([`refund:${held.booking_id}`]),
-    );
+    const refunds = stripe.calls.filter((c) => c.url === '/v1/refunds' && c.method === 'POST');
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]!.idempotency).toBe(`refund:${held.booking_id}`);
+    expect(stripe.refunds).toHaveLength(1);
     expect(Object.fromEntries(refunds[0]!.body)).toEqual({
       payment_intent: `pi_${session}`,
       amount: '72500',
@@ -369,6 +391,151 @@ describe('Stripe webhooks', () => {
     const noBooking = { ...event, data: { object: { id: 'cs_1', payment_status: 'paid' } } };
     expect((await webhook(noBooking)).json).toMatchObject({ ignored: true });
     expect((await webhook(event)).json).toMatchObject({ ignored: true });
+  });
+});
+
+/** A customer who gets as far as the payment page: a hold, and the Checkout Session for it. */
+async function atCheckout(req: Req, percent = 50) {
+  const token = await ownerWithDeposit(req, percent);
+  const held = await hold(req);
+  const confirm = (extra: Record<string, unknown> = {}) =>
+    req(`${page}/api/confirm`, {
+      body: {
+        booking_id: held.booking_id,
+        idempotency_key: 'confirm-c1',
+        customer: ADA,
+        user_confirmed: true,
+        ...extra,
+      },
+    });
+  const session = (await confirm()).json.error.details.payment_token as string;
+  return { token, held, session, confirm };
+}
+
+const postedRefunds = (stripe: ReturnType<typeof setup>['stripe']) =>
+  stripe.calls.filter((c) => c.url === '/v1/refunds' && c.method === 'POST');
+
+describe('payments that go wrong', () => {
+  it('lets go of a checkout nobody paid: the hold expires, the slot is free again, nothing is refunded', async () => {
+    const { req, stripe, clock } = setup();
+    const { held, session, confirm } = await atCheckout(req);
+    const slotOf = async () =>
+      (await req(`${page}/api/availability?date=${DAY}&service=color-cut`)).json.slots[0]
+        .slot_id as string;
+    const before = (await req(`${page}/api/holds/${held.booking_id}`)).json.booking;
+
+    clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+    const after = (await req(`${page}/api/holds/${held.booking_id}`)).json.booking;
+    expect([before.status, after.status]).toEqual(['held', 'expired']);
+
+    // Someone else can book the slot the abandoned checkout was holding.
+    const again = await req(`${page}/api/hold`, {
+      body: { slot_id: await slotOf(), idempotency_key: 'hold-again' },
+    });
+    expect(again.status, again.text).toBe(200);
+    expect(again.json.booking.booking_id).not.toBe(held.booking_id);
+
+    // The old payment page was never paid, and cannot confirm the expired hold.
+    const late = await confirm({ payment_token: session });
+    expect(late.json.error.code).toBe('hold_expired');
+    expect(postedRefunds(stripe)).toEqual([]);
+  });
+
+  it('refunds a payment that arrives after the customer let go of the hold', async () => {
+    const { req, stripe, webhook } = setup();
+    const { held, session } = await atCheckout(req);
+    expect((await req(`${page}/api/holds/${held.booking_id}/release`, { body: {} })).json).toEqual({
+      released: true,
+    });
+    stripe.pay(session);
+    expect(await webhook(paidEvent(session, held.booking_id))).toMatchObject({
+      json: { result: 'refunded' },
+    });
+    expect(stripe.refunds).toEqual([
+      expect.objectContaining({ payment_intent: `pi_${session}`, amount: 72500 }),
+    ]);
+  });
+
+  it('refunds once when Stripe sends the same payment twice, in any order, even at the same moment', async () => {
+    const { req, stripe, clock, webhook } = setup();
+    const { held, session } = await atCheckout(req);
+    stripe.pay(session);
+    clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+
+    const event = (type: string) => ({ ...paidEvent(session, held.booking_id), type });
+    const results = await Promise.all([
+      webhook(event('checkout.session.async_payment_succeeded')),
+      webhook(event('checkout.session.completed')),
+      webhook(event('checkout.session.completed')),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(stripe.refunds).toHaveLength(1);
+    // A late retry from Stripe, a day on, finds the money already back.
+    stripe.dayPasses();
+    await webhook(event('checkout.session.completed'));
+    expect(stripe.refunds).toHaveLength(1);
+  });
+
+  it('ignores payments that did not happen: failed, expired, or not paid yet', async () => {
+    const { req, stripe, clock, webhook } = setup();
+    const { held, session } = await atCheckout(req);
+    clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+    const unpaid = (type: string) => ({
+      id: 'evt_x',
+      type,
+      data: {
+        object: {
+          id: session,
+          payment_status: 'unpaid',
+          metadata: { booking_id: held.booking_id },
+        },
+      },
+    });
+    for (const type of [
+      'checkout.session.async_payment_failed',
+      'checkout.session.expired',
+      'checkout.session.completed', // a delayed payment method: the money has not arrived yet
+    ]) {
+      expect(await webhook(unpaid(type))).toMatchObject({ status: 200, json: { ignored: true } });
+    }
+    expect(postedRefunds(stripe)).toEqual([]);
+  });
+
+  it('refunds a late cancellation only what the terms say, once, however often it is cancelled', async () => {
+    const { req, stripe, clock, webhook } = setup();
+    // 80% of 1450 NOK = 1160 NOK deposit; cancelling under 24 hours before costs 50% = 725 NOK.
+    const { token, held, session, confirm } = await atCheckout(req, 80);
+    stripe.pay(session);
+    const done = await confirm({ payment_token: session });
+    expect(done.json.booking.status).toBe('confirmed');
+    const start = new Date(done.json.booking.start).getTime();
+    clock.set(new Date(start - 2 * 3_600_000).toISOString());
+
+    // The owner cancels in Studio. Every click is a new request with a new key.
+    const cancel = () => req(`/studio/api/bookings/${held.booking_id}/cancel`, { body: {}, token });
+    const first = await cancel();
+    expect(first.status, first.text).toBe(200);
+    expect(first.json.booking.cancellation).toMatchObject({
+      fee: { amount: 72500 },
+      refund: { amount: 43500 },
+    });
+    expect(stripe.refunds.map((r) => r.amount)).toEqual([43500]);
+    // What the owner sees in Studio for this booking.
+    const detail = await req(`/studio/api/bookings/${held.booking_id}`, { token });
+    expect(detail.json.payment_summary).toContain(
+      'refund under the terms 435.00 NOK, 725.00 NOK kept',
+    );
+
+    await cancel();
+    // Stripe forgets idempotency keys after 24 hours: only the refunds already made can tell.
+    stripe.dayPasses();
+    clock.set(new Date(clock.now().getTime() + 25 * 3_600_000).toISOString());
+    expect((await cancel()).status).toBe(200);
+    // And Stripe re-sending the payment event for the cancelled booking changes nothing.
+    expect(await webhook(paidEvent(session, held.booking_id))).toMatchObject({
+      json: { result: 'settled' },
+    });
+    expect(stripe.refunds.map((r) => r.amount)).toEqual([43500]);
   });
 });
 

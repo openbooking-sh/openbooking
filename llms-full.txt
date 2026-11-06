@@ -330,7 +330,7 @@ safe:
 
 | Protocol                              | Status       | What you get                                                                                                                        |
 | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **MCP** (Model Context Protocol)      | ✅ Supported | 6 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
+| **MCP** (Model Context Protocol)      | ✅ Supported | 7 agent-friendly tools over Streamable HTTP (2025 and 2026-07-28 eras) and stdio                                                    |
 | **UCP** (Universal Commerce Protocol) | 🟡 Draft     | `/.well-known/ucp` profile plus `dev.ucp.lodging.booking` REST sessions, extended for time slots ([spec notes](docs/SPEC-NOTES.md)) |
 | **A2A** (Agent2Agent)                 | 🟡 Beta      | v1.0 Agent Card plus a JSON-RPC `SendMessage` endpoint (`/a2a`) for search, hold, confirm and cancel; no streaming or tasks         |
 
@@ -1326,7 +1326,7 @@ Apache-2.0
 | `@openbooking-sh/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
 | `@openbooking-sh/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
 | `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
-| `@openbooking-sh/adapter-mcp`     | Six MCP tools, Streamable HTTP handler, stdio                                                                       | core, `@modelcontextprotocol/server`                                    |
+| `@openbooking-sh/adapter-mcp`     | Seven MCP tools, Streamable HTTP handler, stdio                                                                     | core, `@modelcontextprotocol/server`                                    |
 | `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
 | `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                    | core                                                                    |
 | `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
@@ -1401,7 +1401,7 @@ The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mappin
 
 ## Agent-friendly design choices
 
-- **Few tools, flat inputs.** Six tools, and `party_size` is an integer. Each tool description says what it does and does **not** do, e.g. "hold does NOT confirm".
+- **Few tools, flat inputs.** Seven tools, and `party_size` is an integer. Each tool description says what it does and does **not** do, e.g. "hold does NOT confirm".
 - **Responses tell the agent what to do.** Every booking response includes `next_step`, and every error includes `suggested_next_action`. Holds carry both `expires_at` and `expires_in_seconds`.
 - **Policy terms up front.** Search results and holds carry the cancellation policy (human-readable `description` plus structured fields) and the deposit terms _before_ confirmation.
 - **Opaque slot ids.** A `slot_id` encodes everything needed to hold it, so the agent doesn't re-send dates and times and can't get them wrong.
@@ -1547,13 +1547,27 @@ only ever shows its last four characters.
 - **Agents** get `payment_required` with `payment_url` and `payment_token` (see
   [RECIPES](RECIPES.md)).
 - **Refunds** follow the cancellation rules and run automatically. If Stripe is down the booking is
-  still cancelled and the call answers `refund_failed`; cancelling again retries safely.
+  still cancelled and the call answers `refund_failed`; cancelling again retries safely. A late
+  cancellation refunds the deposit minus the fee (a partial refund). Before it refunds, OpenBooking
+  asks Stripe what has already been refunded on that payment (including refunds the owner made in
+  the Stripe dashboard) and sends only the difference, so a retry never pays twice, even after
+  Stripe has forgotten the idempotency key (it does after 24 hours). If it cannot read the refunds
+  already made, it refunds nothing and answers `refund_failed` rather than guess. This needs the
+  key to be able to read Refunds as well as write them.
 - **Customers who never come back.** Connecting the key also registers a webhook at
   `/b/{id}/stripe/webhook` (the key needs the Webhook Endpoints permission; Studio says when it
-  could not). The signature is checked, and a payment for a hold that has since expired is refunded
-  in full. While the hold is still live the webhook answers 503, so Stripe delivers it again later.
-  The refund uses the same idempotency key as every other refund of that booking, so duplicate
-  deliveries never refund twice.
+  could not). The signature is checked, and a payment for a hold that has since expired or been
+  released is refunded in full. While the hold is still live the webhook answers 503, so Stripe
+  delivers it again later. Duplicate or out-of-order deliveries never refund twice. Events for
+  payments that did not happen (failed, expired, or a delayed payment not yet received) are
+  acknowledged and ignored.
+- **A checkout nobody pays.** The customer pays nothing and the hold simply runs out, so the slot is
+  free again. The Stripe payment page itself stays open for up to 24 hours; a payment made on it
+  after the hold ran out is refunded as above.
+- **What the owner sees.** The booking drawer in Studio has a Payment line: waiting for payment,
+  not paid, paid online or in person, and for a cancelled booking the refund the terms gave and what
+  was kept. It says what is due, not that the money has arrived: check the payment in Stripe when
+  in doubt. A deposit taken in person is never refunded by Stripe, so the owner hands it back.
 - **Staff in Studio** record a deposit taken in person without Stripe.
 - **Disconnecting** Stripe stops new deposits. Deposits already paid can then no longer be refunded
   automatically.

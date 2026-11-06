@@ -532,6 +532,7 @@ export const STUDIO_HTML = `<!doctype html>
         ['Code', b.confirmation_code ? '<span class="mono">' + esc(b.confirmation_code) + '</span>' : '<span class="muted">-</span>'],
         ['Cancellation', esc(p.description)]
       ];
+      if (d.payment_summary) rows.splice(rows.length - 3, 0, ['Payment', esc(d.payment_summary)]);
       if (b.status === 'held' && b.expires_at) rows.splice(1, 0, ['Hold expires', fmtTime(b.expires_at)]);
       if (b.cancellation) rows.push(['Cancelled', esc(b.cancellation.reason || '') + (b.cancellation.fee ? ' · fee ' + money(b.cancellation.fee) : '')]);
       var canCancel = b.status === 'held' || b.status === 'confirmed';
