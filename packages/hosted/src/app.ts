@@ -79,6 +79,7 @@ import {
 } from './api-keys';
 import { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
 import { ImportError, importFromWebsite, type ImportOptions } from './importer';
+import { encryptedBusinessStore } from './secrets';
 import { setupHtml } from './setup';
 import { posthogSnippet, withHeadSnippet, type Analytics } from './analytics';
 import { slackEscape, type OpsNotifier } from './slack';
@@ -132,6 +133,13 @@ export interface HostedOptions {
    * Cron sends it as `Authorization: Bearer $CRON_SECRET`. The endpoints do not exist without it.
    */
   cronSecret?: string;
+  /**
+   * Key (32 bytes, base64 or hex) that encrypts the Google tokens and Stripe keys kept in each
+   * business record. Without it they are stored as they are, and the deployment logs a warning.
+   */
+  tokenEncryptionKey?: string;
+  /** Refuse to start without `tokenEncryptionKey`. */
+  requireTokenEncryption?: boolean;
   holdTtlSeconds?: number;
   /** Booking emails. Without it no emails are sent. `from` is a bare address. */
   mail?: { mailer: Mailer; from: string };
@@ -193,6 +201,8 @@ export interface HostedApp {
   /** The runtime of one business, or undefined if it doesn't exist. */
   tenant(businessId: string): Promise<Tenant | undefined>;
   businesses: BusinessStore;
+  /** Encrypt secrets that older records still hold in plain text. Needs `tokenEncryptionKey`. */
+  encryptStoredSecrets(): Promise<{ businesses: number; encrypted: number }>;
   /** Wait for background work (activity, emails, calendar sync) of every loaded business. */
   idle(): Promise<void>;
   /** Remove personal data from bookings past the retention period. Safe to run any time. */
@@ -242,7 +252,10 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   const baseUrl = options.baseUrl.replace(/\/+$/, '');
   const clock = options.clock ?? systemClock;
   const signer = createSigner(options.sessionSecret, () => clock.now().getTime());
-  const businesses = options.businesses ?? new MemoryBusinessStore();
+  const businesses = encryptedBusinessStore(options.businesses ?? new MemoryBusinessStore(), {
+    ...(options.tokenEncryptionKey ? { key: options.tokenEncryptionKey } : {}),
+    ...(options.requireTokenEncryption ? { required: true } : {}),
+  });
   const activity = new Map<string, ActivityLog>();
   const allowedHosts = options.allowedHosts ?? [
     new URL(baseUrl).hostname,
@@ -1146,9 +1159,15 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     })),
   );
   app.get('/api/maintenance/sweep', cronJob(sweepExpiredHolds));
+  // Run once after setting the key, to encrypt records written before it existed.
+  app.get(
+    '/api/maintenance/encrypt-secrets',
+    cronJob(() => businesses.encryptAll()),
+  );
 
   return {
     app,
+    encryptStoredSecrets: () => businesses.encryptAll(),
     purgeExpiredData,
     sweepExpiredHolds,
     tenant,

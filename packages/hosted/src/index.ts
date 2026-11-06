@@ -37,6 +37,12 @@ export { Tenant, TenantProvider, type TenantDeps } from './tenant';
 export { LIMITS, MemoryRateLimiter, proxyClientIp, type RateLimiter } from './limits';
 export { passwordTag } from './account';
 export {
+  SecretsError,
+  encryptedBusinessStore,
+  parseEncryptionKey,
+  type EncryptedBusinessStore,
+} from './secrets';
+export {
   ImportError,
   anthropicExtractor,
   importFromWebsite,

@@ -305,7 +305,19 @@ export const STUDIO_HTML = `<!doctype html>
     var icon = LOGOS[n] ? '<img class="ai-ico" src="' + LOGOS[n] + '" alt="" />' : '<span class="ini">' + esc(n.charAt(0).toUpperCase()) + '</span>';
     return '<span class="src-l">' + icon + esc(n) + '</span>';
   }
-  var OPS = { search: 'searched availability', hold: 'held a slot', confirm: 'confirmed a booking', cancel: 'cancelled', get: 'looked up a booking', update: 'updated a booking', list: 'listed bookings', expire: 'hold expired' };
+  var OPS = { search: 'searched availability', hold: 'held a slot', confirm: 'confirmed a booking', cancel: 'cancelled', get: 'looked up a booking', update: 'updated a booking', reschedule: 'moved a booking', list: 'listed bookings', expire: 'hold expired' };
+  // The terms the user approved, as the agent sent user_confirmed. No customer details in it.
+  function consentLine(e) {
+    var c = e.consent;
+    if (!c) return '';
+    var t = c.terms, parts = [t.offering + ' ' + fmtTime(t.start)];
+    if (t.price) parts.push(money(t.price));
+    if (t.deposit) parts.push('deposit ' + money(t.deposit.amount));
+    parts.push(t.cancellation_policy.description);
+    if (c.fee) parts.push('fee ' + money(c.fee));
+    if (c.refund) parts.push('refund ' + money(c.refund));
+    return '<div class="muted" style="font-size:12px;margin-top:2px">User approved: ' + esc(parts.join(' · ')) + '</div>';
+  }
 
   // Login: a shared Studio token (self-hosted), or email + password when the host says so
   // (hosted OpenBooking answers 401 with login: 'password' and where to log in).
@@ -502,8 +514,8 @@ export const STUDIO_HTML = `<!doctype html>
       if (!d.activity.length) { $('activity').innerHTML = '<div class="empty">No agent activity yet.</div>'; return; }
       var h = '<table><thead><tr><th>Time</th><th>Who</th><th class="hide-sm">Protocol</th><th>Action</th><th>Result</th></tr></thead><tbody>';
       d.activity.forEach(function (e) {
-        h += '<tr' + (e.booking_id ? ' class="click" data-id="' + esc(e.booking_id) + '"' : '') + '><td class="mono muted">' + fmtTime(e.at) + '</td><td>' + source(e.agent) + '</td><td class="hide-sm mono muted">' + esc(e.protocol) + '</td><td>' + esc(OPS[e.operation] || e.operation) + '</td><td>' +
-          (e.ok ? '<span class="badge b-ok">' + (e.replayed ? 'replayed' : 'ok') + '</span>' : '<span class="badge b-error">' + esc(e.error_code) + '</span>') + '</td></tr>';
+        h += '<tr' + (e.booking_id ? ' class="click" data-id="' + esc(e.booking_id) + '"' : '') + '><td class="mono muted">' + fmtTime(e.at) + '</td><td>' + source(e.agent) + '</td><td class="hide-sm mono muted">' + esc(e.protocol) + '</td><td>' + esc(OPS[e.operation] || e.operation) + consentLine(e) + '</td><td>' +
+          (e.ok ?'<span class="badge b-ok">' + (e.replayed ? 'replayed' : 'ok') + '</span>' : '<span class="badge b-error">' + esc(e.error_code) + '</span>') + '</td></tr>';
       });
       $('activity').innerHTML = h + '</tbody></table>'; bindRows($('activity'));
     });
@@ -542,7 +554,7 @@ export const STUDIO_HTML = `<!doctype html>
         (canCancel ? '<button class="btn btn-danger" id="dr-cancel">' + (b.status === 'held' ? 'Release hold' : 'Cancel booking') + '</button>' : '') +
         (d.activity.length ? '<h2 style="font-size:15px;font-weight:500;margin:28px 0 8px">History</h2>' + d.activity.map(function (e) {
           return '<div class="feed-item"><span class="muted mono">' + fmtTime(e.at) + '</span><span class="row" style="gap:8px">' + source(e.agent) + '<span class="muted">' + esc(OPS[e.operation] || e.operation) + '</span></span>' +
-            (e.ok ? '' : '<span class="badge b-error">' + esc(e.error_code) + '</span>') + '</div>';
+            (e.ok ? '' : '<span class="badge b-error">' + esc(e.error_code) + '</span>') + '</div>' + consentLine(e);
         }).join('') : ''));
       $('dr-close').onclick = closeDrawer;
       if (canCancel) $('dr-cancel').onclick = function () {
