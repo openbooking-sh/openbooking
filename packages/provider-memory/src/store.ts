@@ -7,6 +7,18 @@ export interface BookingRecord {
   start_ms: number;
   /** End including turnover buffer. */
   end_ms: number;
+  /**
+   * Guest limits this record must respect, checked atomically with the insert like the resource
+   * overlap: held and confirmed bookings of the venue that start in [from_ms, to_ms), plus this
+   * one's party, may not exceed max_guests. Only set on new holds and moves.
+   */
+  caps?: GuestCap[];
+}
+
+export interface GuestCap {
+  from_ms: number;
+  to_ms: number;
+  max_guests: number;
 }
 
 export interface BookingListQuery {
@@ -30,7 +42,8 @@ export interface BookingRecordStore {
 
   /**
    * Insert `record` only if no blocking record on the same resource overlaps it. Must be atomic
-   * against concurrent calls (transaction + lock, or equivalent). Returns false when taken.
+   * against concurrent calls (transaction + lock, or equivalent). Returns false when taken or when it
+   * would break one of `record.caps`.
    */
   insertIfFree(record: BookingRecord, now: Date): Promise<boolean>;
 
@@ -211,7 +224,7 @@ export class MemoryBookingStore implements BookingRecordStore {
   }
 
   async insertIfFree(record: BookingRecord, now: Date) {
-    if (this.#overlaps(record, now)) return false;
+    if (this.#overlaps(record, now) || this.#overCap(record, now)) return false;
     this.#records.set(record.booking.booking_id, clone(record));
     return true;
   }
@@ -237,9 +250,30 @@ export class MemoryBookingStore implements BookingRecordStore {
     const r = this.#records.get(id);
     if (!r) throw new BookingError('not_found', `No booking with id "${id}".`);
     check(applyExpiry(structuredClone(r.booking), now));
-    if (this.#overlaps(record, now)) return false;
+    if (this.#overlaps(record, now) || this.#overCap(record, now)) return false;
     this.#records.set(id, structuredClone(record));
     return true;
+  }
+
+  /** Adding `record` would put more guests than a cap allows into its window. */
+  #overCap(record: BookingRecord, now: Date): boolean {
+    for (const cap of record.caps ?? []) {
+      if (record.start_ms < cap.from_ms || record.start_ms >= cap.to_ms) continue;
+      let guests = record.booking.slot.party_size.total;
+      for (const r of this.#records.values()) {
+        if (
+          r.booking.booking_id !== record.booking.booking_id &&
+          r.booking.venue_id === record.booking.venue_id &&
+          r.start_ms >= cap.from_ms &&
+          r.start_ms < cap.to_ms &&
+          isBlocking(r.booking, now)
+        ) {
+          guests += r.booking.slot.party_size.total;
+        }
+      }
+      if (guests > cap.max_guests) return true;
+    }
+    return false;
   }
 
   /** Another blocking record on the same resource overlaps `record`. */

@@ -50,8 +50,12 @@ export class PostgresBookingStore implements BookingRecordStore {
   async insertIfFree(record: BookingRecord, now: Date) {
     const b = record.booking;
     return this.#db.transaction(async (tx) => {
+      // Guest caps span resources, so they take a venue-wide lock first, always before any
+      // resource lock, so two writers can't deadlock.
+      if (record.caps?.length) await tx.query(LOCK_SQL, [guestLockKey(b.venue_id)]);
       await tx.query(LOCK_SQL, [lockKey(b.venue_id, record.resource_id)]);
       if (await overlapExists(tx, record, now)) return false;
+      if (await overCap(tx, record, now)) return false;
       await tx.query(
         `insert into ob_bookings
            (booking_id, venue_id, resource_id, start_at, end_at, status, expires_at, created_at, data)
@@ -120,6 +124,7 @@ export class PostgresBookingStore implements BookingRecordStore {
       if (!key) throw new BookingError('not_found', `No booking with id "${b.booking_id}".`);
       // Lock the old and the new resource in a fixed order, so two moves in opposite directions
       // can't deadlock; inserts on either resource wait for us.
+      if (record.caps?.length) await tx.query(LOCK_SQL, [guestLockKey(b.venue_id)]);
       const locks = [
         ...new Set([
           lockKey(key.venue_id, key.resource_id),
@@ -133,6 +138,7 @@ export class PostgresBookingStore implements BookingRecordStore {
       );
       check(toRecord(rows[0]!, now).booking);
       if (await overlapExists(tx, record, now)) return false;
+      if (await overCap(tx, record, now)) return false;
       await tx.query(
         `update ob_bookings set resource_id = $2, start_at = $3::timestamptz, end_at = $4::timestamptz,
             status = $5, expires_at = $6::timestamptz, data = $7::jsonb
@@ -242,6 +248,31 @@ async function overlapExists(tx: Queryable, record: BookingRecord, now: Date): P
   return rows.length > 0;
 }
 
+/** Adding `record` would put more guests than a cap allows into its window. */
+async function overCap(tx: Queryable, record: BookingRecord, now: Date): Promise<boolean> {
+  for (const cap of record.caps ?? []) {
+    if (record.start_ms < cap.from_ms || record.start_ms >= cap.to_ms) continue;
+    const { rows } = await tx.query<{ guests: string | number }>(
+      `select coalesce(sum((data->'slot'->'party_size'->>'total')::int), 0) as guests
+         from ob_bookings
+        where venue_id = $1 and booking_id <> $2
+          and start_at >= $3::timestamptz and start_at < $4::timestamptz
+          and ${BLOCKING.replace('$NOW', '$5')}`,
+      [
+        record.booking.venue_id,
+        record.booking.booking_id,
+        iso(cap.from_ms),
+        iso(cap.to_ms),
+        now.toISOString(),
+      ],
+    );
+    if (Number(rows[0]?.guests ?? 0) + record.booking.slot.party_size.total > cap.max_guests) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function toRecord(row: Row, now: Date): BookingRecord {
   return {
     booking: applyExpiry(row.data, now),
@@ -252,4 +283,5 @@ function toRecord(row: Row, now: Date): BookingRecord {
 }
 
 const lockKey = (venueId: string, resourceId: string) => `openbooking:${venueId}/${resourceId}`;
+const guestLockKey = (venueId: string) => `openbooking:${venueId}#guests`;
 const iso = (ms: number) => new Date(ms).toISOString();

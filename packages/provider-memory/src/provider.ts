@@ -21,13 +21,20 @@ import {
   type VenueInfo,
   WEEKDAYS,
 } from '@openbooking-sh/core';
-import type { MemoryProviderConfig, OfferingConfig, VenueConfig } from './config';
+import {
+  durationFor,
+  type MemoryProviderConfig,
+  type OfferingConfig,
+  type ServicePeriod,
+  type VenueConfig,
+} from './config';
 import {
   MemoryBookingStore,
   isBlocking,
   type BookingRecord,
   type BookingListQuery,
   type BookingRecordStore,
+  type GuestCap,
 } from './store';
 
 export interface MemoryProviderOptions {
@@ -84,7 +91,11 @@ export class MemoryBookingProvider implements BookingProvider {
       ...(config.description ? { description: config.description } : {}),
     };
     this.#venues = new Map(config.venues.map((v) => [v.venue.id, v]));
-    for (const v of config.venues) validateSchedules(v);
+    for (const v of config.venues) {
+      validateSchedules(v);
+      validateOfferings(v);
+      validateService(v);
+    }
   }
 
   async listVenues(): Promise<Venue[]> {
@@ -135,9 +146,21 @@ export class MemoryBookingProvider implements BookingProvider {
     const starts = this.#candidateStarts(cfg, query.date, ctx.now);
     if (!starts.length) return slots;
     // One read for the whole day; the per-slot checks below run against this snapshot.
-    const longest = Math.max(...offerings.map((o) => o.duration_minutes), 0) + cfg.buffer_minutes;
-    const fromMs = starts[0]!.getTime();
-    const toMs = starts[starts.length - 1]!.getTime() + longest * 60_000;
+    const longest =
+      Math.max(...offerings.map((o) => durationFor(o, party)), 0) + cfg.buffer_minutes;
+    let fromMs = starts[0]!.getTime();
+    let toMs = starts[starts.length - 1]!.getTime() + longest * 60_000;
+    if (hasCaps(cfg)) {
+      // Guest caps count bookings by start time, so read the whole local day.
+      fromMs = Math.min(
+        fromMs,
+        time.zonedToInstant(query.date, '00:00', cfg.venue.timezone).getTime(),
+      );
+      toMs = Math.max(
+        toMs,
+        time.zonedToInstant(time.addDays(query.date, 1), '00:00', cfg.venue.timezone).getTime(),
+      );
+    }
     const [booked, busy] = await Promise.all([
       this.#store.listBlocking(cfg.venue.id, fromMs, toMs, ctx.now),
       this.#busyIn(cfg, fromMs, toMs, ctx.now),
@@ -149,11 +172,14 @@ export class MemoryBookingProvider implements BookingProvider {
       if (query.time_from && local < query.time_from) continue;
       if (query.time_to && local > query.time_to) continue;
       for (const offering of offerings) {
-        if (!this.#offeringAllowed(cfg, offering, query.date, local)) continue;
+        if (!this.#offeringAllowed(cfg, offering, query.date, local, party)) continue;
+        // Never offer what createHold would refuse for guest limits.
+        if (guestCapHit(this.#capsFor(cfg, query.date, local), party, booked)) continue;
+        const duration = durationFor(offering, party);
         const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter(
           (r) =>
-            worksAt(cfg, r.id, query.date, local, offering.duration_minutes) &&
-            isFree(blocking, r.id, start, endOf(cfg, offering, start)),
+            worksAt(cfg, r.id, query.date, local, duration) &&
+            isFree(blocking, r.id, start, endOf(cfg, offering, start, party)),
         );
         const resource = free[0];
         if (!resource) continue;
@@ -188,24 +214,29 @@ export class MemoryBookingProvider implements BookingProvider {
     const local = time.localTime(start, cfg.venue.timezone);
     const bookable =
       this.#candidateStarts(cfg, date, ctx.now).some((s) => s.getTime() === start.getTime()) &&
-      this.#offeringAllowed(cfg, offering, date, local);
+      this.#offeringAllowed(cfg, offering, date, local, key.p);
     if (!bookable) {
       throw new BookingError(
         'slot_unavailable',
         'This slot is no longer bookable (in the past or outside opening hours).',
       );
     }
+    const duration = durationFor(offering, key.p);
+    const end = endOf(cfg, offering, start, key.p);
+    const caps = this.#capsFor(cfg, date, local);
+    // Early, readable refusal; the store re-checks atomically below, which is what holds in a race.
+    await this.#assertGuestRoom(cfg, caps, key.p, date, local, ctx.now);
 
     const now = ctx.now.toISOString();
     const bookingId = `bk_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
     const busy = [
-      ...(await this.#busyIn(cfg, start.getTime(), endOf(cfg, offering, start), ctx.now)),
-      ...timeOff(cfg, start.getTime(), endOf(cfg, offering, start)),
+      ...(await this.#busyIn(cfg, start.getTime(), end, ctx.now)),
+      ...timeOff(cfg, start.getTime(), end),
     ];
     // Best fit first; the store's atomic insert decides, so a lost race moves on to the next one.
     for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
-      if (!worksAt(cfg, resource.id, date, local, offering.duration_minutes)) continue;
-      if (!isFree(busy, resource.id, start, endOf(cfg, offering, start))) continue;
+      if (!worksAt(cfg, resource.id, date, local, duration)) continue;
+      if (!isFree(busy, resource.id, start, end)) continue;
       const slot = this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id);
       const booking: Booking = {
         booking_id: bookingId,
@@ -227,10 +258,13 @@ export class MemoryBookingProvider implements BookingProvider {
         booking,
         resource_id: resource.id,
         start_ms: start.getTime(),
-        end_ms: endOf(cfg, offering, start),
+        end_ms: end,
+        ...(caps.length ? { caps: caps.map(toStoreCap) } : {}),
       };
       if (await this.#store.insertIfFree(record, ctx.now)) return booking;
     }
+    // The insert also fails when guests filled the window since the check above.
+    await this.#assertGuestRoom(cfg, caps, key.p, date, local, ctx.now);
     throw new BookingError('slot_unavailable', `The ${local} slot on ${date} was just taken.`);
   }
 
@@ -345,7 +379,9 @@ export class MemoryBookingProvider implements BookingProvider {
     if (!offering || Number.isNaN(start.getTime())) throw invalidSlot();
     const date = time.localDate(start, cfg.venue.timezone);
     const local = time.localTime(start, cfg.venue.timezone);
-    const end = endOf(cfg, offering, start);
+    const duration = durationFor(offering, key.p);
+    const end = endOf(cfg, offering, start, key.p);
+    const caps = this.#capsFor(cfg, date, local);
 
     // A booking changed by someone else between our read and the store's lock is re-read, so the
     // move never overwrites a newer version.
@@ -368,20 +404,21 @@ export class MemoryBookingProvider implements BookingProvider {
       }
       const bookable =
         this.#candidateStarts(cfg, date, ctx.now).some((s) => s.getTime() === start.getTime()) &&
-        this.#offeringAllowed(cfg, offering, date, local);
+        this.#offeringAllowed(cfg, offering, date, local, key.p);
       if (!bookable) {
         throw new BookingError(
           'slot_unavailable',
           'That time is not bookable (in the past or outside opening hours).',
         );
       }
+      await this.#assertGuestRoom(cfg, caps, key.p, date, local, ctx.now, req.booking_id);
       const busy = [
         ...(await this.#busyIn(cfg, start.getTime(), end, ctx.now)),
         ...timeOff(cfg, start.getTime(), end),
       ];
       let changed = false;
       for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
-        if (!worksAt(cfg, resource.id, date, local, offering.duration_minutes)) continue;
+        if (!worksAt(cfg, resource.id, date, local, duration)) continue;
         if (!isFree(busy, resource.id, start, end)) continue;
         const booking: Booking = {
           ...current,
@@ -390,7 +427,13 @@ export class MemoryBookingProvider implements BookingProvider {
         };
         try {
           const moved = await this.#store.move(
-            { booking, resource_id: resource.id, start_ms: start.getTime(), end_ms: end },
+            {
+              booking,
+              resource_id: resource.id,
+              start_ms: start.getTime(),
+              end_ms: end,
+              ...(caps.length ? { caps: caps.map(toStoreCap) } : {}),
+            },
             ctx.now,
             (b) => {
               if (b.status !== 'confirmed') {
@@ -408,6 +451,7 @@ export class MemoryBookingProvider implements BookingProvider {
       }
       if (!changed) break;
     }
+    await this.#assertGuestRoom(cfg, caps, key.p, date, local, ctx.now, req.booking_id);
     throw new BookingError('slot_unavailable', `The ${local} slot on ${date} was just taken.`);
   }
 
@@ -504,31 +548,152 @@ export class MemoryBookingProvider implements BookingProvider {
     if (cfg.closed_dates?.includes(date)) return [];
     const today = time.localDate(now, cfg.venue.timezone);
     if (date < today || date > time.addDays(today, cfg.max_days_ahead)) return [];
-    const periods = cfg.opening_hours[time.weekdayOfDate(date)] ?? [];
     const earliest = now.getTime() + cfg.min_lead_minutes * 60_000;
     const out: Date[] = [];
-    for (const p of periods) {
-      const open = time.minutesOfDay(p.open);
-      const close = p.close === '24:00' ? 1440 : time.minutesOfDay(p.close);
-      for (let m = open; m < close; m += cfg.slot_interval_minutes) {
-        const wall = time.timeOfMinutes(m);
-        const start = time.zonedToInstant(date, wall, cfg.venue.timezone);
-        // A wall time inside a spring-forward gap (02:30 on the night clocks jump to 03:00) does
-        // not exist: zonedToInstant lands on a real instant an hour away, which is another
-        // slot's start, so skipping it is what keeps every start unique.
-        if (
-          time.localDate(start, cfg.venue.timezone) !== date ||
-          time.localTime(start, cfg.venue.timezone) !== wall
-        ) {
-          continue;
-        }
-        if (start.getTime() >= earliest) out.push(start);
+    for (const m of this.#wallMinutes(cfg, date)) {
+      const wall = time.timeOfMinutes(m);
+      const start = time.zonedToInstant(date, wall, cfg.venue.timezone);
+      // A wall time inside a spring-forward gap (02:30 on the night clocks jump to 03:00) does
+      // not exist: zonedToInstant lands on a real instant an hour away, which is another
+      // slot's start, so skipping it is what keeps every start unique.
+      if (
+        time.localDate(start, cfg.venue.timezone) !== date ||
+        time.localTime(start, cfg.venue.timezone) !== wall
+      ) {
+        continue;
       }
+      if (start.getTime() >= earliest) out.push(start);
     }
     return out;
   }
 
-  #offeringAllowed(cfg: VenueConfig, o: OfferingConfig, date: string, local: string): boolean {
+  /** Start times (minutes since local midnight) the venue offers on `date`, ascending. */
+  #wallMinutes(cfg: VenueConfig, date: string): number[] {
+    const weekday = time.weekdayOfDate(date);
+    const shifts = (cfg.service_periods ?? []).filter(
+      (p) => !p.weekdays || p.weekdays.includes(weekday),
+    );
+    const out = new Set<number>();
+    for (const p of cfg.opening_hours[weekday] ?? []) {
+      const open = time.minutesOfDay(p.open);
+      const close = p.close === '24:00' ? 1440 : time.minutesOfDay(p.close);
+      if (!cfg.service_periods) {
+        for (let m = open; m < close; m += cfg.slot_interval_minutes) out.add(m);
+        continue;
+      }
+      for (const sp of shifts) {
+        if (sp.seatings) {
+          for (const t of sp.seatings) {
+            const m = time.minutesOfDay(t);
+            if (m >= open && m < close) out.add(m);
+          }
+          continue;
+        }
+        const from = time.minutesOfDay(sp.open);
+        const to = sp.close === '24:00' ? 1440 : time.minutesOfDay(sp.close);
+        for (let m = open; m < close; m += cfg.slot_interval_minutes) {
+          if (m >= from && m < to) out.add(m);
+        }
+      }
+    }
+    return [...out].sort((a, b) => a - b);
+  }
+
+  /** The service period a start on `date` at `local` belongs to, if the venue has any. */
+  #periodAt(cfg: VenueConfig, date: string, local: string): ServicePeriod | undefined {
+    const weekday = time.weekdayOfDate(date);
+    return (cfg.service_periods ?? []).find(
+      (p) =>
+        (!p.weekdays || p.weekdays.includes(weekday)) &&
+        local >= p.open &&
+        (p.close === '24:00' || local < p.close) &&
+        (!p.seatings || p.seatings.includes(local)),
+    );
+  }
+
+  /** The guest limits a start at `local` falls under (pacing window, walk-in reserve). */
+  #capsFor(cfg: VenueConfig, date: string, local: string): Cap[] {
+    const tz = cfg.venue.timezone;
+    const period = this.#periodAt(cfg, date, local);
+    const caps: Cap[] = [];
+    const pacing = period?.max_guests_per_interval ?? cfg.pacing?.max_guests_per_interval;
+    if (pacing !== undefined) {
+      const interval = cfg.pacing?.interval_minutes ?? 15;
+      const bucket = Math.floor(time.minutesOfDay(local) / interval) * interval;
+      const from = time.zonedToInstant(date, time.timeOfMinutes(bucket), tz).getTime();
+      caps.push({
+        from_ms: from,
+        to_ms: from + interval * 60_000,
+        max_guests: pacing,
+        kind: 'pacing',
+        label: local,
+      });
+    }
+    if (period && period.max_online_guests !== undefined) {
+      caps.push({
+        from_ms: time.zonedToInstant(date, period.open, tz).getTime(),
+        to_ms:
+          period.close === '24:00'
+            ? time.zonedToInstant(time.addDays(date, 1), '00:00', tz).getTime()
+            : time.zonedToInstant(date, period.close, tz).getTime(),
+        max_guests: period.max_online_guests,
+        kind: 'online',
+        label: period.name,
+      });
+    }
+    return caps;
+  }
+
+  /** Refuse, with advice an agent can act on, when guests already fill a cap's window. */
+  async #assertGuestRoom(
+    cfg: VenueConfig,
+    caps: Cap[],
+    party: number,
+    date: string,
+    local: string,
+    now: Date,
+    ignoreBookingId?: string,
+  ): Promise<void> {
+    if (!caps.length) return;
+    const booked = await this.#store.listBlocking(
+      cfg.venue.id,
+      Math.min(...caps.map((c) => c.from_ms)),
+      Math.max(...caps.map((c) => c.to_ms)),
+      now,
+    );
+    const hit = guestCapHit(
+      caps,
+      party,
+      booked.filter((r) => r.booking.booking_id !== ignoreBookingId),
+    );
+    if (!hit) return;
+    const phone = cfg.venue.phone_number ? ` at ${cfg.venue.phone_number}` : '';
+    if (hit.kind === 'online') {
+      throw new BookingError(
+        'slot_unavailable',
+        `Online bookings for ${hit.label} on ${date} are full for a party of ${party}.`,
+        {
+          suggested_next_action: `Tell the user the rest is kept for walk-ins. Offer another date or service, or suggest contacting the venue${phone}.`,
+        },
+      );
+    }
+    throw new BookingError(
+      'slot_unavailable',
+      `Too many guests are already booked to arrive around ${local} on ${date} for a party of ${party}.`,
+      {
+        suggested_next_action:
+          'Search availability again for the same date and party size and offer the user a slightly earlier or later time.',
+      },
+    );
+  }
+
+  #offeringAllowed(
+    cfg: VenueConfig,
+    o: OfferingConfig,
+    date: string,
+    local: string,
+    party: number,
+  ): boolean {
     if (o.weekdays && !o.weekdays.includes(time.weekdayOfDate(date))) return false;
     if (o.first_start && local < o.first_start) return false;
     if (o.last_start && local > o.last_start) return false;
@@ -538,7 +703,7 @@ export class MemoryBookingProvider implements BookingProvider {
     const startMin = time.minutesOfDay(local);
     return periods.some((p) => {
       const close = p.close === '24:00' ? 1440 : time.minutesOfDay(p.close);
-      return startMin >= time.minutesOfDay(p.open) && startMin + o.duration_minutes <= close;
+      return startMin >= time.minutesOfDay(p.open) && startMin + durationFor(o, party) <= close;
     });
   }
 
@@ -571,7 +736,7 @@ export class MemoryBookingProvider implements BookingProvider {
     slotId = encodeSlotId(key),
   ): Slot {
     const tz = cfg.venue.timezone;
-    const end = new Date(start.getTime() + o.duration_minutes * 60_000);
+    const end = new Date(start.getTime() + durationFor(o, party) * 60_000);
     return {
       slot_id: slotId,
       venue_id: cfg.venue.id,
@@ -597,8 +762,47 @@ export class MemoryBookingProvider implements BookingProvider {
   }
 }
 
-function endOf(cfg: VenueConfig, o: OfferingConfig, start: Date): number {
-  return start.getTime() + (o.duration_minutes + cfg.buffer_minutes) * 60_000;
+/** When the table is free again: the party's table time plus turnover. */
+function endOf(cfg: VenueConfig, o: OfferingConfig, start: Date, party: number): number {
+  return start.getTime() + (durationFor(o, party) + cfg.buffer_minutes) * 60_000;
+}
+
+/** A guest limit with what an agent needs to hear when it is hit. */
+interface Cap extends GuestCap {
+  kind: 'pacing' | 'online';
+  label: string;
+}
+
+const toStoreCap = ({ from_ms, to_ms, max_guests }: Cap): GuestCap => ({
+  from_ms,
+  to_ms,
+  max_guests,
+});
+
+function hasCaps(cfg: VenueConfig): boolean {
+  return (
+    !!cfg.pacing ||
+    !!cfg.service_periods?.some(
+      (p) => p.max_guests_per_interval !== undefined || p.max_online_guests !== undefined,
+    )
+  );
+}
+
+/** The first cap that `party` more guests would break, given the blocking bookings read. */
+function guestCapHit(
+  caps: Cap[],
+  party: number,
+  booked: Array<{ start_ms: number; booking: { slot: { party_size: { total: number } } } }>,
+): Cap | undefined {
+  return caps.find((cap) => {
+    let guests = party;
+    for (const r of booked) {
+      if (r.start_ms >= cap.from_ms && r.start_ms < cap.to_ms) {
+        guests += r.booking.slot.party_size.total;
+      }
+    }
+    return guests > cap.max_guests;
+  });
 }
 
 /** Case-insensitive match on a tag, the resource name or its id: "Kari", "kari", "outdoor". */
@@ -658,6 +862,43 @@ function timeOff(cfg: VenueConfig, fromMs: number, toMs: number): BusyInterval[]
     }
   }
   return out;
+}
+
+/** Catch config mistakes in table times at startup. */
+function validateOfferings(cfg: VenueConfig): void {
+  for (const o of cfg.offerings) {
+    for (const d of o.duration_by_party ?? []) {
+      if (!Number.isInteger(d.min_party_size) || d.min_party_size < 1) {
+        throw new Error(`Offering "${o.id}": duration_by_party needs min_party_size >= 1`);
+      }
+      if (!Number.isInteger(d.duration_minutes) || d.duration_minutes < 1) {
+        throw new Error(`Offering "${o.id}": duration_by_party needs duration_minutes >= 1`);
+      }
+    }
+  }
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Catch config mistakes in pacing and service periods at startup. */
+function validateService(cfg: VenueConfig): void {
+  const ok = (n: number | undefined) => n === undefined || (Number.isInteger(n) && n >= 1);
+  const id = cfg.venue.id;
+  if (cfg.pacing && !ok(cfg.pacing.max_guests_per_interval)) {
+    throw new Error(`${id}: pacing.max_guests_per_interval must be a whole number >= 1`);
+  }
+  if (cfg.pacing && !ok(cfg.pacing.interval_minutes)) {
+    throw new Error(`${id}: pacing.interval_minutes must be a whole number >= 1`);
+  }
+  for (const p of cfg.service_periods ?? []) {
+    const times = [p.open, ...(p.seatings ?? []), ...(p.close === '24:00' ? [] : [p.close])];
+    if (times.some((t) => !HHMM.test(t))) {
+      throw new Error(`${id}: service period "${p.name}" needs HH:mm times`);
+    }
+    if (!ok(p.max_guests_per_interval) || !ok(p.max_online_guests)) {
+      throw new Error(`${id}: service period "${p.name}" limits must be whole numbers >= 1`);
+    }
+  }
 }
 
 /** Catch config mistakes at startup rather than as odd availability later. */
