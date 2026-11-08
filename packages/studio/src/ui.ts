@@ -425,7 +425,9 @@ export const STUDIO_HTML = `<!doctype html>
         if (nowTop > 0 && nowTop < height) h += '<div class="now-line" style="top:' + nowTop + 'px"></div>';
         d.bookings.filter(function (b) {
           var rid = b.slot.resource && b.slot.resource.id;
-          return c.id === '_all' || rid === c.id || (!rid && cols[0] === c);
+          // Joined tables: the booking shows on each table it takes. The totals above count bookings, not columns.
+          var joined = (b.slot.additional_resources || []).some(function (x) { return x.id === c.id; });
+          return c.id === '_all' || rid === c.id || joined || (!rid && cols[0] === c);
         }).forEach(function (b) {
           var s = minutes(b.slot.start), e = minutes(b.slot.end);
           var name = b.customer ? b.customer.first_name + ' ' + b.customer.last_name : 'Held, no name yet';

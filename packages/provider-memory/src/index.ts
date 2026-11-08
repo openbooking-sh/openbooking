@@ -13,6 +13,7 @@ export {
   isBlocking,
   lostSlot,
   matchesCustomer,
+  resourcesOf,
   selectForAnonymizing,
   type AnonymizeQuery,
   type AnonymizeResult,

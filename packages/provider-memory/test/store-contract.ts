@@ -16,6 +16,8 @@ export function record(
     id?: string;
     venue?: string;
     resource?: string;
+    /** More tables the booking occupies at the same time (joined tables). */
+    extra?: string[];
     start?: number;
     minutes?: number;
     status?: Booking['status'];
@@ -66,6 +68,7 @@ export function record(
       cancelled_at: null,
     } as Booking,
     resource_id: over.resource ?? 'r1',
+    ...(over.extra ? { extra_resource_ids: over.extra } : {}),
     start_ms: start,
     end_ms: end,
     ...(over.caps ? { caps: over.caps } : {}),
@@ -90,6 +93,154 @@ export function describeBookingStore(
       expect(await store.insertIfFree(record({ id: 'd', venue: 'v2' }), NOW)).toBe(true);
       expect(await store.insertIfFree(record({ id: 'e', start: T0 + 30 * MIN }), NOW)).toBe(true);
       expect(await store.get('b', NOW)).toBeUndefined();
+    });
+
+    it('a booking of joined resources blocks each of them, whichever one asks', async () => {
+      const store = await factory();
+      expect(
+        await store.insertIfFree(record({ id: 'j', resource: 'r1', extra: ['r2'] }), NOW),
+      ).toBe(true);
+      // The primary and the joined resource are both taken, in either role.
+      expect(await store.insertIfFree(record({ id: 'a', resource: 'r1' }), NOW)).toBe(false);
+      expect(await store.insertIfFree(record({ id: 'b', resource: 'r2' }), NOW)).toBe(false);
+      expect(
+        await store.insertIfFree(record({ id: 'c', resource: 'r3', extra: ['r2'] }), NOW),
+      ).toBe(false);
+      expect(
+        await store.insertIfFree(record({ id: 'd', resource: 'r2', extra: ['r4'] }), NOW),
+      ).toBe(false);
+      // Nothing was half-claimed by the refusals: r3 and r4 are free, and so are other times/venues.
+      expect(
+        await store.insertIfFree(record({ id: 'e', resource: 'r3', extra: ['r4'] }), NOW),
+      ).toBe(true);
+      expect(await store.insertIfFree(record({ id: 'f', resource: 'r2', venue: 'v2' }), NOW)).toBe(
+        true,
+      );
+      expect(
+        await store.insertIfFree(record({ id: 'g', resource: 'r2', start: T0 + 30 * MIN }), NOW),
+      ).toBe(true);
+      // The record comes back with all its resources.
+      expect(await store.get('j', NOW)).toMatchObject({
+        resource_id: 'r1',
+        extra_resource_ids: ['r2'],
+      });
+      expect((await store.get('a', NOW))?.booking.booking_id).toBeUndefined();
+      const listed = await store.listBlocking('v1', T0 - MIN, T0 + MIN, NOW);
+      expect(listed.find((r) => r.booking.booking_id === 'j')?.extra_resource_ids).toEqual(['r2']);
+    });
+
+    it('lets joined bookings race for overlapping tables without ever sharing one', async () => {
+      const store = await factory();
+      // Pairs drawn from four tables: at most two of them can be disjoint.
+      const pairs = [
+        ['t1', 't2'],
+        ['t2', 't3'],
+        ['t3', 't4'],
+        ['t4', 't1'],
+        ['t1', 't3'],
+        ['t2', 't4'],
+        ['t3', 't1'],
+        ['t4', 't2'],
+      ] as const;
+      const results = await Promise.all(
+        [...pairs, ...pairs].map(([x, y], i) =>
+          store.insertIfFree(record({ id: `pair_${i}`, resource: x, extra: [y] }), NOW),
+        ),
+      );
+      const won = results.flatMap((ok, i) => (ok ? [pairs[i % pairs.length]!] : []));
+      expect(won.length).toBeGreaterThan(0);
+      const tables = won.flat();
+      expect(new Set(tables).size).toBe(tables.length);
+      // A single-table insert racing the pairs also never doubles up with them.
+      const mixed = await Promise.all(
+        ['t1', 't2', 't3', 't4'].flatMap((t, i) => [
+          store.insertIfFree(record({ id: `s_${i}`, resource: t, start: T0 + 200 * MIN }), NOW),
+          store.insertIfFree(
+            record({
+              id: `j_${i}`,
+              resource: t,
+              extra: [`t${((i + 1) % 4) + 1}`],
+              start: T0 + 200 * MIN,
+            }),
+            NOW,
+          ),
+        ]),
+      );
+      const rows = (await store.list({ limit: 100 }, NOW)).filter(
+        (r) => r.start_ms === T0 + 200 * MIN,
+      );
+      const used = rows.flatMap((r) => [r.resource_id, ...(r.extra_resource_ids ?? [])]);
+      expect(rows.length).toBe(mixed.filter(Boolean).length);
+      expect(new Set(used).size).toBe(used.length);
+    });
+
+    it('keeps the joined resources through updates and frees them all when cancelled or lapsed', async () => {
+      const store = await factory();
+      await store.insertIfFree(record({ id: 'j', resource: 'r1', extra: ['r2'] }), NOW);
+      const confirmed = await store.update('j', NOW, (b) => ({
+        ...b,
+        status: 'confirmed',
+        expires_at: null,
+      }));
+      expect(confirmed?.status).toBe('confirmed');
+      expect(await store.get('j', NOW)).toMatchObject({ extra_resource_ids: ['r2'] });
+      expect(await store.insertIfFree(record({ id: 'x', resource: 'r2' }), NOW)).toBe(false);
+      await store.update('j', NOW, (b) => ({ ...b, status: 'cancelled' }));
+      expect(await store.insertIfFree(record({ id: 'y', resource: 'r2' }), NOW)).toBe(true);
+      expect(await store.insertIfFree(record({ id: 'z', resource: 'r1' }), NOW)).toBe(true);
+
+      // A hold of joined tables that lapses stops blocking both.
+      await store.insertIfFree(
+        record({ id: 'h', resource: 'r5', extra: ['r6'], expires: T0 - MIN }),
+        NOW,
+      );
+      const later = at(T0 - 30_000);
+      expect(await store.insertIfFree(record({ id: 'h5', resource: 'r5' }), later)).toBe(true);
+      expect(await store.insertIfFree(record({ id: 'h6', resource: 'r6' }), later)).toBe(true);
+    });
+
+    it('moves a booking between one table and joined tables, claiming and freeing all of them', async () => {
+      const store = await factory();
+      await store.insertIfFree(
+        record({ id: 'm', status: 'confirmed', expires: null, resource: 'r1', extra: ['r2'] }),
+        NOW,
+      );
+      await store.insertIfFree(
+        record({
+          id: 'busy',
+          status: 'confirmed',
+          expires: null,
+          resource: 'r4',
+          start: T0 + 120 * MIN,
+        }),
+        NOW,
+      );
+      const to = (resource: string, extra: string[], start: number) =>
+        record({ id: 'm', status: 'confirmed', expires: null, resource, extra, start });
+      // r4 is taken at that time: refused, and the old tables stay claimed.
+      expect(await store.move(to('r3', ['r4'], T0 + 120 * MIN), NOW, () => {})).toBe(false);
+      expect(await store.get('m', NOW)).toMatchObject({
+        resource_id: 'r1',
+        extra_resource_ids: ['r2'],
+      });
+      expect(await store.insertIfFree(record({ id: 'o1', resource: 'r2' }), NOW)).toBe(false);
+      // Free: moves, and the old tables (both) are free again.
+      expect(await store.move(to('r3', ['r5'], T0 + 120 * MIN), NOW, () => {})).toBe(true);
+      expect(await store.get('m', NOW)).toMatchObject({
+        resource_id: 'r3',
+        extra_resource_ids: ['r5'],
+      });
+      expect(await store.insertIfFree(record({ id: 'o2', resource: 'r1' }), NOW)).toBe(true);
+      expect(await store.insertIfFree(record({ id: 'o3', resource: 'r2' }), NOW)).toBe(true);
+      expect(
+        await store.insertIfFree(record({ id: 'o4', resource: 'r5', start: T0 + 120 * MIN }), NOW),
+      ).toBe(false);
+      // Down to a single table: the joined one is released.
+      expect(await store.move(to('r6', [], T0 + 240 * MIN), NOW, () => {})).toBe(true);
+      expect((await store.get('m', NOW))?.extra_resource_ids ?? []).toEqual([]);
+      expect(
+        await store.insertIfFree(record({ id: 'o5', resource: 'r5', start: T0 + 120 * MIN }), NOW),
+      ).toBe(true);
     });
 
     it('lets exactly one of many concurrent inserts win', async () => {

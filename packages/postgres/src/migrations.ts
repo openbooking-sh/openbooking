@@ -197,6 +197,16 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       alter table ob_api_keys enable row level security;
     `,
   },
+  {
+    version: 7,
+    name: 'combined-tables',
+    // A booking can occupy several tables at once (joined for a large party). resource_id stays
+    // the primary table; the others go here, and overlap checks look at both.
+    sql: `
+      alter table ob_bookings add column extra_resource_ids text[] not null default '{}';
+      create index ob_bookings_extra_resources on ob_bookings using gin (extra_resource_ids);
+    `,
+  },
 ];
 
 /**

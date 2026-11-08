@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BookingService, ManualClock, runAsActor } from '@openbooking-sh/core';
-import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
+import {
+  MemoryBookingProvider,
+  createDemoRestaurantProvider,
+  demoRestaurantVenue,
+} from '@openbooking-sh/provider-memory';
 import { Hono } from 'hono';
 import { actorFromRequest, agentName, createStudio } from '../src';
 
@@ -412,5 +416,59 @@ describe('Studio customer data', () => {
       ['erase', { email: 'a@b.co' }],
       ['export', { phone: '+4712345678' }],
     ]);
+  });
+});
+
+describe('joined tables in the calendar', () => {
+  const table = (id: string) => ({
+    id,
+    venue_id: 'r',
+    kind: 'table',
+    name: `Table ${id.toUpperCase()}`,
+    capacity: { min: 1, max: 4 },
+    tags: [],
+  });
+
+  it('returns a joined booking once, with every table it takes, and the page shows it on each', async () => {
+    const venue = demoRestaurantVenue();
+    venue.venue.id = 'r';
+    venue.resources = [table('a'), table('b')];
+    venue.offerings = venue.offerings.map((o) => ({ ...o, venue_id: 'r', deposit: null }));
+    venue.table_combinations = [{ resource_ids: ['a', 'b'], min_party_size: 5, max_party_size: 8 }];
+    venue.closed_dates = [];
+    const clock = new ManualClock('2026-10-01T08:00:00Z');
+    const service = new BookingService({
+      provider: new MemoryBookingProvider({ name: 'T', venues: [venue] }),
+      clock,
+    });
+    const studio = createStudio({ service, insecureNoAuth: true });
+    const { slots } = await service.searchAvailability({
+      date: '2026-10-02',
+      party_size: { total: 6 },
+      offering_id: 'dinner',
+    });
+    const hold = await service.hold({
+      slot_id: slots[0]!.slot_id,
+      idempotency_key: 'joined-hold-1',
+      customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+    });
+    await service.confirm({
+      booking_id: hold.booking_id,
+      idempotency_key: 'joined-confirm-1',
+      user_confirmed: true,
+    });
+
+    const cal = (await (await studio.app.request('/api/calendar?date=2026-10-02')).json()) as any;
+    expect(cal.bookings).toHaveLength(1);
+    expect(cal.bookings[0].slot.resource).toMatchObject({
+      id: 'a',
+      label: 'Tables A and B together',
+    });
+    expect(cal.bookings[0].slot.additional_resources.map((r: any) => r.id)).toEqual(['b']);
+    expect(cal.resources.map((r: any) => r.id)).toEqual(['a', 'b']);
+
+    // The calendar script puts a booking in a table's column when that table is joined to it.
+    const page = await (await studio.app.request('/')).text();
+    expect(page).toContain('b.slot.additional_resources');
   });
 });

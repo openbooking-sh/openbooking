@@ -4,6 +4,7 @@ import {
   assertAnonymizeQuery,
   isBlocking,
   lostSlot,
+  resourcesOf,
   selectForAnonymizing,
   type AnonymizeQuery,
   type BookingListQuery,
@@ -14,12 +15,13 @@ import { LOCK_SQL, json, type Db, type Queryable } from './db';
 
 interface Row {
   resource_id: string;
+  extra_resource_ids: string[] | null;
   start_at: Date;
   end_at: Date;
   data: Booking;
 }
 
-const COLUMNS = 'resource_id, start_at, end_at, data';
+const COLUMNS = 'resource_id, extra_resource_ids, start_at, end_at, data';
 const BLOCKING = `(status = 'confirmed' or (status = 'held' and expires_at > $NOW::timestamptz))`;
 
 /**
@@ -28,7 +30,9 @@ const BLOCKING = `(status = 'confirmed' or (status = 'held' and expires_at > $NO
  *
  * Check-and-reserve takes a transaction-scoped advisory lock per venue resource, then checks for
  * a blocking overlap and inserts. Every writer to a resource holds that lock, so two overlapping
- * holds can never both commit, across any number of server instances.
+ * holds can never both commit, across any number of server instances. A booking of joined tables
+ * takes the lock of every one of its tables, always in sorted order so two of them can't deadlock,
+ * and is one row: it holds all its tables or none.
  */
 export class PostgresBookingStore implements BookingRecordStore {
   readonly #db: Db;
@@ -53,13 +57,14 @@ export class PostgresBookingStore implements BookingRecordStore {
       // Guest caps span resources, so they take a venue-wide lock first, always before any
       // resource lock, so two writers can't deadlock.
       if (record.caps?.length) await tx.query(LOCK_SQL, [guestLockKey(b.venue_id)]);
-      await tx.query(LOCK_SQL, [lockKey(b.venue_id, record.resource_id)]);
+      await lockAll(tx, resourceLocks(b.venue_id, record));
       if (await overlapExists(tx, record, now)) return false;
       if (await overCap(tx, record, now)) return false;
       await tx.query(
         `insert into ob_bookings
-           (booking_id, venue_id, resource_id, start_at, end_at, status, expires_at, created_at, data)
-         values ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7::timestamptz,
+           (booking_id, venue_id, resource_id, extra_resource_ids, start_at, end_at, status,
+            expires_at, created_at, data)
+         values ($1, $2, $3, $10::text[], $4::timestamptz, $5::timestamptz, $6, $7::timestamptz,
                  $8::timestamptz, $9::jsonb)`,
         [
           b.booking_id,
@@ -71,6 +76,7 @@ export class PostgresBookingStore implements BookingRecordStore {
           b.expires_at,
           b.created_at,
           json(b),
+          record.extra_resource_ids ?? [],
         ],
       );
       return true;
@@ -87,14 +93,11 @@ export class PostgresBookingStore implements BookingRecordStore {
 
   async update(bookingId: string, now: Date, fn: (booking: Booking) => Booking) {
     return this.#db.transaction(async (tx) => {
-      // venue and resource never change, so read them first to take the same lock as inserts.
-      const { rows: keys } = await tx.query<{ venue_id: string; resource_id: string }>(
-        'select venue_id, resource_id from ob_bookings where booking_id = $1',
-        [bookingId],
-      );
+      // venue and resources never change here, so read them first to take the same locks as inserts.
+      const { rows: keys } = await tx.query<Keys>(KEYS_SQL, [bookingId]);
       const key = keys[0];
       if (!key) return undefined;
-      await tx.query(LOCK_SQL, [lockKey(key.venue_id, key.resource_id)]);
+      await lockAll(tx, resourceLocks(key.venue_id, key));
       const { rows } = await tx.query<Row>(
         `select ${COLUMNS} from ob_bookings where booking_id = $1 for update`,
         [bookingId],
@@ -116,22 +119,16 @@ export class PostgresBookingStore implements BookingRecordStore {
   async move(record: BookingRecord, now: Date, check: (current: Booking) => void) {
     const b = record.booking;
     return this.#db.transaction(async (tx) => {
-      const { rows: keys } = await tx.query<{ venue_id: string; resource_id: string }>(
-        'select venue_id, resource_id from ob_bookings where booking_id = $1',
-        [b.booking_id],
-      );
+      const { rows: keys } = await tx.query<Keys>(KEYS_SQL, [b.booking_id]);
       const key = keys[0];
       if (!key) throw new BookingError('not_found', `No booking with id "${b.booking_id}".`);
-      // Lock the old and the new resource in a fixed order, so two moves in opposite directions
-      // can't deadlock; inserts on either resource wait for us.
+      // Lock the old and the new resources in a fixed order, so two moves in opposite directions
+      // can't deadlock; inserts on any of them wait for us.
       if (record.caps?.length) await tx.query(LOCK_SQL, [guestLockKey(b.venue_id)]);
-      const locks = [
-        ...new Set([
-          lockKey(key.venue_id, key.resource_id),
-          lockKey(b.venue_id, record.resource_id),
-        ]),
-      ].sort();
-      for (const lock of locks) await tx.query(LOCK_SQL, [lock]);
+      await lockAll(tx, [
+        ...resourceLocks(key.venue_id, key),
+        ...resourceLocks(b.venue_id, record),
+      ]);
       const { rows } = await tx.query<Row>(
         `select ${COLUMNS} from ob_bookings where booking_id = $1 for update`,
         [b.booking_id],
@@ -140,7 +137,8 @@ export class PostgresBookingStore implements BookingRecordStore {
       if (await overlapExists(tx, record, now)) return false;
       if (await overCap(tx, record, now)) return false;
       await tx.query(
-        `update ob_bookings set resource_id = $2, start_at = $3::timestamptz, end_at = $4::timestamptz,
+        `update ob_bookings set resource_id = $2, extra_resource_ids = $8::text[],
+            start_at = $3::timestamptz, end_at = $4::timestamptz,
             status = $5, expires_at = $6::timestamptz, data = $7::jsonb
           where booking_id = $1`,
         [
@@ -151,6 +149,7 @@ export class PostgresBookingStore implements BookingRecordStore {
           b.status,
           b.expires_at,
           json(b),
+          record.extra_resource_ids ?? [],
         ],
       );
       return true;
@@ -232,13 +231,14 @@ export class PostgresBookingStore implements BookingRecordStore {
 async function overlapExists(tx: Queryable, record: BookingRecord, now: Date): Promise<boolean> {
   const { rows } = await tx.query(
     `select 1 from ob_bookings
-      where venue_id = $1 and resource_id = $2 and booking_id <> $3
+      where venue_id = $1 and (resource_id = any($2::text[]) or extra_resource_ids && $2::text[])
+        and booking_id <> $3
         and start_at < $5::timestamptz and end_at > $4::timestamptz
         and ${BLOCKING.replace('$NOW', '$6')}
       limit 1`,
     [
       record.booking.venue_id,
-      record.resource_id,
+      resourcesOf(record),
       record.booking.booking_id,
       iso(record.start_ms),
       iso(record.end_ms),
@@ -277,9 +277,28 @@ function toRecord(row: Row, now: Date): BookingRecord {
   return {
     booking: applyExpiry(row.data, now),
     resource_id: row.resource_id,
+    ...(row.extra_resource_ids?.length ? { extra_resource_ids: row.extra_resource_ids } : {}),
     start_ms: new Date(row.start_at).getTime(),
     end_ms: new Date(row.end_at).getTime(),
   };
+}
+
+type Keys = { venue_id: string; resource_id: string; extra_resource_ids: string[] | null };
+const KEYS_SQL =
+  'select venue_id, resource_id, extra_resource_ids from ob_bookings where booking_id = $1';
+
+/** The lock keys of every table a booking occupies. */
+const resourceLocks = (
+  venueId: string,
+  r: { resource_id: string; extra_resource_ids?: string[] | null },
+) =>
+  resourcesOf({ resource_id: r.resource_id, extra_resource_ids: r.extra_resource_ids ?? [] }).map(
+    (id) => lockKey(venueId, id),
+  );
+
+/** Take every lock once, in sorted order: writers that overlap on any table queue, never deadlock. */
+async function lockAll(tx: Queryable, keys: string[]): Promise<void> {
+  for (const key of [...new Set(keys)].sort()) await tx.query(LOCK_SQL, [key]);
 }
 
 const lockKey = (venueId: string, resourceId: string) => `openbooking:${venueId}/${resourceId}`;

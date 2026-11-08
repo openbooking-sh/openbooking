@@ -332,6 +332,35 @@ const bistro: VenueConfig = {
 - `max_online_guests` is a number of guests per period. Not built: a share (percent), and a limit per table size.
 - Hosted businesses store the simpler settings shape and do not use these fields yet.
 
+### Joining tables for larger parties
+
+Two 4-tops for a party of 8: list which tables may be pushed together and what party sizes the pair seats. Optional; without `table_combinations` one booking is one table, as before.
+
+```ts
+const bistro: VenueConfig = {
+  // …
+  table_combinations: [
+    { resource_ids: ['t6', 't7'], min_party_size: 5, max_party_size: 8 },
+    // Optional: more turnover for moving the tables back, and your own label for guests.
+    {
+      resource_ids: ['t8', 't9'],
+      min_party_size: 5,
+      max_party_size: 8,
+      extra_buffer_minutes: 10,
+      label: 'The window pair',
+    },
+  ],
+};
+```
+
+- **Single table first.** A party gets the smallest single table that fits, as always. Joined tables are offered only when no single table that fits is free at that time. Search and holds use the same order, so search never offers a slot a hold would refuse.
+- **Which pair.** Of the free combinations, the one that wastes the fewest seats wins, then the one with fewer tables, then the one whose biggest table is smaller (so large tables stay free). Equal choices keep the order in the config.
+- **One booking, every table.** The booking occupies all its tables for the whole table time plus buffer (plus `extra_buffer_minutes`). The memory store and the Postgres store claim all of them or none, under one lock per table taken in a fixed order, so a race cannot put a table in two bookings. Cancelling, an expired hold and rescheduling free or move all of them. Postgres needs migration 7 (`migrate(db)` applies it).
+- **What agents see.** `slot.resource` is the first table, with the label "Tables T6 and T7 together" (or your `label`); `slot.additional_resources` lists the others. The MCP `next_step` tells the agent to say the tables are joined.
+- **Config is checked at startup:** unknown table ids, fewer than two tables, mixed kinds, a kind no offering uses, `max_party_size` above what the tables hold, the same tables listed twice for overlapping party sizes.
+- **Studio** shows a joined booking on the calendar column of each table; counts and lists still count it once.
+- Not built: joining three or more tables by chaining (list the triple as its own combination), tables that may only be joined at certain times, and joined tables in hosted businesses (they store the simpler settings shape).
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:

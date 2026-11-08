@@ -45,6 +45,9 @@ export async function freshDb(): Promise<Db> {
   const pool = new pg.Pool({
     connectionString: TEST_DATABASE_URL,
     max: 10,
+    // Pools live until the file ends and a suite can make dozens; let idle connections go, so a
+    // server with the default 100 connections is never exhausted.
+    idleTimeoutMillis: 500,
     options: `-c search_path=${schema}`,
   });
   cleanups.push(async () => {

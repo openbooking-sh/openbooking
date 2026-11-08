@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { BookingService, ManualClock } from '@openbooking-sh/core';
-import { createDemoRestaurantProvider } from '@openbooking-sh/provider-memory';
+import { BookingService, ManualClock, type BookingProvider } from '@openbooking-sh/core';
+import {
+  MemoryBookingProvider,
+  createDemoRestaurantProvider,
+  demoRestaurantVenue,
+} from '@openbooking-sh/provider-memory';
 import { TOOL_NAMES, createMcpHttpHandler } from '../src';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -10,10 +14,13 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-async function connect(holdTtlSeconds = 300) {
+async function connect(
+  holdTtlSeconds = 300,
+  provider: BookingProvider = createDemoRestaurantProvider(),
+) {
   const clock = new ManualClock('2026-10-01T08:00:00Z');
   const service = new BookingService({
-    provider: createDemoRestaurantProvider(),
+    provider,
     clock,
     holdTtlSeconds,
   });
@@ -47,6 +54,43 @@ describe('MCP adapter', () => {
     expect(tools.find((t) => t.name === 'search_availability')!.annotations?.readOnlyHint).toBe(
       true,
     );
+  });
+
+  it('tells the agent when tables are joined for the party', async () => {
+    const venue = demoRestaurantVenue();
+    venue.resources = ['t6', 't7'].map((id) => ({
+      id,
+      venue_id: venue.venue.id,
+      kind: 'table',
+      name: `Table ${id.slice(1)}`,
+      capacity: { min: 1, max: 4 },
+      tags: [],
+    }));
+    venue.table_combinations = [
+      { resource_ids: ['t6', 't7'], min_party_size: 5, max_party_size: 8 },
+    ];
+    const { call } = await connect(300, new MemoryBookingProvider({ name: 'T', venues: [venue] }));
+    const search = await call('search_availability', {
+      date: '2026-10-02',
+      party_size: 6,
+      time_from: '19:00',
+    });
+    expect(search.data.slots[0].resource).toBe('Tables 6 and 7 together');
+    expect(search.data.next_step).toContain('pushed together');
+    const hold = await call('hold_slot', {
+      slot_id: search.data.slots[0].slot_id,
+      idempotency_key: randomUUID(),
+      customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+    });
+    expect(hold.data.resource).toBe('Tables 6 and 7 together');
+    expect(hold.data.next_step).toContain('joined');
+    // One table: nothing about joining.
+    const two = await call('search_availability', {
+      date: '2026-10-02',
+      party_size: 2,
+      time_from: '19:00',
+    });
+    expect(two.data.next_step).not.toContain('together');
   });
 
   it('returns structured, actionable validation errors', async () => {
