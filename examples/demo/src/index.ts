@@ -62,7 +62,7 @@ const { app, close } = createOpenBookingApp({
     ...(stores ? { activity: stores.activity } : {}),
   },
   serviceOptions: {
-    ...(stores ? { idempotencyStore: stores.idempotency } : {}),
+    ...(stores ? { idempotencyStore: stores.idempotency, guests: stores.guests } : {}),
     holdTtlSeconds: Number(process.env.HOLD_TTL_SECONDS ?? 600),
     onEvent: (e) => {
       const what = e.ok

@@ -343,6 +343,7 @@ ${venueHeader(v, m.profile)}
   <div class="two"><div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" /></div>
   <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" autocomplete="tel" placeholder="+47..." /></div></div>
   <div class="field"><label for="notes">Anything we should know? (optional)</label><textarea id="notes" maxlength="500"></textarea></div>
+  <div class="field"><label for="dietary">Allergies or dietary needs (optional)</label><textarea id="dietary" maxlength="300"></textarea><div style="font-size:12.5px;opacity:.7;margin-top:4px">Only shared with the staff, and deleted shortly after your visit.</div></div>
   ${m.childNotice ? `<p class="muted" id="child-notice" style="font-size:13px">${esc(m.childNotice)}</p>` : ''}
   <div class="err" id="err" role="alert"></div>
   <button class="btn btn-primary" id="confirm">Confirm booking</button>

@@ -110,6 +110,10 @@ The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mappin
 - **Policy terms up front.** Search results and holds carry the cancellation policy (human-readable `description` plus structured fields) and the deposit terms _before_ confirmation.
 - **Opaque slot ids.** A `slot_id` encodes everything needed to hold it, so the agent doesn't re-send dates and times and can't get them wrong.
 
+## Staff-only guest data
+
+Allergy notes (`dietary_notes`, health data under GDPR art. 9) and guest profiles (tags, staff notes, VIP) are **not part of `Booking`**. They live in a `GuestStore` (`packages/core/src/guests.ts`, Postgres: `ob_dietary_notes`, `ob_guest_profiles`) that only `BookingService` writes (on `hold` and `update`) and only Studio reads. Because they are not on the booking, no adapter, email, webhook event, activity entry or idempotency record can carry them by accident; `dietary_notes` is left out of the idempotency fingerprint on purpose. Every row is scoped by `venue_id`. A guest is identified by a SHA-256 of the business id and the guest's normalised email (or phone), so keys differ per business and the table holds no contact detail. See [HOSTED.md](./HOSTED.md#guest-profiles-and-allergy-notes) for retention and erasure.
+
 ## Scaling beyond the demo
 
 - **Postgres.** `@openbooking-sh/postgres` makes everything durable and safe across instances. `PostgresBookingStore` reserves under a transaction-scoped advisory lock per venue resource (check overlap, then insert), so overlapping holds can never both commit. A booking of joined tables takes the lock of each of its tables, in sorted order, and is one row, so it holds all of them or none. Updates take the same locks, and a confirm that turns blocking re-checks for overlaps: a late confirm whose hold lapsed and was re-booked fails with `hold_expired` instead of double-booking. Expiry is applied on read, so no sweeper job is needed. Run `migrate(db)` on start (idempotent, lock-serialised).

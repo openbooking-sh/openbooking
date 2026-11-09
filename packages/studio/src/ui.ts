@@ -89,6 +89,10 @@ export const STUDIO_HTML = `<!doctype html>
   .b-expired { background: var(--amber-bg); color: var(--amber); }
   .b-error { background: var(--red-bg); color: var(--red); }
   .b-ok { background: var(--green-bg); color: var(--green); }
+  .b-vip { background: var(--amber-bg); color: var(--amber); }
+  .b-new { background: var(--sky-bg); color: var(--royal); }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--bg-2); color: var(--ink-2); margin: 0 4px 2px 0; }
+  .allergy { background: var(--red-bg); color: var(--red); border-radius: 8px; padding: 4px 8px; display: inline-block; }
   .src-l { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
   .src-l img, .src-l .ini { width: 16px; height: 16px; flex: none; }
   .ai-ico { filter: invert(7%) sepia(18%) saturate(1800%) hue-rotate(196deg) brightness(92%); }
@@ -193,6 +197,7 @@ export const STUDIO_HTML = `<!doctype html>
     <div class="brand"><i><svg width="12" height="12" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>OpenBooking</div>
     <div class="venue-name" id="venue-name"></div>
     <button class="nav active" data-view="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Calendar</button>
+    <button class="nav" data-view="preshift"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M4 5h6M4 12h3M4 19h12"/></svg>Pre-shift</button>
     <button class="nav" data-view="bookings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Bookings</button>
     <button class="nav" data-view="customers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 010 8M22 21c0-3-2-5-5-5.5"/></svg>Customers</button>
     <button class="nav" data-view="services"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Services &amp; staff</button>
@@ -218,6 +223,7 @@ export const STUDIO_HTML = `<!doctype html>
       </div>
       <div class="card" style="padding:12px 8px"><div id="bookings"></div></div>
     </section>
+    <section id="view-preshift" class="hidden"><div class="grid kpis" id="ps-kpis"></div><div class="card" style="padding:12px 8px;margin-top:14px"><div id="ps-list"></div></div><p class="muted" style="font-size:12.5px;padding:0 4px">Allergy notes are shown to staff only and are deleted shortly after the visit.</p></section>
     <section id="view-customers" class="hidden"><div class="card" style="padding:12px 8px"><div id="customers"></div></div></section>
     <section id="view-services" class="hidden">
       <div class="card" style="padding:12px 8px"><h2 style="padding:0 10px">Services</h2><div id="offerings"></div></div>
@@ -362,8 +368,8 @@ export const STUDIO_HTML = `<!doctype html>
     };
   });
 
-  var TITLES = { calendar: 'Calendar', bookings: 'Bookings', customers: 'Customers', services: 'Services & staff', insights: 'Insights', activity: 'Agent log', settings: 'Settings' };
-  var VIEWS = ['calendar', 'bookings', 'customers', 'services', 'insights', 'activity', 'settings'];
+  var TITLES = { calendar: 'Calendar', preshift: 'Pre-shift', bookings: 'Bookings', customers: 'Customers', services: 'Services & staff', insights: 'Insights', activity: 'Agent log', settings: 'Settings' };
+  var VIEWS = ['calendar', 'preshift', 'bookings', 'customers', 'services', 'insights', 'activity', 'settings'];
   function go(v) {
     view = v;
     if (history.replaceState) history.replaceState(null, '', v === 'calendar' ? location.pathname + location.search : '#' + v);
@@ -375,6 +381,7 @@ export const STUDIO_HTML = `<!doctype html>
   }
   function refresh() {
     if (view === 'calendar') return loadCalendar();
+    if (view === 'preshift') return loadPreshift();
     if (view === 'bookings') return loadBookings();
     if (view === 'customers') return loadCustomers();
     if (view === 'services') return loadServices();
@@ -390,6 +397,11 @@ export const STUDIO_HTML = `<!doctype html>
       $('d-prev').onclick = function () { calDate = addDays(calDate, -1); loadCalendar(); };
       $('d-next').onclick = function () { calDate = addDays(calDate, 1); loadCalendar(); };
       $('d-today').onclick = function () { calDate = null; loadCalendar(); };
+    } else if (view === 'preshift') {
+      a.innerHTML = '<button class="btn btn-sm" id="p-prev" aria-label="Previous day">&#8249;</button><button class="btn btn-sm" id="p-today">Today</button><button class="btn btn-sm" id="p-next" aria-label="Next day">&#8250;</button>';
+      $('p-prev').onclick = function () { psDate = addDays(psDate || localDate(new Date().toISOString()), -1); loadPreshift(); };
+      $('p-next').onclick = function () { psDate = addDays(psDate || localDate(new Date().toISOString()), 1); loadPreshift(); };
+      $('p-today').onclick = function () { psDate = null; loadPreshift(); };
     } else if (view === 'bookings') {
       a.innerHTML = '<button class="btn btn-primary" id="new-booking">+ New booking</button>';
     } else { a.innerHTML = ''; }
@@ -468,14 +480,69 @@ export const STUDIO_HTML = `<!doctype html>
     return api('/customers').then(function (d) {
       $('subtitle').textContent = d.customers.length + ' customer' + (d.customers.length === 1 ? '' : 's');
       if (!d.customers.length) { $('customers').innerHTML = '<div class="empty">Customers appear here after their first booking.</div>'; return; }
-      var h = '<table><thead><tr><th>Name</th><th class="hide-sm">Email</th><th class="hide-sm">Phone</th><th>Bookings</th><th class="hide-sm">Spend</th><th>Next visit</th><th class="hide-sm">First booked via</th></tr></thead><tbody>';
+      var h = '<table><thead><tr><th>Name</th><th class="hide-sm">Tags</th><th class="hide-sm">Email</th><th class="hide-sm">Phone</th><th>Bookings</th><th class="hide-sm">Spend</th><th>Next visit</th><th class="hide-sm">First booked via</th></tr></thead><tbody>';
       d.customers.forEach(function (c) {
-        h += '<tr><td><b>' + esc(c.name) + '</b></td><td class="hide-sm">' + esc(c.email || '-') + '</td><td class="hide-sm">' + esc(c.phone_number || '-') + '</td><td>' + c.bookings + '</td><td class="hide-sm">' +
+        h += '<tr class="click" data-key="' + esc(c.guest_key || '') + '"><td><b>' + esc(c.name) + '</b>' + (c.vip ? ' <span class="badge b-vip">VIP</span>' : '') + '</td><td class="hide-sm">' + tagList(c.tags) + '</td><td class="hide-sm">' + esc(c.email || '-') + '</td><td class="hide-sm">' + esc(c.phone_number || '-') + '</td><td>' + c.bookings + '</td><td class="hide-sm">' +
           (c.spend ? amount(c.spend, c.currency) : '<span class="muted">-</span>') + '</td><td>' + (c.next_visit ? fmtDate(c.next_visit) + ' ' + fmtTime(c.next_visit) : '<span class="muted">-</span>') +
           '</td><td class="hide-sm">' + source(c.first_source) + '</td></tr>';
       });
       $('customers').innerHTML = h + '</tbody></table>';
+      $('customers').querySelectorAll('tr.click').forEach(function (tr) {
+        tr.onclick = function () { if (tr.getAttribute('data-key')) openGuest(tr.getAttribute('data-key')); };
+      });
     });
+  }
+
+  // ---------------------------------------------------------------- Guests and pre-shift
+  var psDate = null;
+  function tagList(tags) { return (tags || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('') || '<span class="muted">-</span>'; }
+  function loadPreshift() {
+    return api('/preshift' + (psDate ? '?date=' + encodeURIComponent(psDate) : '')).then(function (d) {
+      psDate = d.date;
+      $('subtitle').textContent = fmtDate(d.date + 'T12:00:00Z') + ' · for staff only';
+      var sizes = Object.keys(d.party_sizes).sort(function (a, b) { return Number(a) - Number(b); }).map(function (k) { return d.party_sizes[k] + ' x ' + k; }).join(', ');
+      function kpi(l, v) { return '<div class="card kpi"><div class="l">' + l + '</div><div class="v">' + v + '</div></div>'; }
+      $('ps-kpis').innerHTML = kpi('Covers', d.covers) + kpi('Bookings', d.bookings) + kpi('VIPs', d.vips) + kpi('First time / returning', d.first_time + ' / ' + d.returning) +
+        '<div class="card kpi" style="grid-column:1/-1"><div class="l">Party sizes</div><div style="margin-top:4px">' + (esc(sizes) || '<span class="muted">No bookings</span>') + '</div></div>';
+      if (!d.entries.length) { $('ps-list').innerHTML = '<div class="empty">Nobody is booked this day.</div>'; return; }
+      var h = '<table><thead><tr><th>Time</th><th>Guest</th><th>Party</th><th class="hide-sm">Table</th><th>Notes for staff</th></tr></thead><tbody>';
+      d.entries.forEach(function (e) {
+        h += '<tr class="click" data-id="' + esc(e.booking_id) + '"><td>' + fmtTime(e.start) + '</td><td><b>' + esc(e.guest || '-') + '</b> ' + (e.vip ? '<span class="badge b-vip">VIP</span> ' : '') +
+          (e.first_time ? '<span class="badge b-new">First time</span>' : '<span class="muted">visit ' + (e.previous_visits + 1) + '</span>') + '</td><td>' + e.party_size + '</td><td class="hide-sm">' + esc(e.resource || '') + '</td><td>' +
+          (e.dietary_note ? '<div class="allergy">Allergy: ' + esc(e.dietary_note) + '</div> ' : '') + tagList(e.tags) + (e.staff_notes ? '<div class="muted">' + esc(e.staff_notes) + '</div>' : '') + (e.notes ? '<div class="muted">' + esc(e.notes) + '</div>' : '') + '</td></tr>';
+      });
+      $('ps-list').innerHTML = h + '</tbody></table>';
+      bindRows($('ps-list'));
+    }).catch(function (e) { if (e.message !== 'unauthorized') $('ps-list').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
+  }
+  function guestSummary(g) {
+    if (!g) return '<span class="muted">No contact details, so no guest profile.</span>';
+    var p = g.profile, hst = g.history;
+    return (p && p.vip ? '<span class="badge b-vip">VIP</span> ' : '') + tagList(p && p.tags) + (p && p.notes ? '<div>' + esc(p.notes) + '</div>' : '') +
+      '<div class="muted">' + hst.visits + ' visit' + (hst.visits === 1 ? '' : 's') + (hst.last_visit ? ', last ' + fmtDate(hst.last_visit) : '') + (hst.next_visit ? ', next ' + fmtDate(hst.next_visit) : '') + '</div>' +
+      '<button class="btn btn-sm" id="dr-guest" style="margin-top:6px">Edit guest</button>';
+  }
+  function openGuest(key) {
+    api('/guests/' + encodeURIComponent(key)).then(function (d) {
+      var p = d.profile || { tags: [], notes: '', vip: false }, hst = d.history;
+      openDrawer('<div class="drawer-head"><h1 style="font-size:20px">Guest</h1><button class="btn btn-sm" id="g-close">Close</button></div>' +
+        '<div class="muted" style="margin-bottom:12px">Only your staff see this. It is never sent to customers, AI assistants or emails, and is deleted when the guest asks you to erase their data.</div>' +
+        '<dl class="kv"><dt>Visits</dt><dd>' + hst.visits + (hst.last_visit ? ' (last ' + fmtDate(hst.last_visit) + ')' : '') + '</dd><dt>Next visit</dt><dd>' + (hst.next_visit ? fmtDate(hst.next_visit) + ' ' + fmtTime(hst.next_visit) : '<span class="muted">-</span>') + '</dd></dl>' +
+        '<label class="check"><input type="checkbox" id="g-vip"' + (p.vip ? ' checked' : '') + ' /> VIP</label>' +
+        '<div class="field" style="margin-top:12px"><label for="g-tags">Tags (comma separated)</label><input id="g-tags" value="' + esc((p.tags || []).join(', ')) + '" /></div>' +
+        '<div class="field"><label for="g-notes">Staff notes</label><textarea id="g-notes" maxlength="2000" style="height:110px">' + esc(p.notes || '') + '</textarea></div>' +
+        '<div class="err" id="g-err" role="alert"></div><button class="btn btn-primary" id="g-save">Save</button>' +
+        (hst.recent.length ? '<h2 style="font-size:15px;font-weight:500;margin:28px 0 8px">Recent bookings</h2>' + hst.recent.map(function (r) {
+          return '<div class="feed-item"><span>' + fmtDate(r.start) + ' ' + fmtTime(r.start) + ' · ' + r.party_size + (r.party_size === 1 ? ' guest' : ' guests') + '</span>' + badge(r.status) + '</div>';
+        }).join('') : ''));
+      $('g-close').onclick = closeDrawer;
+      $('g-save').onclick = function () {
+        var tags = $('g-tags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+        api('/guests/' + encodeURIComponent(key), { method: 'PUT', body: JSON.stringify({ tags: tags, notes: $('g-notes').value, vip: $('g-vip').checked }) })
+          .then(function () { closeDrawer(); toast('Guest saved'); refresh(); })
+          .catch(function (e) { $('g-err').textContent = e.message; });
+      };
+    }).catch(function (e) { alert(e.message); });
   }
   function loadServices() {
     $('subtitle').textContent = 'What customers and AI assistants can book';
@@ -540,6 +607,8 @@ export const STUDIO_HTML = `<!doctype html>
         ['Email', c && c.email ? esc(c.email) : '<span class="muted">-</span>'],
         ['Phone', c && c.phone_number ? esc(c.phone_number) : '<span class="muted">-</span>'],
         ['Notes', b.notes ? esc(b.notes) : '<span class="muted">-</span>'],
+        ['Allergies', d.dietary_note ? '<span class="allergy">' + esc(d.dietary_note) + '</span>' : '<span class="muted">None given</span>'],
+        ['Guest', guestSummary(d.guest)],
         ['Price', b.slot.price ? money(b.slot.price) : '<span class="muted">At venue</span>'],
         ['Deposit', b.slot.deposit ? money(b.slot.deposit.amount) + ' (' + esc(b.payment.status) + ')' : '<span class="muted">None</span>'],
         ['Source', source(b.booked_via)],
@@ -559,6 +628,7 @@ export const STUDIO_HTML = `<!doctype html>
             (e.ok ? '' : '<span class="badge b-error">' + esc(e.error_code) + '</span>') + '</div>' + consentLine(e);
         }).join('') : ''));
       $('dr-close').onclick = closeDrawer;
+      if ($('dr-guest')) $('dr-guest').onclick = function () { openGuest(d.guest.key); };
       if (canCancel) $('dr-cancel').onclick = function () {
         if (!confirm('Cancel this booking? The customer is not notified automatically.')) return;
         api('/bookings/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: JSON.stringify({}) })
@@ -583,6 +653,7 @@ export const STUDIO_HTML = `<!doctype html>
           '<div class="two-f"><div class="field"><label for="nb-first">First name</label><input id="nb-first" /></div><div class="field"><label for="nb-last">Last name</label><input id="nb-last" /></div></div>' +
           '<div class="two-f"><div class="field"><label for="nb-phone">Phone</label><input id="nb-phone" placeholder="+47..." /></div><div class="field"><label for="nb-email">Email</label><input id="nb-email" type="email" /></div></div>' +
           '<div class="field"><label for="nb-notes">Notes</label><textarea id="nb-notes"></textarea></div>' +
+          '<div class="field"><label for="nb-diet">Allergies or dietary needs (only if the guest said so)</label><textarea id="nb-diet" maxlength="300"></textarea></div>' +
           '<label class="check hidden" id="nb-dep-wrap"><input type="checkbox" id="nb-dep" /> <span id="nb-dep-label">Deposit collected</span></label>' +
           '<div class="err" id="nb-err" role="alert"></div>' +
           '<button class="btn btn-primary" id="nb-save">Create booking</button>' +
@@ -616,7 +687,7 @@ export const STUDIO_HTML = `<!doctype html>
         if ($('nb-email').value.trim()) customer.email = $('nb-email').value.trim();
         $('nb-err').textContent = '';
         $('nb-save').disabled = true;
-        api('/bookings', { method: 'POST', body: JSON.stringify({ slot_id: chosen.slot_id, customer: customer, notes: $('nb-notes').value.trim() || undefined, deposit_collected: $('nb-dep').checked }) })
+        api('/bookings', { method: 'POST', body: JSON.stringify({ slot_id: chosen.slot_id, customer: customer, notes: $('nb-notes').value.trim() || undefined, dietary_notes: $('nb-diet').value.trim() || undefined, deposit_collected: $('nb-dep').checked }) })
           .then(function (r) {
             closeDrawer();
             calDate = localDate(r.booking.slot.start);

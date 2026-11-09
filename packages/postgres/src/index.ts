@@ -1,6 +1,7 @@
 export { connectPostgres, fromPool, type Db, type PostgresConnection, type Queryable } from './db';
 export { migrate, MIGRATIONS } from './migrations';
 export { PostgresBookingStore } from './bookings';
+export { PostgresGuestStore } from './guests';
 export { PostgresIdempotencyStore, type PostgresIdempotencyStoreOptions } from './idempotency';
 export { PostgresActivityLog } from './activity';
 export { PostgresCalcomStore } from './calcom';
@@ -18,6 +19,7 @@ import type { Db } from './db';
 import { PostgresActivityLog } from './activity';
 import { PostgresBookingStore } from './bookings';
 import { PostgresCalcomStore } from './calcom';
+import { PostgresGuestStore } from './guests';
 import {
   PostgresApiKeyStore,
   PostgresBusinessStore,
@@ -48,6 +50,8 @@ export interface PostgresStores {
   suppressions: PostgresSuppressionList;
   apiKeys: PostgresApiKeyStore;
   rateLimiter: PostgresRateLimiter;
+  /** For `serviceOptions.guests` / hosted `guests`: dietary notes and guest profiles (staff only). */
+  guests: PostgresGuestStore;
 }
 
 /** Every OpenBooking store on one database. Run {@link migrate} first. */
@@ -68,5 +72,6 @@ export function postgresStores(
     suppressions: new PostgresSuppressionList(db),
     apiKeys: new PostgresApiKeyStore(db),
     rateLimiter: new PostgresRateLimiter(db),
+    guests: new PostgresGuestStore(db),
   };
 }

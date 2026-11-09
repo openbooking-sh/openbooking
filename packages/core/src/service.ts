@@ -13,6 +13,7 @@ import type * as z from 'zod';
 import { currentActor, type Actor } from './actor';
 import { evaluateBookingCancellation } from './cancellation';
 import { systemClock, type Clock } from './clock';
+import { DEFAULT_DIETARY_NOTE_RETENTION_DAYS, MemoryGuestStore, type GuestStore } from './guests';
 import { BookingError, fromZodError, isBookingError, type ErrorCode } from './errors';
 import {
   IdempotencyGuard,
@@ -155,6 +156,13 @@ export interface BookingServiceOptions {
    * deposit is judged by the booking system itself (tokens in the demo provider).
    */
   payments?: PaymentProvider;
+  /**
+   * Where dietary notes and guest profiles live (staff-only, see ./guests). Default: in memory.
+   * Hosted deployments pass a database-backed store, scoped per business by venue id.
+   */
+  guests?: GuestStore;
+  /** Days after the visit that a dietary note is kept. Default 1; 0 deletes them at the next clean-up after the visit. */
+  dietaryNoteRetentionDays?: number;
 }
 
 export interface SearchResult {
@@ -184,6 +192,8 @@ export class BookingService {
   readonly clock: Clock;
   readonly payments: PaymentProvider | undefined;
   readonly holdTtlSeconds: number;
+  readonly guests: GuestStore;
+  readonly dietaryNoteRetentionDays: number;
   readonly #guard: IdempotencyGuard;
   readonly #listeners = new Set<(e: BookingEvent) => void>();
   readonly #expiryClaims: ExpiryClaims;
@@ -195,6 +205,9 @@ export class BookingService {
     this.clock = options.clock ?? systemClock;
     this.payments = options.payments;
     this.holdTtlSeconds = options.holdTtlSeconds ?? DEFAULT_HOLD_TTL_SECONDS;
+    this.guests = options.guests ?? new MemoryGuestStore();
+    this.dietaryNoteRetentionDays =
+      options.dietaryNoteRetentionDays ?? DEFAULT_DIETARY_NOTE_RETENTION_DAYS;
     const now = () => this.clock.now().getTime();
     this.#guard = new IdempotencyGuard(
       options.idempotencyStore ?? new MemoryIdempotencyStore(now),
@@ -203,6 +216,13 @@ export class BookingService {
     );
     this.#expiryClaims = options.expiryClaims ?? new MemoryExpiryClaims();
     if (options.onEvent) this.#listeners.add(options.onEvent);
+    // A booking that will not happen has no use for a dietary note: drop it right away.
+    this.#listeners.add((e) => {
+      const b = e.booking;
+      if (e.ok && b && (e.operation === 'cancel' || e.operation === 'expire')) {
+        this.guests.deleteDietaryNotes(b.venue_id, [b.booking_id]).catch(() => undefined);
+      }
+    });
     const limit = options.holdLimit ?? { limit: 20, windowMs: 10 * 60_000 };
     this.#holdLimit = limit
       ? { ...limit, limiter: limit.limiter ?? new MemoryRateLimiter(now) }
@@ -373,7 +393,9 @@ export class BookingService {
   /** Reserve a slot for `holdTtlSeconds`. Returns a booking in status `held` with `expires_at`. */
   async hold(input: HoldInput): Promise<Booking> {
     return this.#track('hold', async (meta) => {
-      const { idempotency_key, ...req } = parse(HoldInputSchema, input, 'hold_slot');
+      // The dietary note stays out of `req`: it is fingerprinted and stored with the idempotency
+      // record, which outlives the note.
+      const { idempotency_key, dietary_notes, ...req } = parse(HoldInputSchema, input, 'hold_slot');
       return this.#idempotent(meta, idempotency_key, 'hold', req, async (ctx) => {
         await this.#checkHoldLimit();
         const expires_at = new Date(ctx.now.getTime() + this.holdTtlSeconds * 1000);
@@ -386,9 +408,45 @@ export class BookingService {
           },
           ctx,
         );
+        await this.#saveDietaryNote(booking, dietary_notes);
         return this.#observe(booking);
       });
     });
+  }
+
+  /** Keep (or, when empty, remove) the booking's dietary note and clean up old ones now and then. */
+  async #saveDietaryNote(booking: Booking, note: string | null | undefined): Promise<void> {
+    if (note === undefined) return;
+    const text = note?.trim();
+    if (!text) {
+      await this.guests.deleteDietaryNotes(booking.venue_id, [booking.booking_id]);
+      return;
+    }
+    await this.guests.saveDietaryNote({
+      venue_id: booking.venue_id,
+      booking_id: booking.booking_id,
+      note: text,
+      visit_end: booking.slot.end,
+    });
+    if (this.clock.now().getTime() - this.#lastNotePurge > 10 * 60_000) {
+      void this.purgeDietaryNotes(booking.venue_id).catch(() => undefined);
+    }
+  }
+
+  #lastNotePurge = 0;
+
+  /**
+   * Delete dietary notes whose visit ended more than `dietaryNoteRetentionDays` ago. Hosted
+   * deployments call it from the retention cron; every server also does it, at most every ten
+   * minutes, when a note is saved.
+   */
+  async purgeDietaryNotes(venueId?: string): Promise<number> {
+    const now = this.clock.now();
+    this.#lastNotePurge = now.getTime();
+    return this.guests.purgeDietaryNotes(
+      new Date(now.getTime() - this.dietaryNoteRetentionDays * 86_400_000),
+      venueId,
+    );
   }
 
   /** Confirm a held booking. Requires `user_confirmed: true`. */
@@ -473,9 +531,14 @@ export class BookingService {
     return this.#track(
       'update',
       async (meta) => {
-        const { idempotency_key, ...req } = parse(UpdateInputSchema, input, 'update_booking');
+        const { idempotency_key, dietary_notes, ...req } = parse(
+          UpdateInputSchema,
+          input,
+          'update_booking',
+        );
         return this.#idempotent(meta, idempotency_key, 'update', req, async (ctx) => {
-          if (!this.provider.updateBooking) {
+          const changesBooking = !!req.customer || req.notes !== undefined;
+          if (changesBooking && !this.provider.updateBooking) {
             throw new BookingError(
               'operation_not_supported',
               'This booking system does not support updates.',
@@ -486,14 +549,18 @@ export class BookingService {
           if (booking.status === 'cancelled') {
             throw new BookingError('invalid_state', `Booking ${booking.booking_id} is cancelled.`);
           }
-          const updated = await this.provider.updateBooking(
-            {
-              booking_id: booking.booking_id,
-              ...(req.customer ? { customer: req.customer } : {}),
-              ...(req.notes !== undefined ? { notes: req.notes } : {}),
-            },
-            ctx,
-          );
+          // A call that only carries a dietary note changes nothing at the provider.
+          const updated = changesBooking
+            ? await this.provider.updateBooking!(
+                {
+                  booking_id: booking.booking_id,
+                  ...(req.customer ? { customer: req.customer } : {}),
+                  ...(req.notes !== undefined ? { notes: req.notes } : {}),
+                },
+                ctx,
+              )
+            : booking;
+          await this.#saveDietaryNote(updated, dietary_notes);
           return this.#observe(updated);
         });
       },

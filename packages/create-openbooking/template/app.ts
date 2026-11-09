@@ -22,7 +22,9 @@ export async function createApp() {
   return createOpenBookingApp({
     provider: new MemoryBookingProvider(business, stores ? { store: stores.bookings } : {}),
     baseUrl,
-    ...(stores ? { serviceOptions: { idempotencyStore: stores.idempotency } } : {}),
+    ...(stores
+      ? { serviceOptions: { idempotencyStore: stores.idempotency, guests: stores.guests } }
+      : {}),
     // Studio is open without a token on localhost only; set STUDIO_TOKEN anywhere else.
     studio: {
       ...(env.STUDIO_TOKEN ? { token: env.STUDIO_TOKEN } : {}),

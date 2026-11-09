@@ -148,6 +148,13 @@ export const ConfirmRequestSchema = z.object({
     ),
   customer: CustomerSchema,
   notes: z.string().optional(),
+  dietary_notes: z
+    .string()
+    .max(300)
+    .optional()
+    .describe(
+      'Allergies or dietary needs the customer typed. Optional, kept for staff only and deleted shortly after the visit. Never returned by this API.',
+    ),
   payment_token: z
     .string()
     .optional()

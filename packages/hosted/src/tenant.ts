@@ -10,6 +10,7 @@ import {
   type BookingEvent,
   type BookingProvider,
   type CancelBookingRequest,
+  type GuestStore,
   type Clock,
   type ConfirmHoldRequest,
   type CreateHoldRequest,
@@ -82,6 +83,9 @@ export interface TenantDeps {
   suppressions: SuppressionList;
   /** API keys per business; closing the account removes them. */
   apiKeys: ApiKeyStore;
+  /** Dietary notes and guest profiles, per business (staff only). */
+  guests: GuestStore;
+  dietaryNoteRetentionDays?: number;
   /** The signed one-click unsubscribe link for a customer address of a business. */
   unsubscribeUrl: (businessId: string, email: string) => string;
   google?: GoogleCredentials & { fetch?: typeof fetch };
@@ -144,6 +148,10 @@ export class Tenant {
       // The email dedupe store, scoped to this business: one instance announces each expiry.
       expiryClaims: { claim: (key) => deps.notificationLog.claim(`${business.id}:${key}`) },
       payments: this.#payments,
+      guests: deps.guests,
+      ...(deps.dietaryNoteRetentionDays !== undefined
+        ? { dietaryNoteRetentionDays: deps.dietaryNoteRetentionDays }
+        : {}),
       // The engine's own limiter lives in this process only; on Vercel every cold start would reset it.
       holdLimit: {
         ...LIMITS.holdPerIp,
@@ -219,6 +227,14 @@ export class Tenant {
       },
       settings: b.settings,
       bookings: records.map((r) => r.booking),
+      // Staff-only data about guests: profiles are keyed by a per-business hash, notes by booking.
+      guest_profiles: Object.fromEntries(await this.#deps.guests.listProfiles(this.id)),
+      dietary_notes: Object.fromEntries(
+        await this.#deps.guests.dietaryNotes(
+          this.id,
+          records.map((r) => r.booking.booking_id),
+        ),
+      ),
     };
   }
 
@@ -237,6 +253,7 @@ export class Tenant {
     await d.idempotency.deletePrefix?.(`${this.id}:`);
     await d.suppressions.deleteScope(this.id);
     await d.apiKeys.deleteScope(this.id);
+    await d.guests.deleteVenue(this.id);
     await d.bookings.deleteVenue?.(this.id);
     await d.businesses.delete?.(this.id);
   }

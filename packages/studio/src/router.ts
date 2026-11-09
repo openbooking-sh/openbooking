@@ -14,6 +14,15 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ActivityStore, recordActivity, type ActivityLog } from './activity';
 import { CustomerMatchSchema, type DataRightsAdapter } from './data-rights';
+import {
+  GuestProfileInputSchema,
+  buildPreshift,
+  guestHistory,
+  guestKey,
+  guestKeys,
+  hasProfileData,
+  matchesPerson,
+} from './guests';
 import { paymentSummary } from './payment-summary';
 import { BusinessSettingsSchema, type StudioSettingsAdapter } from './settings';
 import { computeOverview } from './stats';
@@ -95,6 +104,11 @@ export function createStudio(options: StudioOptions): Studio {
     return bookings.map((b) => ({ ...b, booked_via: via.get(b.booking_id) ?? null }));
   };
   const oneWithVia = async (b: Booking) => (await withVia([b]))[0]!;
+  // Dietary notes and guest profiles: staff-only, so they are added here and only to Studio
+  // responses, never to a Booking.
+  const guests = service.guests;
+  const allBookings = async () =>
+    service.listBookings({ limit: 5000 }).catch(() => [] as Booking[]);
 
   const html = studioHtml(options.legal);
   app.get('/', (c) => c.html(html));
@@ -168,10 +182,25 @@ export function createStudio(options: StudioOptions): Studio {
     json(c, async () => {
       const id = c.req.param('id');
       const booking = await service.getBooking(id);
+      const key = guestKey(booking.venue_id, booking.customer);
+      const profile = key ? (await guests.profiles(booking.venue_id, [key])).get(key) : undefined;
       return {
         booking: await oneWithVia(booking),
         payment_summary: paymentSummary(booking),
         activity: await activity.list({ booking_id: id, limit: 50 }),
+        dietary_note: (await guests.dietaryNotes(booking.venue_id, [id])).get(id) ?? null,
+        guest: key
+          ? {
+              key,
+              profile: profile ?? null,
+              history: guestHistory(
+                await allBookings(),
+                booking.venue_id,
+                key,
+                service.clock.now(),
+              ),
+            }
+          : null,
       };
     }),
   );
@@ -188,6 +217,70 @@ export function createStudio(options: StudioOptions): Studio {
         reason: body.reason ?? 'Cancelled by staff in Studio',
       });
       return { booking: await oneWithVia(booking) };
+    }),
+  );
+
+  /** Staff add, change or clear the allergy note of one booking. */
+  app.put('/api/bookings/:id/dietary-note', (c) =>
+    json(c, async () => {
+      const body = (await c.req.json().catch(() => ({}))) as { dietary_notes?: unknown };
+      if (body.dietary_notes !== null && typeof body.dietary_notes !== 'string') {
+        throw new BookingError('validation_error', 'dietary_notes must be text, or null to clear.');
+      }
+      const id = c.req.param('id');
+      const booking = await service.update({
+        booking_id: id,
+        idempotency_key: `studio-dietary-${id}-${randomUUID()}`,
+        dietary_notes: body.dietary_notes,
+      });
+      return { dietary_note: (await guests.dietaryNotes(booking.venue_id, [id])).get(id) ?? null };
+    }),
+  );
+
+  /** The bookings of one guest key, or not_found: keys exist only for guests with a booking. */
+  const guestBookings = async (key: string) => {
+    const all = await allBookings();
+    const mine = all.find((b) => guestKeys(b.venue_id, b.customer).includes(key));
+    if (!mine) throw new BookingError('not_found', 'No guest with that key.');
+    return { all, venueId: mine.venue_id };
+  };
+
+  app.get('/api/guests/:key', (c) =>
+    json(c, async () => {
+      const key = c.req.param('key');
+      const { all, venueId } = await guestBookings(key);
+      return {
+        key,
+        profile: (await guests.profiles(venueId, [key])).get(key) ?? null,
+        history: guestHistory(all, venueId, key, service.clock.now()),
+      };
+    }),
+  );
+
+  app.put('/api/guests/:key', (c) =>
+    json(c, async () => {
+      const key = c.req.param('key');
+      const parsed = GuestProfileInputSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) throw fromZodError(parsed.error, 'guest profile');
+      const { venueId } = await guestBookings(key);
+      const profile = { ...parsed.data, updated_at: service.clock.now().toISOString() };
+      // An empty profile is no profile: nothing is kept about a guest staff have said nothing on.
+      if (hasProfileData(profile)) await guests.saveProfile(venueId, key, profile);
+      else await guests.deleteProfiles(venueId, [key]);
+      return { key, profile: hasProfileData(profile) ? profile : null };
+    }),
+  );
+
+  /** The staff briefing for one day (defaults to today at the venue). */
+  app.get('/api/preshift', (c) =>
+    json(c, async () => {
+      const [venue] = await service.listVenues();
+      const timezone = venue?.timezone ?? 'UTC';
+      const date = c.req.query('date') ?? time.localDate(service.clock.now(), timezone);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new BookingError('validation_error', 'date must look like 2026-11-09.');
+      }
+      return buildPreshift({ all: await allBookings(), date, timezone, guests });
     }),
   );
 
@@ -214,15 +307,50 @@ export function createStudio(options: StudioOptions): Studio {
     app.post('/api/customers/export', (c) =>
       json(c, async () => {
         const who = await customer(c);
+        const bookings = await rights.exportCustomer(who);
+        // Everything held about this person: their guest profile and the allergy notes.
+        const guest_profiles: object[] = [];
+        const dietary_notes: { booking_id: string; note: string }[] = [];
+        for (const venueId of new Set(bookings.map((b) => b.venue_id))) {
+          const ofVenue = bookings.filter((b) => b.venue_id === venueId);
+          const keys = [...new Set(ofVenue.flatMap((b) => guestKeys(venueId, b.customer)))];
+          for (const p of (await guests.profiles(venueId, keys)).values()) guest_profiles.push(p);
+          const notes = await guests.dietaryNotes(
+            venueId,
+            ofVenue.map((b) => b.booking_id),
+          );
+          for (const [booking_id, note] of notes) dietary_notes.push({ booking_id, note });
+        }
         return {
           exported_at: service.clock.now().toISOString(),
           customer: who,
-          bookings: await rights.exportCustomer(who),
+          bookings,
+          guest_profiles,
+          dietary_notes,
         };
       }),
     );
     app.post('/api/customers/erase', (c) =>
-      json(c, async () => rights.eraseCustomer(await customer(c))),
+      json(c, async () => {
+        const who = await customer(c);
+        // Profiles and notes go first: finding them needs the contact details the erasure removes.
+        const bookings = (await allBookings()).filter((b) => matchesPerson(b, who));
+        const nowIso = service.clock.now().toISOString();
+        for (const venueId of new Set(bookings.map((b) => b.venue_id))) {
+          const ofVenue = bookings.filter((b) => b.venue_id === venueId);
+          const keys = [...new Set(ofVenue.flatMap((b) => guestKeys(venueId, b.customer)))];
+          await guests.deleteProfiles(venueId, keys);
+          // A booking still ahead is kept by the erasure, and so is its note.
+          const gone = ofVenue.filter(
+            (b) => !((b.status === 'held' || b.status === 'confirmed') && b.slot.end > nowIso),
+          );
+          await guests.deleteDietaryNotes(
+            venueId,
+            gone.map((b) => b.booking_id),
+          );
+        }
+        return rights.eraseCustomer(who);
+      }),
     );
   }
 
@@ -304,6 +432,9 @@ export function createStudio(options: StudioOptions): Studio {
           last_visit: string | null;
           next_visit: string | null;
           first_source: string | null;
+          guest_key: string | null;
+          vip: boolean;
+          tags: string[];
         }
       >();
       const now = service.clock.now().toISOString();
@@ -322,6 +453,9 @@ export function createStudio(options: StudioOptions): Studio {
           last_visit: null,
           next_visit: null,
           first_source: via.get(b.booking_id) ?? null,
+          guest_key: guestKey(b.venue_id, c),
+          vip: false,
+          tags: [],
         };
         if (b.status === 'confirmed') {
           row.bookings++;
@@ -337,6 +471,15 @@ export function createStudio(options: StudioOptions): Studio {
         }
         map.set(key, row);
       }
+      const [venue] = await service.listVenues();
+      const profiles = venue ? await guests.listProfiles(venue.id) : new Map();
+      for (const row of map.values()) {
+        const p = row.guest_key ? profiles.get(row.guest_key) : undefined;
+        if (p) {
+          row.vip = p.vip;
+          row.tags = p.tags;
+        }
+      }
       return { customers: [...map.values()].sort((a, b) => b.bookings - a.bookings) };
     }),
   );
@@ -348,6 +491,7 @@ export function createStudio(options: StudioOptions): Studio {
         slot_id?: string;
         customer?: unknown;
         notes?: string;
+        dietary_notes?: string;
         deposit_collected?: boolean;
         idempotency_key?: string;
       };
@@ -357,6 +501,7 @@ export function createStudio(options: StudioOptions): Studio {
         idempotency_key: `${key}:hold`,
         customer: body.customer as never,
         ...(body.notes ? { notes: body.notes } : {}),
+        ...(body.dietary_notes ? { dietary_notes: body.dietary_notes } : {}),
       });
       const needsDeposit = hold.slot.deposit?.due === 'at_confirmation';
       if (needsDeposit && !body.deposit_collected) {

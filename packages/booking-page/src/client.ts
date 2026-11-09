@@ -242,6 +242,7 @@ export const PAGE_SCRIPT = String.raw`
     $('confirm').disabled = true;
     var body = { booking_id: state.hold.booking_id, idempotency_key: state.confirmKey, customer: customer, user_confirmed: true };
     if ($('notes').value.trim()) body.notes = $('notes').value.trim();
+    if ($('dietary') && $('dietary').value.trim()) body.dietary_notes = $('dietary').value.trim();
     api('/confirm', body).then(function (r) {
       if (state.timer) clearInterval(state.timer);
       state.hold = null;

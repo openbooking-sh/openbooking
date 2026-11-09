@@ -207,6 +207,37 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       create index ob_bookings_extra_resources on ob_bookings using gin (extra_resource_ids);
     `,
   },
+  {
+    version: 8,
+    name: 'guest-data',
+    // Staff-only guest data, kept apart from ob_bookings so no booking read can carry it. A
+    // dietary note (allergies: health data) lives until shortly after the visit ends. A profile is
+    // keyed by a hash of the guest's email or phone together with the business id, so it holds no
+    // contact detail and cannot be matched across businesses.
+    sql: `
+      create table ob_dietary_notes (
+        venue_id   text not null,
+        booking_id text not null,
+        note       text not null,
+        visit_end  timestamptz not null,
+        primary key (venue_id, booking_id)
+      );
+      create index ob_dietary_notes_visit_end on ob_dietary_notes (visit_end);
+
+      create table ob_guest_profiles (
+        venue_id   text not null,
+        guest_key  text not null,
+        tags       text[] not null default '{}',
+        notes      text not null default '',
+        vip        boolean not null default false,
+        updated_at timestamptz not null,
+        primary key (venue_id, guest_key)
+      );
+
+      alter table ob_dietary_notes enable row level security;
+      alter table ob_guest_profiles enable row level security;
+    `,
+  },
 ];
 
 /**

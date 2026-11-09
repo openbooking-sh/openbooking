@@ -336,9 +336,15 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
       const id = String(b.booking_id ?? '');
       const key = String(b.idempotency_key ?? '');
       const notes = typeof b.notes === 'string' ? b.notes.trim() : '';
-      if (notes && b.user_confirmed === true) {
+      const dietary = typeof b.dietary_notes === 'string' ? b.dietary_notes.trim() : '';
+      if ((notes || dietary) && b.user_confirmed === true) {
         await service
-          .update({ booking_id: id, idempotency_key: `${key}:notes`, notes })
+          .update({
+            booking_id: id,
+            idempotency_key: `${key}:notes`,
+            ...(notes ? { notes } : {}),
+            ...(dietary ? { dietary_notes: dietary } : {}),
+          })
           .catch((e) => {
             if (!(isBookingError(e) && e.code === 'operation_not_supported')) throw e;
           });

@@ -24,3 +24,15 @@ export {
 } from './settings';
 export { CustomerMatchSchema, type CustomerRef, type DataRightsAdapter } from './data-rights';
 export { STUDIO_HTML, studioHtml, type StudioLegal } from './ui';
+export {
+  GuestProfileInputSchema,
+  buildPreshift,
+  guestHistory,
+  guestKey,
+  guestKeys,
+  hasProfileData,
+  pruneGuestProfiles,
+  type GuestHistory,
+  type Preshift,
+  type PreshiftEntry,
+} from './guests';
