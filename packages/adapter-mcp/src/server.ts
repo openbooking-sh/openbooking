@@ -9,6 +9,7 @@ import {
   type Slot,
   type Venue,
   type VenueInfo,
+  type Waitlist,
   WEEKDAYS,
 } from '@openbooking-sh/core';
 import {
@@ -30,6 +31,7 @@ import {
   SearchAvailabilityInput,
   SearchAvailabilityOutput,
 } from './schemas';
+import { WAITLIST_INSTRUCTIONS, registerWaitlistTools } from './waitlist';
 
 export interface McpAdapterOptions {
   service: BookingService;
@@ -38,6 +40,8 @@ export interface McpAdapterOptions {
   version?: string;
   /** Extra text appended to the default server instructions (e.g. venue specifics). */
   instructions?: string;
+  /** Adds the waitlist tools (join_waitlist, check_waitlist, leave_waitlist). Off without it. */
+  waitlist?: Waitlist;
 }
 
 export const TOOL_NAMES = [
@@ -123,15 +127,17 @@ function tool<S extends z.ZodType>(
 /** Build an McpServer exposing the seven OpenBooking tools on top of a BookingService. */
 export function createMcpServer(options: McpAdapterOptions): McpServer {
   const { service } = options;
+  const instructions = [
+    BASE_INSTRUCTIONS,
+    ...(options.waitlist ? [WAITLIST_INSTRUCTIONS] : []),
+    ...(options.instructions ? [options.instructions] : []),
+  ].join('\n\n');
   const server = new McpServer(
     { name: options.name ?? 'openbooking', version: options.version ?? '0.1.0' },
-    {
-      instructions: options.instructions
-        ? `${BASE_INSTRUCTIONS}\n\n${options.instructions}`
-        : BASE_INSTRUCTIONS,
-    },
+    { instructions },
   );
   registerBookingTools(server, { resolve: () => service });
+  if (options.waitlist) registerWaitlistTools(server, { waitlist: options.waitlist });
   return server;
 }
 
