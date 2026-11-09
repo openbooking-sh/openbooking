@@ -26,11 +26,13 @@ import {
   type MemoryProviderConfig,
   type OfferingConfig,
   type ServicePeriod,
+  type TableCombination,
   type VenueConfig,
 } from './config';
 import {
   MemoryBookingStore,
   isBlocking,
+  resourcesOf,
   type BookingRecord,
   type BookingListQuery,
   type BookingRecordStore,
@@ -95,6 +97,7 @@ export class MemoryBookingProvider implements BookingProvider {
       validateSchedules(v);
       validateOfferings(v);
       validateService(v);
+      validateCombinations(v);
     }
   }
 
@@ -108,7 +111,10 @@ export class MemoryBookingProvider implements BookingProvider {
   ): Promise<Slot[]> {
     const cfg = this.#venue(query.venue_id);
     const party = query.party_size.total;
-    const maxCapacity = Math.max(...cfg.resources.map((r) => r.capacity.max));
+    const maxCapacity = Math.max(
+      ...cfg.resources.map((r) => r.capacity.max),
+      ...(cfg.table_combinations ?? []).map((c) => c.max_party_size),
+    );
     if (party > maxCapacity) {
       throw new BookingError(
         'party_size_unsupported',
@@ -165,7 +171,14 @@ export class MemoryBookingProvider implements BookingProvider {
       this.#store.listBlocking(cfg.venue.id, fromMs, toMs, ctx.now),
       this.#busyIn(cfg, fromMs, toMs, ctx.now),
     ]);
-    const blocking: BusyInterval[] = [...booked, ...busy, ...timeOff(cfg, fromMs, toMs)];
+    // A joined booking blocks each of its tables, so it is listed once per table.
+    const blocking: BusyInterval[] = [
+      ...booked.flatMap((r) =>
+        resourcesOf(r).map((id) => ({ resource_id: id, start_ms: r.start_ms, end_ms: r.end_ms })),
+      ),
+      ...busy,
+      ...timeOff(cfg, fromMs, toMs),
+    ];
     for (const start of starts) {
       const local = time.localTime(start, cfg.venue.timezone);
 
@@ -176,14 +189,14 @@ export class MemoryBookingProvider implements BookingProvider {
         // Never offer what createHold would refuse for guest limits.
         if (guestCapHit(this.#capsFor(cfg, query.date, local), party, booked)) continue;
         const duration = durationFor(offering, party);
-        const free = this.#fittingResources(cfg, offering, party, query.tags ?? []).filter(
-          (r) =>
-            worksAt(cfg, r.id, query.date, local, duration) &&
-            isFree(blocking, r.id, start, endOf(cfg, offering, start, party)),
+        // One table when any fits, else joined tables: createHold tries them in the same order.
+        const free = this.#placements(cfg, offering, party, query.tags ?? []).filter((p) =>
+          placementFree(cfg, p, blocking, start, query.date, local, duration, offering, party),
         );
-        const resource = free[0];
-        if (!resource) continue;
-        const slot = this.#slot(cfg, offering, start, party, resource, {
+        const placement = free[0];
+        if (!placement) continue;
+        const resource = placement.resources[0]!;
+        const slot = this.#slot(cfg, offering, start, party, placement, {
           v: cfg.venue.id,
           o: offering.id,
           s: start.toISOString(),
@@ -193,6 +206,8 @@ export class MemoryBookingProvider implements BookingProvider {
         // Staff-style resources: say who else is free, so agents can offer a choice.
         const others = free
           .slice(1)
+          .filter((p) => p.resources.length === 1)
+          .map((p) => p.resources[0]!)
           .filter(isPerson)
           .map((x) => x.name);
         slots.push(
@@ -234,10 +249,11 @@ export class MemoryBookingProvider implements BookingProvider {
       ...timeOff(cfg, start.getTime(), end),
     ];
     // Best fit first; the store's atomic insert decides, so a lost race moves on to the next one.
-    for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
-      if (!worksAt(cfg, resource.id, date, local, duration)) continue;
-      if (!isFree(busy, resource.id, start, end)) continue;
-      const slot = this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id);
+    for (const placement of this.#placements(cfg, offering, key.p, key.t ?? [])) {
+      if (!placementFree(cfg, placement, busy, start, date, local, duration, offering, key.p)) {
+        continue;
+      }
+      const slot = this.#slot(cfg, offering, start, key.p, placement, key, req.slot_id);
       const booking: Booking = {
         booking_id: bookingId,
         status: 'held',
@@ -256,9 +272,9 @@ export class MemoryBookingProvider implements BookingProvider {
       };
       const record: BookingRecord = {
         booking,
-        resource_id: resource.id,
+        ...recordResources(placement),
         start_ms: start.getTime(),
-        end_ms: end,
+        end_ms: end + placement.extraBufferMs,
         ...(caps.length ? { caps: caps.map(toStoreCap) } : {}),
       };
       if (await this.#store.insertIfFree(record, ctx.now)) return booking;
@@ -417,21 +433,22 @@ export class MemoryBookingProvider implements BookingProvider {
         ...timeOff(cfg, start.getTime(), end),
       ];
       let changed = false;
-      for (const resource of this.#fittingResources(cfg, offering, key.p, key.t ?? [])) {
-        if (!worksAt(cfg, resource.id, date, local, duration)) continue;
-        if (!isFree(busy, resource.id, start, end)) continue;
+      for (const placement of this.#placements(cfg, offering, key.p, key.t ?? [])) {
+        if (!placementFree(cfg, placement, busy, start, date, local, duration, offering, key.p)) {
+          continue;
+        }
         const booking: Booking = {
           ...current,
-          slot: this.#slot(cfg, offering, start, key.p, resource, key, req.slot_id),
+          slot: this.#slot(cfg, offering, start, key.p, placement, key, req.slot_id),
           updated_at: ctx.now.toISOString(),
         };
         try {
           const moved = await this.#store.move(
             {
               booking,
-              resource_id: resource.id,
+              ...recordResources(placement),
               start_ms: start.getTime(),
-              end_ms: end,
+              end_ms: end + placement.extraBufferMs,
               ...(caps.length ? { caps: caps.map(toStoreCap) } : {}),
             },
             ctx.now,
@@ -484,14 +501,17 @@ export class MemoryBookingProvider implements BookingProvider {
   }
 
   /** All bookings with their internal resource assignment (tests, benchmark). */
-  async inspectBookings(now: Date): Promise<Array<Booking & { resource_id: string }>> {
+  async inspectBookings(
+    now: Date,
+  ): Promise<Array<Booking & { resource_id: string; extra_resource_ids: string[] }>> {
     return (await this.#store.list({ limit: 1_000_000 }, now)).map((r) => ({
       ...r.booking,
       resource_id: r.resource_id,
+      extra_resource_ids: r.extra_resource_ids ?? [],
     }));
   }
 
-  /** Pairs of active bookings that overlap on the same resource. Should always be empty. */
+  /** Pairs of active bookings that overlap on a shared resource. Should always be empty. */
   async findOverlaps(now: Date): Promise<Array<[string, string]>> {
     const active = (await this.#store.list({ limit: 1_000_000 }, now)).filter((r) =>
       isBlocking(r.booking, now),
@@ -501,7 +521,12 @@ export class MemoryBookingProvider implements BookingProvider {
       for (let j = i + 1; j < active.length; j++) {
         const a = active[i]!;
         const b = active[j]!;
-        if (a.resource_id === b.resource_id && a.start_ms < b.end_ms && b.start_ms < a.end_ms) {
+        const mine = new Set(resourcesOf(a));
+        if (
+          resourcesOf(b).some((id) => mine.has(id)) &&
+          a.start_ms < b.end_ms &&
+          b.start_ms < a.end_ms
+        ) {
           out.push([a.booking.booking_id, b.booking.booking_id]);
         }
       }
@@ -707,7 +732,42 @@ export class MemoryBookingProvider implements BookingProvider {
     });
   }
 
-  /** Resources that fit the party and tags, smallest first (best fit keeps big tables for big groups). */
+  /**
+   * What can take this party, best first: single resources, smallest first (best fit keeps big
+   * tables for big groups), then joined tables, fewest wasted seats first. Joined tables only
+   * come after every single table, so a combination is offered only when no single one is free.
+   */
+  #placements(cfg: VenueConfig, o: OfferingConfig, party: number, tags: string[]): Placement[] {
+    const singles = this.#fittingResources(cfg, o, party, tags).map((r): Placement => ({
+      resources: [r],
+      extraBufferMs: 0,
+    }));
+    const usable = (r: Resource) =>
+      o.resource_kinds.includes(r.kind) &&
+      (!o.resource_ids || o.resource_ids.includes(r.id)) &&
+      tags.every((t) => matchesTag(r, t));
+    const joined: Placement[] = [];
+    for (const c of cfg.table_combinations ?? []) {
+      if (party < c.min_party_size || party > c.max_party_size) continue;
+      const members = c.resource_ids.map((id) => cfg.resources.find((r) => r.id === id)!);
+      if (!members.every(usable)) continue;
+      joined.push({
+        resources: members,
+        combination: c,
+        extraBufferMs: (c.extra_buffer_minutes ?? 0) * 60_000,
+      });
+    }
+    const seats = (p: Placement) => p.resources.reduce((n, r) => n + r.capacity.max, 0);
+    const biggest = (p: Placement) => Math.max(...p.resources.map((r) => r.capacity.max));
+    // Array.sort is stable, so equal choices keep the order they have in the config.
+    joined.sort(
+      (a, b) =>
+        seats(a) - seats(b) || a.resources.length - b.resources.length || biggest(a) - biggest(b),
+    );
+    return [...singles, ...joined];
+  }
+
+  /** Resources that fit the party and tags, smallest first. */
   #fittingResources(
     cfg: VenueConfig,
     o: OfferingConfig,
@@ -731,11 +791,13 @@ export class MemoryBookingProvider implements BookingProvider {
     o: OfferingConfig,
     start: Date,
     party: number,
-    resource: Resource,
+    placement: Placement,
     key: SlotKey,
     slotId = encodeSlotId(key),
   ): Slot {
     const tz = cfg.venue.timezone;
+    const resource = placement.resources[0]!;
+    const joined = placement.resources.length > 1;
     const end = new Date(start.getTime() + durationFor(o, party) * 60_000);
     return {
       slot_id: slotId,
@@ -747,12 +809,23 @@ export class MemoryBookingProvider implements BookingProvider {
       resource: {
         id: resource.id,
         kind: resource.kind,
-        label:
-          resource.capacity.max === 1 && resource.kind !== 'table'
+        label: joined
+          ? joinedLabel(placement)
+          : resource.capacity.max === 1 && resource.kind !== 'table'
             ? resource.name
             : `${capitalize(resource.kind)} for up to ${resource.capacity.max}`,
-        tags: resource.tags,
+        // Only what every joined table has, so "outdoor" is never promised for a half-indoor pair.
+        tags: joined
+          ? resource.tags.filter((t) => placement.resources.every((r) => r.tags.includes(t)))
+          : resource.tags,
       },
+      ...(joined
+        ? {
+            additional_resources: placement.resources
+              .slice(1)
+              .map((r) => ({ id: r.id, kind: r.kind, label: r.name })),
+          }
+        : {}),
       price: o.price_per_person
         ? { amount: o.price_per_person.amount * party, currency: o.price_per_person.currency }
         : null,
@@ -760,6 +833,49 @@ export class MemoryBookingProvider implements BookingProvider {
       cancellation_policy: policyFor(o, start, party, cfg.currency, tz),
     };
   }
+}
+
+/** What a booking occupies: one resource, or several joined tables. */
+interface Placement {
+  /** The primary resource first. */
+  resources: Resource[];
+  combination?: TableCombination;
+  /** Extra turnover after the booking, on top of the venue's buffer. */
+  extraBufferMs: number;
+}
+
+const recordResources = (p: Placement) => ({
+  resource_id: p.resources[0]!.id,
+  ...(p.resources.length > 1 ? { extra_resource_ids: p.resources.slice(1).map((r) => r.id) } : {}),
+});
+
+/** "Tables T6 and T7 together", from the tables' names unless the config says otherwise. */
+function joinedLabel(p: Placement): string {
+  if (p.combination?.label) return p.combination.label;
+  const kind = p.resources[0]!.kind;
+  const prefix = new RegExp(`^${kind}s?\\s+`, 'i');
+  const names = p.resources.map((r) => r.name.replace(prefix, ''));
+  const list =
+    names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ');
+  return `${capitalize(kind)}s ${list} together`;
+}
+
+/** Every resource of the placement works the whole time and is free until it is turned over. */
+function placementFree(
+  cfg: VenueConfig,
+  p: Placement,
+  blocking: BusyInterval[],
+  start: Date,
+  date: string,
+  local: string,
+  duration: number,
+  offering: OfferingConfig,
+  party: number,
+): boolean {
+  const end = endOf(cfg, offering, start, party) + p.extraBufferMs;
+  return p.resources.every(
+    (r) => worksAt(cfg, r.id, date, local, duration) && isFree(blocking, r.id, start, end),
+  );
 }
 
 /** When the table is free again: the party's table time plus turnover. */
@@ -898,6 +1014,52 @@ function validateService(cfg: VenueConfig): void {
     if (!ok(p.max_guests_per_interval) || !ok(p.max_online_guests)) {
       throw new Error(`${id}: service period "${p.name}" limits must be whole numbers >= 1`);
     }
+  }
+}
+
+/** Catch mistakes in joined tables at startup, where they are easy to fix. */
+function validateCombinations(cfg: VenueConfig): void {
+  const id = cfg.venue.id;
+  const seen: Array<{ key: string; c: TableCombination }> = [];
+  for (const c of cfg.table_combinations ?? []) {
+    const name = `${id}: table combination ${c.resource_ids.join('+')}`;
+    if (new Set(c.resource_ids).size !== c.resource_ids.length || c.resource_ids.length < 2) {
+      throw new Error(`${name} needs two or more different tables`);
+    }
+    const members = c.resource_ids.map((rid) => {
+      const r = cfg.resources.find((x) => x.id === rid);
+      if (!r) throw new Error(`${name} names unknown resource "${rid}"`);
+      return r;
+    });
+    if (new Set(members.map((r) => r.kind)).size > 1) {
+      throw new Error(`${name} mixes kinds of resource`);
+    }
+    if (!cfg.offerings.some((o) => o.resource_kinds.includes(members[0]!.kind))) {
+      throw new Error(`${name}: no offering uses resources of kind "${members[0]!.kind}"`);
+    }
+    if (!Number.isInteger(c.min_party_size) || c.min_party_size < 1) {
+      throw new Error(`${name} needs min_party_size >= 1`);
+    }
+    if (!Number.isInteger(c.max_party_size) || c.max_party_size < c.min_party_size) {
+      throw new Error(`${name} needs max_party_size >= min_party_size`);
+    }
+    if (c.max_party_size > members.reduce((n, r) => n + r.capacity.max, 0)) {
+      throw new Error(`${name} seats up to ${c.max_party_size} but the tables hold fewer`);
+    }
+    const extra = c.extra_buffer_minutes;
+    if (extra !== undefined && (!Number.isInteger(extra) || extra < 0)) {
+      throw new Error(`${name} needs extra_buffer_minutes >= 0`);
+    }
+    // The same tables twice with party sizes that overlap would leave the choice ambiguous.
+    const key = [...c.resource_ids].sort().join('+');
+    const clash = seen.find(
+      (o) =>
+        o.key === key &&
+        o.c.min_party_size <= c.max_party_size &&
+        c.min_party_size <= o.c.max_party_size,
+    );
+    if (clash) throw new Error(`${name} is listed twice with overlapping party sizes`);
+    seen.push({ key, c });
   }
 }
 

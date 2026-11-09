@@ -208,6 +208,14 @@ export const SlotSchema = z.object({
     })
     .optional(),
   /**
+   * Tables joined to `resource` for this booking (a party too big for any one table). Absent when
+   * one resource is booked. `resource.label` already says so ("Tables 6 and 7 together"); this
+   * lists the other tables by id, so calendars can show the booking on each of them.
+   */
+  additional_resources: z
+    .array(z.object({ id: z.string(), kind: z.string(), label: z.string() }))
+    .optional(),
+  /**
    * Other resources (e.g. staff members) also free at this time, by label. The slot books
    * `resource`; to book one of these instead, search again asking for it.
    */

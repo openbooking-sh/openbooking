@@ -105,6 +105,23 @@ export interface ResourceSchedule {
   time_off?: Array<{ start: string; end: string; reason?: string }>;
 }
 
+/**
+ * Tables that may be pushed together for a party too big for any one of them (two 4-tops for 8).
+ * One booking then occupies all of them for the whole time. It is only offered when no single
+ * free table fits the party.
+ */
+export interface TableCombination {
+  /** The tables joined, at least two. */
+  resource_ids: string[];
+  /** The party sizes the joined table seats, e.g. 5 to 8. */
+  min_party_size: number;
+  max_party_size: number;
+  /** Extra turnover after the booking, for moving the tables back. Default 0. */
+  extra_buffer_minutes?: number;
+  /** What guests are told. Default: "Tables 6 and 7 together", from the tables' names. */
+  label?: string;
+}
+
 export interface VenueConfig {
   venue: Venue;
   currency: string;
@@ -114,6 +131,8 @@ export interface VenueConfig {
   opening_hours: Partial<Record<number, OpeningPeriod[]>>;
   /** Dates (`YYYY-MM-DD`) the venue is closed. */
   closed_dates?: string[];
+  /** Tables that can be joined for larger parties. Default: none (one table per booking). */
+  table_combinations?: TableCombination[];
   /** Working hours and time off per resource id (e.g. each stylist). */
   schedules?: Record<string, ResourceSchedule>;
   /** Shifts with optional fixed seatings, pacing and a walk-in reserve. Default: none. */

@@ -272,7 +272,10 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
         party_size: a.party_size,
         slots: slots.map((s) => slotView(s, venue)),
         next_step: slots.length
-          ? 'Offer the user a few options (mention who it is with). When they pick one, call hold_slot with its slot_id.'
+          ? 'Offer the user a few options (mention who it is with). When they pick one, call hold_slot with its slot_id.' +
+            (slots.some((s) => s.additional_resources?.length)
+              ? ' Where the table is "together", tables are pushed together for this party: say so.'
+              : '')
           : await emptyReason(service, venue, a.date, !!a.staff),
       };
     }),
@@ -519,6 +522,11 @@ function nextStep(b: Booking, expiresIn: number | null): string {
         steps.push(
           'A deposit is due: confirm_booking replies with a payment link for the user and a payment_token to send back once they have paid.',
         );
+      if (b.slot.additional_resources?.length) {
+        steps.push(
+          'Several tables are joined for this party: tell the user their table is made up of tables pushed together.',
+        );
+      }
       steps.push(
         'After the user explicitly approves, call confirm_booking with user_confirmed=true.',
       );

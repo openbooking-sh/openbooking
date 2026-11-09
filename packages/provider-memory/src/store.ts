@@ -3,7 +3,13 @@ import { BookingError, type Booking } from '@openbooking-sh/core';
 /** A booking plus the inventory it occupies. */
 export interface BookingRecord {
   booking: Booking;
+  /** The primary resource (for a joined booking, the first table). */
   resource_id: string;
+  /**
+   * Other resources the booking occupies for the same time (tables joined for a large party).
+   * Stores claim all of them or none: no state where only some are taken.
+   */
+  extra_resource_ids?: string[];
   start_ms: number;
   /** End including turnover buffer. */
   end_ms: number;
@@ -29,6 +35,13 @@ export interface BookingListQuery {
   limit?: number;
 }
 
+/** Every resource a record occupies: the primary one first, then any joined ones. */
+export function resourcesOf(
+  r: Pick<BookingRecord, 'resource_id' | 'extra_resource_ids'>,
+): string[] {
+  return [r.resource_id, ...(r.extra_resource_ids ?? [])];
+}
+
 /**
  * Where the configured provider keeps bookings. The provider owns the catalog and slot rules;
  * the store owns persistence and the one thing that must be atomic: check-and-reserve.
@@ -41,7 +54,7 @@ export interface BookingRecordStore {
   listBlocking(venueId: string, fromMs: number, toMs: number, now: Date): Promise<BookingRecord[]>;
 
   /**
-   * Insert `record` only if no blocking record on the same resource overlaps it. Must be atomic
+   * Insert `record` only if no blocking record on any of its resources overlaps it. Must be atomic
    * against concurrent calls (transaction + lock, or equivalent). Returns false when taken or when it
    * would break one of `record.caps`.
    */
@@ -65,7 +78,7 @@ export interface BookingRecordStore {
   ): Promise<Booking | undefined>;
 
   /**
-   * Move a booking to another resource and time (rescheduling), atomically: `check` runs on the
+   * Move a booking to other resources and a new time (rescheduling), atomically: `check` runs on the
    * current booking (expiry applied) and throws to abort; then, atomically with `insertIfFree`,
    * the new interval must not overlap another blocking record. Resolves false when it does
    * (nothing changes). `record.booking.booking_id` and the venue stay the same.
@@ -281,7 +294,7 @@ export class MemoryBookingStore implements BookingRecordStore {
     for (const r of this.#records.values()) {
       if (
         r.booking.booking_id !== record.booking.booking_id &&
-        r.resource_id === record.resource_id &&
+        sharesResource(r, record) &&
         r.booking.venue_id === record.booking.venue_id &&
         r.start_ms < record.end_ms &&
         record.start_ms < r.end_ms &&
@@ -327,5 +340,10 @@ export class MemoryBookingStore implements BookingRecordStore {
       .slice(0, query.limit ?? 500);
   }
 }
+
+const sharesResource = (a: BookingRecord, b: BookingRecord) => {
+  const mine = new Set(resourcesOf(a));
+  return resourcesOf(b).some((id) => mine.has(id));
+};
 
 const clone = (r: BookingRecord): BookingRecord => structuredClone(r);
