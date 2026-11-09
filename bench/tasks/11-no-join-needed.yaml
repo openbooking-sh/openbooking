@@ -1,0 +1,15 @@
+id: no-join-needed
+description: A party of 5 fits one table; the agent must get a single table, not two pushed together.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Dinner for 5 on Saturday 3 October 2026, between 19:00 and 20:00. Name Radia Perlman,
+  radia@example.com. Please confirm it.
+intent:
+  date: 2026-10-03
+  party_size: 5
+  time_window: ['19:00', '20:00']
+  offering_id: dinner
+  customer: { first_name: Radia, last_name: Perlman, email: radia@example.com }
+expect:
+  outcome: confirmed
+  tables: 1

@@ -88,7 +88,7 @@ describe('MemoryBookingProvider (demo restaurant)', () => {
     expect(err.suggested_next_action).toContain('+4700000000');
   });
 
-  it('never double-books: the 8-top can be held only once per time', async () => {
+  it('never double-books: a party of 8 has the 8-top and the joined pair, and no more', async () => {
     const { service, provider, clock } = setup();
     const { slots } = await service.searchAvailability({
       date: FRIDAY,
@@ -102,14 +102,16 @@ describe('MemoryBookingProvider (demo restaurant)', () => {
         service.hold({ slot_id: slot.slot_id, idempotency_key: key() }),
       ),
     );
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    // Two places for 8 at this time: the 8-top, then tables 6 and 7 pushed together.
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
     const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    expect(rejected).toHaveLength(3);
     expect(rejected.every((r) => (r.reason as BookingError).code === 'slot_unavailable')).toBe(
       true,
     );
     expect(await provider.findOverlaps(clock.now())).toEqual([]);
 
-    // Overlapping later start (19:30) also can't use the only 8-top.
+    // An overlapping later start (19:30) finds both places taken too.
     const later = await service.searchAvailability({
       date: FRIDAY,
       party_size: { total: 8 },
@@ -177,7 +179,9 @@ describe('MemoryBookingProvider (demo restaurant)', () => {
       offering_id: 'dinner',
     };
     const slot = (await service.searchAvailability(q)).slots[0]!;
+    // Both places for 8 (the 8-top and the joined pair) are held, so nothing is left.
     const hold = await service.hold({ slot_id: slot.slot_id, idempotency_key: key() });
+    await service.hold({ slot_id: slot.slot_id, idempotency_key: key() });
     expect((await service.searchAvailability(q)).slots).toEqual([]);
     clock.advanceSeconds(301);
     expect((await service.getBooking(hold.booking_id)).status).toBe('expired');

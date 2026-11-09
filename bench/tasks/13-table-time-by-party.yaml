@@ -1,0 +1,17 @@
+id: table-time-by-party
+description: A party of 6 has the table for 2 hours, not the 90 minutes of a small party; the agent must read the end time and avoid the start that overruns.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Dinner for 6 on Friday 2 October 2026, starting between 19:00 and 20:00. We have to be out of
+  the restaurant by 21:00, so check when the table ends. Name Annie Easley, annie@example.com.
+  I'm fine with a deposit; card token tok_visa. Please confirm it.
+intent:
+  date: 2026-10-02
+  party_size: 6
+  time_window: ['19:00', '20:00']
+  must_end_by: '21:00'
+  offering_id: dinner
+  customer: { first_name: Annie, last_name: Easley, email: annie@example.com }
+  payment_token: tok_visa
+expect:
+  outcome: confirmed

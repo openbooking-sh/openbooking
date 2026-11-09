@@ -517,6 +517,9 @@ importers:
       '@openbooking-sh/adapter-usp':
         specifier: workspace:^
         version: link:../adapter-usp
+      '@openbooking-sh/conformance':
+        specifier: workspace:^
+        version: link:../conformance
       '@openbooking-sh/google-calendar':
         specifier: workspace:^
         version: link:../google-calendar
