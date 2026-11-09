@@ -78,6 +78,21 @@ describe('USP catalog', () => {
     expect(res.json.pagination).toEqual({ cursor: null, has_more: false });
   });
 
+  it('passes venue facts through the open `metadata` object, with the safety note', async () => {
+    const { call } = restaurant();
+    const res = await call('POST', '/services/list', {});
+    expect(responseErrors('/services/list', 'post', 200, res.json)).toEqual([]);
+    for (const s of res.json.services) {
+      expect(serviceErrors(s)).toEqual([]);
+      const k = s.metadata['sh.openbooking.venue_knowledge'];
+      expect(k.dietary.options).toContain('vegan');
+      expect(k.safety_note).toMatch(/confirm directly with the venue/);
+    }
+    // A venue without facts adds no metadata at all.
+    const bare = (await salon().call('GET', '/services/haircut')).json.service;
+    expect(bare.metadata).toBeUndefined();
+  });
+
   it('maps an offering faithfully', async () => {
     const { call } = salon();
     const { json } = await call('GET', '/services/haircut');
