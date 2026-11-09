@@ -56,7 +56,9 @@ describe('BookingWidget', () => {
     expect(await screen.findByText('You are booked')).toBeTruthy();
     const code = document.querySelector('.ob-code')?.textContent;
     expect(code).toBeTruthy();
-    expect(booked).toHaveLength(1);
+    // onBooked runs in an effect after the screen changes, so a busy machine can show the text
+    // before the callback has run.
+    await waitFor(() => expect(booked).toHaveLength(1));
 
     const sent = posts('/confirm');
     expect(sent).toHaveLength(1);
