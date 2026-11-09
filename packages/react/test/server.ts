@@ -3,6 +3,14 @@ import { ManualClock } from '@openbooking-sh/core';
 import { createClient, type OpenBookingClient } from '@openbooking-sh/client';
 import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import { createOpenBookingApp, listen } from '@openbooking-sh/server';
+import { configure } from '@testing-library/react';
+import { vi } from 'vitest';
+
+// These tests talk to a real server over real HTTP, and the first one pays for its cold start.
+// On a busy machine (CI, or the whole suite running at once) the defaults of 1 s to wait for a
+// screen and 5 s per test are too short, which showed up as a test that only failed under load.
+configure({ asyncUtilTimeout: 4000 });
+vi.setConfig({ testTimeout: 15_000 });
 
 /** A Friday more than 24 hours after the clock's start, so cancelling is free. */
 export const DATE = '2026-10-16';
