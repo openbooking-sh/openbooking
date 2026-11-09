@@ -7,7 +7,7 @@ const TASKS = join(import.meta.dirname, '..', 'tasks');
 describe('benchmark harness', () => {
   it('loads every task file', async () => {
     const tasks = await loadTasks(TASKS);
-    expect(tasks.length).toBeGreaterThanOrEqual(9);
+    expect(tasks.length).toBeGreaterThanOrEqual(15);
     expect(new Set(tasks.map((t) => t.id)).size).toBe(tasks.length);
   });
 

@@ -219,7 +219,7 @@ describeProviderConformance('MySystemProvider', {
   now: new Date('2030-06-03T08:00:00Z'), // before the date you search
   query: { date: '2030-06-04', party_size: { total: 1 } }, // must return open slots
 });`,
-    more: 'Also exports `runProviderConformance(options)`, which returns a pass/fail result per check without a test runner.',
+    more: 'Also exports `runProviderConformance(options)`, which returns a pass/fail result per check without a test runner. A provider that seats big parties at joined tables opts in to the combined-tables checks with `combinedTables: { query }`.',
   },
   notifications: {
     title: 'Booking emails with calendar invites',

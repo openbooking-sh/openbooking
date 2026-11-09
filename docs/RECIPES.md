@@ -218,6 +218,26 @@ The suite never assumes one place per slot: it books a slot until the provider a
 `slot_unavailable`, then checks that parallel holds cannot go past that point. `query` must return
 an open slot, and another slot at a different time once the first is full.
 
+A provider that can seat a party at tables pushed together (one booking, several tables) opts in to
+more checks with `combinedTables`. Providers without joined tables leave it out and are not
+affected.
+
+```ts
+describeProviderConformance('MySystemProvider', {
+  // …create, now, query as above
+  combinedTables: {
+    // A party too big for any one table: every slot is a joined one, and a second joined slot at
+    // another time is open once the first is full.
+    query: { date: '2030-06-04', party_size: { total: 6 } },
+  },
+});
+```
+
+The slots must name each table by id (`resource.id` and `additional_resources[].id`). The suite then
+checks that a joined booking takes every one of its tables together, that cancelling it, letting its
+hold expire or moving it frees every one (and no more), that a confirmed booking keeps all of them,
+and that no table ends up in two bookings that overlap in time, however many callers ask at once.
+
 ## 6. Get webhooks when bookings change
 
 Send `booking.held`, `booking.confirmed`, `booking.updated`, `booking.cancelled` and
@@ -359,6 +379,7 @@ const bistro: VenueConfig = {
 - **What agents see.** `slot.resource` is the first table, with the label "Tables T6 and T7 together" (or your `label`); `slot.additional_resources` lists the others. The MCP `next_step` tells the agent to say the tables are joined.
 - **Config is checked at startup:** unknown table ids, fewer than two tables, mixed kinds, a kind no offering uses, `max_party_size` above what the tables hold, the same tables listed twice for overlapping party sizes.
 - **Studio** shows a joined booking on the calendar column of each table; counts and lists still count it once.
+- **Demo restaurant.** `createDemoRestaurantProvider()` (and `pnpm dev`) uses all of the above, as a small bistro: tables 6 and 7 (two 4-tops) join for parties of 5 to 8 when no single table is free; lunch Tue–Sat has two seatings (12:00 and 13:15); dinner starts on the half hour; Sunday supper takes at most 24 guests online; at most 20 guests may arrive in the same 15 minutes; dinner table time is 90 minutes, 2 hours from 5 guests and 2.5 hours from 7. The benchmark and the tests run against it.
 - Not built: joining three or more tables by chaining (list the triple as its own combination), tables that may only be joined at certain times, and joined tables in hosted businesses (they store the simpler settings shape).
 
 ## Rules for AI coding tools

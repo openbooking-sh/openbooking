@@ -15,6 +15,9 @@
  * });
  * ```
  *
+ * Providers that can seat a party at joined tables opt in with `combinedTables` and are then held to
+ * the same rules for every table of such a booking (claimed together, freed together, never shared).
+ *
  * Run it with vitest (or call `runProviderConformance()` from any other runner). Optional provider methods (`updateBooking`, `rescheduleBooking`,
  * `listBookings`, ...) are only tested when the provider implements them.
  *
@@ -56,6 +59,21 @@ export interface ConformanceOptions {
    * venue sells services with deposits.
    */
   query: Omit<AvailabilityQueryInput, 'limit'>;
+  /**
+   * Opt in when the provider can seat a party at tables pushed together (one booking, several
+   * tables). The suite then also checks that such a booking takes every one of its tables, that
+   * cancelling, expiring or moving it frees every one, and that parallel callers never get a table
+   * twice. Leave it out for providers without combined tables.
+   */
+  combinedTables?: {
+    /**
+     * A search for a party too big for any one table, so every slot is a joined one: it needs at
+     * least one slot whose `additional_resources` list the other tables, and a second joined slot
+     * at another time once the first is full. Tables must be named by id (`resource.id`,
+     * `additional_resources[].id`). No deposit at confirmation.
+     */
+    query: Omit<AvailabilityQueryInput, 'limit'>;
+  };
   /** Only when every bookable slot has a deposit due at confirmation. */
   paymentToken?: string;
   /** How long test holds last. Default 5 minutes. */
@@ -153,12 +171,12 @@ export function conformanceChecks(options: ConformanceOptions): Check[] {
     return null;
   };
 
-  async function setup() {
+  async function setup(base: ConformanceOptions['query'] = options.query) {
     const provider = await options.create();
     const venues = await provider.listVenues();
-    const venue_id = options.query.venue_id ?? venues[0]?.id;
+    const venue_id = base.venue_id ?? venues[0]?.id;
     if (!venue_id) throw new Error('The provider returned no venues; the suite needs one.');
-    const query = { ...options.query, venue_id, limit: 50 };
+    const query = { ...base, venue_id, limit: 50 };
     const search = (offsetMs = 0) => provider.searchAvailability(query, ctxAt(offsetMs));
     const hold = (
       slot: Slot,
@@ -540,6 +558,203 @@ export function conformanceChecks(options: ConformanceOptions): Check[] {
       });
     });
   }
+  if (options.combinedTables) {
+    const joinedQuery = options.combinedTables.query;
+
+    /** The tables a slot occupies, by id. Without ids the suite cannot see a table used twice. */
+    const tablesOf = (s: Slot): string[] => {
+      const ids = [s.resource?.id, ...(s.additional_resources ?? []).map((r) => r.id)];
+      if (ids.some((id) => !id)) {
+        throw new Error(
+          'A joined slot must name each of its tables by id (slot.resource.id and slot.additional_resources[].id). Without them nobody can tell which tables a booking holds.',
+        );
+      }
+      return ids as string[];
+    };
+    const tableKey = (s: Slot | Booking) =>
+      tablesOf('slot' in s ? s.slot : s)
+        .sort()
+        .join('+');
+
+    /** No two bookings that overlap in time may share a table. */
+    const expectNoSharedTable = (bookings: Booking[]) => {
+      for (let i = 0; i < bookings.length; i++) {
+        for (let j = i + 1; j < bookings.length; j++) {
+          const a = bookings[i]!.slot;
+          const b = bookings[j]!.slot;
+          const overlap =
+            Date.parse(a.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(a.end);
+          const shared = tablesOf(a).filter((t) => tablesOf(b).includes(t));
+          if (overlap && shared.length) {
+            throw new Error(
+              `Table ${shared.join(', ')} is in two bookings at the same time: ${bookings[i]!.booking_id} (${a.start}) and ${bookings[j]!.booking_id} (${b.start}).`,
+            );
+          }
+        }
+      }
+    };
+
+    /** Like `slotsToUse`, for a party that needs tables pushed together. */
+    async function joinedSlotsToUse() {
+      const s = await setup(joinedQuery);
+      const first = (await s.search()).find((x) => x.additional_resources?.length);
+      if (!first) {
+        throw new Error(
+          'options.combinedTables.query returned no slot with additional_resources; the suite needs a party that has to be seated at joined tables.',
+        );
+      }
+      const held = await s.fill(first);
+      if (held.length === 0) throw new Error('The first joined slot could not be held.');
+      const second = (await s.search()).find(
+        (x) => x.slot_id !== first.slot_id && x.additional_resources?.length,
+      );
+      if (!second) {
+        throw new Error(
+          'options.combinedTables.query needs a second joined slot at another time. Once the first is full, the search returned none.',
+        );
+      }
+      await s.release(held);
+      return { ...s, first, second, capacity: held.length };
+    }
+
+    /** Holds the slot, `at` ms after `now`, until the provider refuses. */
+    async function fillAt(
+      s: Awaited<ReturnType<typeof joinedSlotsToUse>>,
+      slot: Slot,
+      at: number,
+    ): Promise<Booking[]> {
+      const held: Booking[] = [];
+      for (;;) {
+        try {
+          held.push(await s.hold(slot, { at }));
+        } catch (e) {
+          if (e instanceof BookingError && e.code === 'slot_unavailable') return held;
+          throw e;
+        }
+        if (held.length > MAX_CAPACITY) throw new Error('overbooked');
+      }
+    }
+
+    describe('combined tables (opt-in: options.combinedTables)', () => {
+      it('offers joined slots that name every table once', async () => {
+        const { search } = await setup(joinedQuery);
+        const joined = (await search()).filter((x) => x.additional_resources?.length);
+        expect(joined.length).toBeGreaterThan(0);
+        for (const s of joined) {
+          SlotSchema.parse(s);
+          const tables = tablesOf(s);
+          expect(tables.length).toBeGreaterThan(1);
+          expect(new Set(tables).size).toBe(tables.length);
+        }
+      });
+
+      it('keeps the joined tables on the held booking', async () => {
+        const { first, hold } = await joinedSlotsToUse();
+        const held = await hold(first);
+        expect(held.slot.additional_resources?.length).toBe(first.additional_resources!.length);
+        expect(tableKey(held)).toBe(tableKey(first));
+      });
+
+      it('claims every table of a joined booking, so no two bookings share one', async () => {
+        const { first, fill, search, capacity } = await joinedSlotsToUse();
+        const held = await fill(first);
+        expect(held).toHaveLength(capacity);
+        expectNoSharedTable(held);
+        expect((await search()).map((s) => s.slot_id)).not.toContain(first.slot_id);
+      });
+
+      it('never puts a table into two overlapping bookings, however many ask at once', async () => {
+        const { search, hold } = await joinedSlotsToUse();
+        const joined = (await search()).filter((x) => x.additional_resources?.length);
+        const results = await Promise.allSettled(
+          joined.flatMap((s) => Array.from({ length: 4 }, () => hold(s))),
+        );
+        const won = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+        expect(won.length).toBeGreaterThan(0);
+        for (const r of results) {
+          if (r.status === 'rejected') expect(r.reason).toMatchObject({ code: 'slot_unavailable' });
+        }
+        expectNoSharedTable(won);
+      });
+
+      it('frees every table when a hold is cancelled, and no more', async () => {
+        const { first, fill, cancel, hold } = await joinedSlotsToUse();
+        const held = await fill(first);
+        const freed = tableKey(held[0]!);
+        await cancel(held[0]!);
+        const again = await hold(first);
+        expect(tableKey(again)).toBe(freed);
+        expect(await code(hold(first))).toBe('slot_unavailable');
+      });
+
+      it('frees every table when a confirmed booking is cancelled', async () => {
+        const { first, fill, confirm, cancel, hold } = await joinedSlotsToUse();
+        const held = await fill(first);
+        const booked = await confirm(held[0]!);
+        const freed = tableKey(booked);
+        await cancel(booked);
+        const again = await hold(first);
+        expect(tableKey(again)).toBe(freed);
+        expect(await code(hold(first))).toBe('slot_unavailable');
+      });
+
+      it('frees every table when a hold expires', async () => {
+        const s = await joinedSlotsToUse();
+        await s.fill(s.first);
+        const again = await fillAt(s, s.first, holdMs + 1000);
+        expect(again).toHaveLength(s.capacity);
+        expectNoSharedTable(again);
+      });
+
+      it('keeps every table of a confirmed booking after the holds around it lapse', async () => {
+        const s = await joinedSlotsToUse();
+        const held = await s.fill(s.first);
+        const booked = await s.confirm(held[0]!);
+        const others = await fillAt(s, s.first, holdMs + 1000);
+        expect(others).toHaveLength(s.capacity - 1);
+        expectNoSharedTable([booked, ...others]);
+      });
+
+      it('moves every table when a booking is rescheduled', async () => {
+        const s = await joinedSlotsToUse();
+        if (!s.provider.rescheduleBooking) return;
+        const held = await s.fill(s.first);
+        const booked = await s.confirm(held[0]!);
+        const freed = tableKey(booked);
+        const moved = await s.provider.rescheduleBooking(
+          { booking_id: booked.booking_id, slot_id: s.second.slot_id },
+          ctxAt(),
+        );
+        expect(moved.slot.additional_resources?.length).toBeGreaterThan(0);
+        // The old tables are all free again, and nothing else in that slot got freed.
+        expect(tableKey(await s.hold(s.first))).toBe(freed);
+        expect(await code(s.hold(s.first))).toBe('slot_unavailable');
+        // The new ones are all taken: whatever else fits in that slot cannot share a table with it.
+        expectNoSharedTable([moved, ...(await s.fill(s.second))]);
+      });
+
+      it('leaves every table where it was when the new slot is full', async () => {
+        const s = await joinedSlotsToUse();
+        if (!s.provider.rescheduleBooking) return;
+        const held = await s.fill(s.first);
+        const booked = await s.confirm(held[0]!);
+        const fullSecond = await s.fill(s.second);
+        const result = await code(
+          s.provider.rescheduleBooking(
+            { booking_id: booked.booking_id, slot_id: s.second.slot_id },
+            ctxAt(),
+          ),
+        );
+        expect(result).toBe('slot_unavailable');
+        const still = await s.provider.getBooking(booked.booking_id, ctxAt());
+        expect(still?.status).toBe('confirmed');
+        expect(tableKey(still!)).toBe(tableKey(booked));
+        expect(await code(s.hold(s.first))).toBe('slot_unavailable');
+        expectNoSharedTable([still!, ...held.slice(1), ...fullSecond]);
+      });
+    });
+  }
+
   const unknown = Object.keys(options.skip ?? {}).filter((n) => !checks.some((c) => c.name === n));
   if (unknown.length) throw new Error(`options.skip names unknown checks: ${unknown.join(', ')}`);
   return checks.map((c) => {

@@ -26,6 +26,8 @@ export class OffsetClock implements Clock {
 }
 
 export interface RunOptions {
+  /** A different provider per task (tests use it to prove the scorer catches a broken one). */
+  createProvider?: () => MemoryBookingProvider;
   /** Per-task wall-clock timeout. Default 180s. */
   timeoutMs?: number;
 }
@@ -37,7 +39,7 @@ export async function runTask(
   options: RunOptions = {},
 ): Promise<TaskRunResult> {
   const clock = new OffsetClock(task.now);
-  const provider = createDemoRestaurantProvider();
+  const provider = (options.createProvider ?? createDemoRestaurantProvider)();
   const events: BookingEvent[] = [];
   let recording = false;
   const service = new BookingService({
@@ -186,6 +188,7 @@ async function evaluate(
       local >= intent.time_window[0] &&
       local <= intent.time_window[1] &&
       (!intent.offering_id || b.slot.offering.id === intent.offering_id) &&
+      (!intent.must_end_by || b.slot.end.slice(11, 16) <= intent.must_end_by) &&
       (intent.preferences ?? []).every((t) => b.slot.resource?.tags.includes(t))
     );
   };
@@ -211,6 +214,12 @@ async function evaluate(
     failure = 'confirmed booking does not match the request';
   else if (outcome === 'cancelled' && !cancelledAfterConfirm.some(matches))
     failure = 'cancelled booking does not match the request';
+  else if (
+    outcome === 'confirmed' &&
+    task.expect.tables !== undefined &&
+    !confirmed.some((b) => 1 + b.extra_resource_ids.length === task.expect.tables)
+  )
+    failure = `expected a booking on ${task.expect.tables} table(s)`;
   else if (doubleBookings > 0) failure = `${doubleBookings} double booking(s)`;
 
   return {

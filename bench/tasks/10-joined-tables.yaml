@@ -1,0 +1,18 @@
+id: joined-tables
+description: A party of 7 at a time when the 8-top is taken; the only fit is tables 6 and 7 pushed together, and the agent must say so.
+now: 2026-10-01T10:00:00+02:00
+setup:
+  - { date: 2026-10-03, time: '19:00', party_size: 8, offering_id: dinner }
+user_prompt: |
+  Table for 7 on Saturday 3 October 2026 at 19:00, it has to be 19:00. Name Margaret Hamilton,
+  margaret@example.com. A deposit is fine, my card token is tok_visa. Please confirm it.
+intent:
+  date: 2026-10-03
+  party_size: 7
+  time_window: ['19:00', '19:00']
+  offering_id: dinner
+  customer: { first_name: Margaret, last_name: Hamilton, email: margaret@example.com }
+  payment_token: tok_visa
+expect:
+  outcome: confirmed
+  tables: 2
