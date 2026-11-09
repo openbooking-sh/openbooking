@@ -1,0 +1,18 @@
+id: pacing-full-evening
+description: The kitchen's cap for the 19:00 arrivals is full (20 guests), though tables are free; the agent must book another time in the window.
+now: 2026-10-01T10:00:00+02:00
+setup:
+  - { date: 2026-10-03, time: '19:00', party_size: 8, offering_id: dinner }
+  - { date: 2026-10-03, time: '19:00', party_size: 8, offering_id: dinner }
+  - { date: 2026-10-03, time: '19:00', party_size: 4, offering_id: dinner }
+user_prompt: |
+  Table for 2 on Saturday 3 October 2026, 19:00 if possible, but anything up to 20:00 is fine.
+  Name Hedy Lamarr, hedy@example.com. Book what is available and confirm it.
+intent:
+  date: 2026-10-03
+  party_size: 2
+  time_window: ['19:00', '20:00']
+  offering_id: dinner
+  customer: { first_name: Hedy, last_name: Lamarr, email: hedy@example.com }
+expect:
+  outcome: confirmed

@@ -1,0 +1,14 @@
+id: lunch-seatings
+description: Lunch starts only at fixed seatings (12:00 and 13:15); the agent must pick a real seating inside the window.
+now: 2026-10-01T10:00:00+02:00
+user_prompt: |
+  Lunch for 3 on Thursday 8 October 2026, any time from 12:15 to 13:30. Name Barbara Liskov,
+  barbara@example.com. Confirm it for me.
+intent:
+  date: 2026-10-08
+  party_size: 3
+  time_window: ['12:15', '13:30']
+  offering_id: lunch
+  customer: { first_name: Barbara, last_name: Liskov, email: barbara@example.com }
+expect:
+  outcome: confirmed

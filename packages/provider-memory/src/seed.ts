@@ -3,6 +3,8 @@ import type { MemoryProviderConfig, VenueConfig } from './config';
 
 const VENUE_ID = 'demo-bistro';
 
+const LUNCH = { open: '11:30', close: '15:00' };
+
 const table = (id: string, min: number, max: number, tags: string[] = []): Resource => ({
   id,
   venue_id: VENUE_ID,
@@ -15,10 +17,17 @@ const table = (id: string, min: number, max: number, tags: string[] = []): Resou
 /**
  * A fictional restaurant used by the demo, tests and benchmark.
  *
- * - Open Tue–Thu 17–22, Fri–Sat 17–23, Sun 16–21, closed Monday. Europe/Oslo, NOK.
- * - 12 tables (2-, 4-, 6- and 8-tops; window, outdoor and private-room tags).
- * - "Dinner" (90 min, pay at venue): free cancellation until 24h before, then 200 NOK per guest.
- *   Parties of 6+ pay a 200 NOK/guest deposit at confirmation.
+ * - Open Tue–Sat for lunch (11:30–15:00), dinner Tue–Thu 17–22 and Fri–Sat 17–23, Sun 16–21, closed
+ *   Monday. Europe/Oslo, NOK.
+ * - 12 tables (2-, 4-, 6- and 8-tops; window, outdoor and private-room tags). Tables 6 and 7 (two
+ *   4-tops) can be pushed together for parties of 5 to 8, but only when no single table is free.
+ * - Service periods: lunch has two seatings (12:00 and 13:15), dinner starts on the half hour, and
+ *   Sunday supper takes at most 24 guests online (the rest is held for walk-ins). At most 20
+ *   guests may arrive in the same 15 minutes.
+ * - "Dinner" (90 min, pay at venue): table time is 2 h from 5 guests and 2.5 h from 7. Free
+ *   cancellation until 24h before, then 200 NOK per guest. Parties of 6+ pay a 200 NOK/guest
+ *   deposit at confirmation.
+ * - "Lunch" (75 min, Tue–Sat): free cancellation until 4h before.
  * - "Chef's tasting menu" (150 min, Fri–Sat, 1195 NOK/guest): 500 NOK/guest deposit at
  *   confirmation, free cancellation until 48h before, then the deposit is retained.
  */
@@ -58,8 +67,16 @@ export function demoRestaurantVenue(): VenueConfig {
         id: 'dinner',
         venue_id: VENUE_ID,
         name: 'Dinner',
-        description: 'À la carte dinner. Table is yours for 90 minutes.',
+        description:
+          'À la carte dinner. Table is yours for 90 minutes (2 hours from 5 guests, 2.5 hours from 7).',
         duration_minutes: 90,
+        duration_by_party: [
+          { min_party_size: 1, duration_minutes: 90 },
+          { min_party_size: 5, duration_minutes: 120 },
+          { min_party_size: 7, duration_minutes: 150 },
+        ],
+        // Keeps lunch starts out of the afternoon and dinner starts out of lunch.
+        first_start: '16:00',
         price_per_person: null,
         resource_kinds: ['table'],
         cancellation: {
@@ -69,6 +86,24 @@ export function demoRestaurantVenue(): VenueConfig {
           no_show_fee_per_person: 20000,
         },
         deposit: { min_party_size: 6, amount_per_person: 20000, due: 'at_confirmation' },
+      },
+      {
+        id: 'lunch',
+        venue_id: VENUE_ID,
+        name: 'Lunch',
+        description: 'Set lunch or à la carte. Table is yours for 75 minutes.',
+        duration_minutes: 75,
+        price_per_person: null,
+        resource_kinds: ['table'],
+        weekdays: [2, 3, 4, 5, 6],
+        last_start: '14:00',
+        cancellation: {
+          refundability: 'refundable',
+          free_until_hours_before: 4,
+          late_fee_per_person: 10000,
+          no_show_fee_per_person: 10000,
+        },
+        deposit: null,
       },
       {
         id: 'tasting',
@@ -92,12 +127,33 @@ export function demoRestaurantVenue(): VenueConfig {
     ],
     opening_hours: {
       0: [{ open: '16:00', close: '21:00' }],
-      2: [{ open: '17:00', close: '22:00' }],
-      3: [{ open: '17:00', close: '22:00' }],
-      4: [{ open: '17:00', close: '22:00' }],
-      5: [{ open: '17:00', close: '23:00' }],
-      6: [{ open: '17:00', close: '23:00' }],
+      2: [LUNCH, { open: '17:00', close: '22:00' }],
+      3: [LUNCH, { open: '17:00', close: '22:00' }],
+      4: [LUNCH, { open: '17:00', close: '22:00' }],
+      5: [LUNCH, { open: '17:00', close: '23:00' }],
+      6: [LUNCH, { open: '17:00', close: '23:00' }],
     },
+    // Two 4-tops pushed together seat 5 to 8. A single table is always tried first.
+    table_combinations: [{ resource_ids: ['t6', 't7'], min_party_size: 5, max_party_size: 8 }],
+    service_periods: [
+      {
+        name: 'Lunch',
+        weekdays: [2, 3, 4, 5, 6],
+        open: '11:30',
+        close: '14:00',
+        seatings: ['12:00', '13:15'],
+      },
+      { name: 'Dinner', weekdays: [2, 3, 4, 5, 6], open: '17:00', close: '22:00' },
+      // A quiet day: the rest of the room is kept for walk-ins.
+      {
+        name: 'Sunday supper',
+        weekdays: [0],
+        open: '16:00',
+        close: '21:00',
+        max_online_guests: 24,
+      },
+    ],
+    pacing: { max_guests_per_interval: 20, interval_minutes: 15 },
     closed_dates: ['2026-12-24', '2026-12-25', '2026-12-31'],
     slot_interval_minutes: 30,
     buffer_minutes: 15,

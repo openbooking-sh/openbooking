@@ -7,6 +7,8 @@ export const TaskIntentSchema = z.object({
   date: z.iso.date(),
   party_size: z.number().int().positive(),
   time_window: z.tuple([Time, Time]),
+  /** The party must be out by this local time (a table time the agent has to read, not guess). */
+  must_end_by: Time.optional(),
   offering_id: z.string().optional(),
   preferences: z.array(z.string()).optional(),
   customer: z.object({
@@ -52,6 +54,8 @@ export const TaskSchema = z.object({
     outcome: z.enum(['confirmed', 'cancelled', 'no_booking']),
     /** Max bookings the agent may leave confirmed (anything above is a double booking). */
     max_confirmed_bookings: z.number().int().min(0).default(1),
+    /** How many tables the confirmed booking occupies (2 = two tables joined). */
+    tables: z.number().int().min(1).optional(),
   }),
 });
 export type Task = z.infer<typeof TaskSchema>;

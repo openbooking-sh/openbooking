@@ -157,6 +157,8 @@ describe('UCP booking sessions', () => {
         '/availability?date=2026-10-02&party_size=8&time_from=19:00&time_to=19:00&offering_id=dinner',
       )
     ).json.offers[0];
+    // A party of 8 fits the 8-top and the joined tables 6 and 7: the third request finds nothing.
+    await write('POST', '/booking-sessions', { stays: [{ id: offer.id }] });
     await write('POST', '/booking-sessions', { stays: [{ id: offer.id }] });
     const second = await write('POST', '/booking-sessions', { stays: [{ id: offer.id }] });
     expect(second.json).toMatchObject({

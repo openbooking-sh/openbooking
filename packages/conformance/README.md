@@ -20,7 +20,7 @@ describeProviderConformance('MySystemProvider', {
 });
 ```
 
-Also exports `runProviderConformance(options)`, which returns a pass/fail result per check without a test runner.
+Also exports `runProviderConformance(options)`, which returns a pass/fail result per check without a test runner. A provider that seats big parties at joined tables opts in to the combined-tables checks with `combinedTables: { query }`.
 
 ## Learn more
 

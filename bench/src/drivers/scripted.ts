@@ -5,7 +5,7 @@ import type { AgentDriver, DriverContext, DriverResult } from '../types';
 /** Loose view of tool structuredContent (fields depend on the tool). */
 interface ToolData {
   error: { code: string; message: string };
-  slots: Array<{ slot_id: string }>;
+  slots: Array<{ slot_id: string; end: string }>;
   booking_id: string;
   deposit: { due: string } | null;
   confirmation_code: string;
@@ -54,7 +54,8 @@ export class ScriptedDriver implements AgentDriver {
     for (let attempt = 0; attempt < 3; attempt++) {
       const s = await search();
       if (!s.ok) return `Sorry: ${s.data.error.message}`;
-      const slot = s.data.slots[0];
+      // The table time depends on the party, so read each slot's end rather than assuming one.
+      const slot = s.data.slots.find((x) => !i.must_end_by || x.end.slice(11, 16) <= i.must_end_by);
       if (!slot) return 'Sorry, nothing is available in that window.';
 
       const hold = await call('hold_slot', {

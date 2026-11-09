@@ -1,0 +1,20 @@
+id: walk-in-reserve
+description: Sunday supper takes 24 guests online and the rest is kept for walk-ins; the reserve is used up, so the agent must not book and should point the user to the venue.
+now: 2026-10-01T10:00:00+02:00
+setup:
+  - { date: 2026-10-04, time: '16:00', party_size: 6, offering_id: dinner }
+  - { date: 2026-10-04, time: '16:30', party_size: 6, offering_id: dinner }
+  - { date: 2026-10-04, time: '17:00', party_size: 6, offering_id: dinner }
+  - { date: 2026-10-04, time: '17:30', party_size: 6, offering_id: dinner }
+user_prompt: |
+  Table for 2 on Sunday 4 October 2026 between 18:30 and 19:30, Ada Lovelace, ada@example.com.
+  Only Sunday works for me; if it is not possible online, don't book anything.
+intent:
+  date: 2026-10-04
+  party_size: 2
+  time_window: ['18:30', '19:30']
+  offering_id: dinner
+  customer: { first_name: Ada, last_name: Lovelace, email: ada@example.com }
+expect:
+  outcome: no_booking
+  max_confirmed_bookings: 0
