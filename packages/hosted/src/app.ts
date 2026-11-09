@@ -3,7 +3,9 @@ import {
   BookingError,
   isBookingError,
   MemoryIdempotencyStore,
+  coarseSource,
   runAsActor,
+  sourceFromActor,
   systemClock,
   toErrorPayload,
   type BookingEvent,
@@ -315,10 +317,15 @@ export function createHostedApp(options: HostedOptions): HostedApp {
             if (!e.ok || e.replayed) return;
             const channel = e.actor?.agent ?? 'Direct API';
             const event = BOOKING_EVENTS[e.operation];
+            const coarse = coarseSource(sourceFromActor(e.actor));
             if (event) {
               options.analytics?.capture(event, businessId, {
                 channel,
                 protocol: e.actor?.protocol ?? 'api',
+                // Only the channel and a coarse assistant group (ChatGPT, Gemini, ...): never
+                // anything about the customer.
+                source_channel: coarse.channel,
+                agent_group: coarse.agent_group,
               });
             }
             if (options.ops && (e.operation === 'confirm' || e.operation === 'cancel')) {

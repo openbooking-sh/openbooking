@@ -26,6 +26,7 @@ import type {
   Venue,
   VenueInfo,
 } from './schemas';
+import type { BookingSource } from './source';
 
 export interface ProviderContext {
   /** The instant the engine considers "now" (from the injected Clock). */
@@ -39,6 +40,8 @@ export interface CreateHoldRequest {
   expires_at: Date;
   customer: Customer | null;
   notes: string | null;
+  /** Where the hold came from. Store it on the booking as-is; it must never affect the slot's terms. */
+  source?: BookingSource;
 }
 
 export interface ConfirmHoldRequest {

@@ -151,6 +151,7 @@ Each offer reuses the `stay` shape (`id`, `stay_dates`, `accommodation_type`, `r
 - **Explicit consent.** `user_confirmed` on confirm, and on cancel of confirmed bookings.
 - **Hold as a booking state.** A hold is a booking in status `held` with a mandatory `expires_at`. Lifecycle: `held → confirmed → cancelled`, or `held → expired | cancelled`.
 - **Venue time zone and currency.** `Venue.timezone` (IANA) and `Venue.currency` are needed to interpret local slot times and amounts.
+- **Booking source.** `Booking.source = { channel, agent? }`, set when the hold is made and kept for life; absent on older bookings ("unknown"). `agent` is what the caller reported about itself (MCP client name, UCP/USP platform host, browser family): self-reported, not verified, for the business's statistics only. It is not sent to UCP/USP clients and never affects price, deposit or cancellation terms.
 - **Structured errors.** `ErrorPayload` = `{ code, message, suggested_next_action, retryable, details? }`.
 
 ## 5. Open items to track upstream

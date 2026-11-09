@@ -7,6 +7,7 @@ import {
   isBookingError,
   runAsActor,
   toErrorPayload,
+  userAgentFamily,
   type Booking,
   type BookingService,
   type ErrorPayload,
@@ -133,7 +134,22 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
         : 'Booking page';
     try {
       const ip = clientIpFromHeaders(c.req.raw.headers);
-      return c.json(await runAsActor({ protocol: 'web', agent, ...(ip ? { ip } : {}) }, fn));
+      // The business's own site (embed.js) says so; everything else is the booking page. The
+      // browser family is only for the business's statistics (UA strings are never stored).
+      const embedded = c.req.header('x-openbooking-source')?.toLowerCase() === 'embed';
+      const client = userAgentFamily(c.req.header('user-agent'));
+      return c.json(
+        await runAsActor(
+          {
+            protocol: 'web',
+            agent,
+            ...(embedded ? { channel: 'embed' as const } : {}),
+            ...(client ? { client } : {}),
+            ...(ip ? { ip } : {}),
+          },
+          fn,
+        ),
+      );
     } catch (e) {
       const error = toErrorPayload(e);
       return c.json({ error }, HTTP[error.code] ?? 422);
@@ -187,7 +203,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
       // x-openbooking-key: hosted API keys, sent by a business's own website.
       c.header(
         'Access-Control-Allow-Headers',
-        'content-type, x-openbooking-agent, x-openbooking-key',
+        'content-type, x-openbooking-agent, x-openbooking-source, x-openbooking-key',
       );
       c.header('Access-Control-Max-Age', '86400');
       return c.body(null, 204);

@@ -11,6 +11,7 @@
  */
 import type * as z from 'zod';
 import { currentActor, type Actor } from './actor';
+import { sourceFromActor } from './source';
 import { evaluateBookingCancellation } from './cancellation';
 import { systemClock, type Clock } from './clock';
 import { BookingError, fromZodError, isBookingError, type ErrorCode } from './errors';
@@ -377,12 +378,17 @@ export class BookingService {
       return this.#idempotent(meta, idempotency_key, 'hold', req, async (ctx) => {
         await this.#checkHoldLimit();
         const expires_at = new Date(ctx.now.getTime() + this.holdTtlSeconds * 1000);
+        const source = sourceFromActor(currentActor());
         const booking = await this.provider.createHold(
           {
             slot_id: req.slot_id,
             expires_at,
             customer: req.customer ?? null,
             notes: req.notes ?? null,
+            // Recorded for the business's statistics only. The slot (price, deposit, terms) was
+            // fixed by the slot_id before this point, so the channel can never change what a
+            // guest pays: no "Google tax", and no per-channel discount either.
+            ...(source ? { source } : {}),
           },
           ctx,
         );

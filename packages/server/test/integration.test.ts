@@ -308,6 +308,9 @@ describe('Studio attribution end-to-end', () => {
       expect(overview.recent_bookings[0]).toMatchObject({
         status: 'confirmed',
         booked_via: 'Claude',
+        // Recorded at the hold, from what the assistant reported about itself.
+        source: { channel: 'mcp' },
+        source_label: 'Claude',
       });
     },
   );

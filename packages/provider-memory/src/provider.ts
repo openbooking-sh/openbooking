@@ -265,6 +265,7 @@ export class MemoryBookingProvider implements BookingProvider {
         confirmation_code: null,
         payment: paymentFor(slot.deposit),
         cancellation: null,
+        ...(req.source ? { source: req.source } : {}),
         created_at: now,
         updated_at: now,
         confirmed_at: null,
@@ -826,6 +827,9 @@ export class MemoryBookingProvider implements BookingProvider {
               .map((r) => ({ id: r.id, kind: r.kind, label: r.name })),
           }
         : {}),
+      // Price, deposit and terms come from the offering, party size and time ONLY. Never add the
+      // booking's source (ChatGPT, Google, website, ...) as an input here: a guest must pay the
+      // same through every channel (no "Google tax"). A test asserts this.
       price: o.price_per_person
         ? { amount: o.price_per_person.amount * party, currency: o.price_per_person.currency }
         : null,

@@ -6,6 +6,7 @@
  * threaded through tool handlers by hand.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { BookingChannel } from './source';
 
 export interface Actor {
   /**
@@ -13,6 +14,11 @@ export interface Actor {
    * booking page (a person, or a browser agent using its WebMCP tools).
    */
   protocol: 'mcp' | 'ucp' | 'usp' | 'a2a' | 'studio' | 'web' | 'api';
+  /**
+   * Overrides the booking channel the protocol implies: `embed` for the business's own site,
+   * `phone` / `walk_in` chosen by staff in Studio.
+   */
+  channel?: BookingChannel;
   /** Display name, e.g. "Claude", "ChatGPT", "MCP Inspector", "Unknown agent". */
   agent: string;
   /** Raw client identifier as reported (MCP clientInfo name, User-Agent, UCP-Agent profile). */
