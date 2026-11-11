@@ -232,4 +232,6 @@ export type ErrorCode =
   | 'idempotency_conflict'
   | 'operation_not_supported'
   | 'provider_error'
-  | 'rate_limited';
+  | 'rate_limited'
+  | 'booking_limit_reached'
+  | 'not_transferable';

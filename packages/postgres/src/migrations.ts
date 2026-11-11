@@ -209,6 +209,35 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
   },
   {
     version: 8,
+    name: 'anti-scalping-ledger',
+    // The anti-scalping ledger: who holds what, by salted hash. guest_keys are hashed email and
+    // phone lookups, name_key a hashed name, agent_key a client id. No names, emails or phone
+    // numbers live here, and risk flags (staff only) sit here rather than on the booking.
+    sql: `
+      create table ob_guard (
+        booking_id      text primary key,
+        venue_id        text not null,
+        day             text not null,
+        start_at        timestamptz not null,
+        end_at          timestamptz not null,
+        status          text not null,
+        hold_expires_at timestamptz,
+        guest_keys      text[] not null default '{}',
+        name_key        text,
+        agent_key       text,
+        created_at      timestamptz not null,
+        cancelled_at    timestamptz,
+        cancelled_from  text,
+        flags           text[] not null default '{}'
+      );
+      create index ob_guard_guest on ob_guard using gin (guest_keys);
+      create index ob_guard_agent on ob_guard (venue_id, agent_key);
+      create index ob_guard_end on ob_guard (end_at);
+      alter table ob_guard enable row level security;
+    `,
+  },
+  {
+    version: 10,
     name: 'guest-data',
     // Staff-only guest data, kept apart from ob_bookings so no booking read can carry it. A
     // dietary note (allergies: health data) lives until shortly after the visit ends. A profile is
