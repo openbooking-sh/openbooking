@@ -5,6 +5,7 @@ export { PostgresIdempotencyStore, type PostgresIdempotencyStoreOptions } from '
 export { PostgresActivityLog } from './activity';
 export { PostgresWaitlistStore } from './waitlist';
 export { PostgresCalcomStore } from './calcom';
+export { PostgresGuardStore } from './guard';
 export { PostgresUspState, type PostgresUspStateOptions, type UspCredentialRecord } from './usp';
 export {
   PostgresApiKeyStore,
@@ -19,6 +20,7 @@ import type { Db } from './db';
 import { PostgresActivityLog } from './activity';
 import { PostgresBookingStore } from './bookings';
 import { PostgresCalcomStore } from './calcom';
+import { PostgresGuardStore } from './guard';
 import {
   PostgresApiKeyStore,
   PostgresBusinessStore,
@@ -38,6 +40,8 @@ export interface PostgresStores {
   idempotency: PostgresIdempotencyStore;
   /** For `studio.activity`. */
   activity: PostgresActivityLog;
+  /** For `serviceOptions.guard.store` (anti-scalping limits shared across instances). */
+  guard: PostgresGuardStore;
   /** For `new CalcomBookingProvider({ store })`. */
   calcom: PostgresCalcomStore;
   /** For `new Waitlist({ service, store })`: people waiting for a full time, shared by instances. */
@@ -63,6 +67,7 @@ export function postgresStores(
     bookings: new PostgresBookingStore(db),
     idempotency: new PostgresIdempotencyStore(db, options.idempotency),
     activity: new PostgresActivityLog(db),
+    guard: new PostgresGuardStore(db),
     calcom: new PostgresCalcomStore(db),
     waitlist: new PostgresWaitlistStore(db),
     usp: new PostgresUspState(db, options.usp),
