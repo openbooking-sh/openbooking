@@ -349,12 +349,51 @@ describe('ResendMailer', () => {
     });
   });
 
-  it('throws with the status on a non-2xx response', async () => {
+  it('throws with the status and error name on a non-2xx response', async () => {
     const fakeFetch = (async () =>
-      new Response('invalid from', { status: 422 })) as unknown as typeof fetch;
+      Response.json(
+        { statusCode: 422, name: 'validation_error', message: 'Invalid `from` field' },
+        { status: 422 },
+      )) as unknown as typeof fetch;
     const mailer = new ResendMailer({ apiKey: 're_test', fetch: fakeFetch });
     await expect(
       mailer.send({ to: 'a@b.co', from: 'x@y.co', subject: 's', text: 't', html: 'h' }),
-    ).rejects.toThrow(/422.*invalid from/);
+    ).rejects.toThrow('Resend responded 422 (validation_error)');
+  });
+
+  it('never logs the recipient address Resend echoes back in its error', async () => {
+    const echo = (async () =>
+      Response.json(
+        {
+          statusCode: 422,
+          name: 'validation_error',
+          message: 'Invalid `to` field. ada@example.com is not a valid email',
+        },
+        { status: 422 },
+      )) as unknown as typeof fetch;
+    const plain = (async () =>
+      new Response('rejected recipient ada@example.com', {
+        status: 500,
+      })) as unknown as typeof fetch;
+    for (const fakeFetch of [echo, plain]) {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const { service, notifications } = setup(
+          new ResendMailer({ apiKey: 're', fetch: fakeFetch }),
+        );
+        await book(service);
+        await notifications.idle();
+        expect(logged).toHaveBeenCalled();
+        const text = logged.mock.calls
+          .flat()
+          .map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : String(a)))
+          .join('\n');
+        expect(text).toContain('Resend responded');
+        expect(text).not.toContain('ada@example.com');
+        expect(text).not.toContain('Lovelace');
+      } finally {
+        logged.mockRestore();
+      }
+    }
   });
 });

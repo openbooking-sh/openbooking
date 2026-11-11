@@ -84,10 +84,18 @@ export class ResendMailer implements Mailer {
       }),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Resend responded ${res.status}: ${body.slice(0, 200)}`);
+      // Only the status and Resend's error name: the message can echo the recipient's address,
+      // and this error ends up in logs and error tracking.
+      const body = (await res.json().catch(() => null)) as { name?: unknown } | null;
+      const name = typeof body?.name === 'string' ? withoutEmails(body.name).slice(0, 60) : '';
+      throw new Error(`Resend responded ${res.status}${name ? ` (${name})` : ''}`);
     }
   }
+}
+
+/** Replaces anything shaped like an email address, for text that may reach logs. */
+function withoutEmails(text: string): string {
+  return text.replace(/[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+/g, '[email]');
 }
 
 /** Dedupe for notifications, so a retried confirm never emails twice. */

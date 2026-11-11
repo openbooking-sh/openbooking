@@ -13,6 +13,7 @@ import {
   type BusinessSettings,
   type BusinessSettingsInput,
 } from '@openbooking-sh/studio';
+import { httpUrl } from '@openbooking-sh/booking-page';
 import { slugify, type Business } from './business';
 
 export function venueConfig(business: Business, pageUrl?: string): VenueConfig {
@@ -58,7 +59,8 @@ export function venueConfig(business: Business, pageUrl?: string): VenueConfig {
       currency: p.currency,
       ...(Object.values(p.address).some(Boolean) ? { address: p.address } : {}),
       ...(p.phone_number ? { phone_number: p.phone_number } : {}),
-      ...((p.website ?? pageUrl) ? { url: p.website ?? pageUrl } : {}),
+      // Agents show this as a link; a website saved before only http(s) was allowed falls back.
+      ...((httpUrl(p.website) ?? pageUrl) ? { url: httpUrl(p.website) ?? pageUrl } : {}),
       ...(p.description ? { description: p.description } : {}),
     },
     currency: p.currency,

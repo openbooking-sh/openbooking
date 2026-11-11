@@ -20,6 +20,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { embedScript } from './embed';
 import { buildOpenApi } from './openapi';
 import {
+  httpUrl,
   jsonLd,
   readPrefill,
   renderConfirm,
@@ -91,7 +92,13 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
 
   const legal = options.privacyUrl ? { privacyUrl: options.privacyUrl } : {};
 
-  const profile = async (): Promise<PageProfile> => (await options.profile?.()) ?? {};
+  // A website that is not http(s) is dropped here, so neither the page, the API nor llms.txt
+  // hands it out as a link.
+  const profile = async (): Promise<PageProfile> => {
+    const { website, ...rest } = (await options.profile?.()) ?? {};
+    const safe = httpUrl(website);
+    return safe ? { ...rest, website: safe } : rest;
+  };
 
   const catalog = async () => {
     const venue = await service.resolveVenue();

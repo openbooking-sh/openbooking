@@ -48,7 +48,10 @@ export const BusinessSettingsSchema = z
       phone_number: optional(z.string().trim().max(40)),
       /** Public contact email; customers' replies go here. */
       email: optional(z.email()),
-      website: optional(z.url()),
+      /** Linked from the public booking page, so only http(s): `javascript:` would run there. */
+      website: optional(
+        z.url({ protocol: /^https?$/, error: 'Enter a web address starting with https://' }),
+      ),
       address: AddressSchema.default({}),
     }),
     /** Keyed by weekday; an empty list means closed that day. */

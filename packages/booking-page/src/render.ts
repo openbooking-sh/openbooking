@@ -58,6 +58,21 @@ export function esc(v: unknown): string {
   );
 }
 
+/**
+ * The URL if it is an absolute http(s) link, otherwise undefined. Business-supplied links go
+ * through this before they reach a page: `javascript:` or `data:` in an href runs on our
+ * origin, and settings saved before validation was tightened may still hold one.
+ */
+export function httpUrl(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  try {
+    const { protocol } = new URL(v.trim());
+    return protocol === 'http:' || protocol === 'https:' ? v.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** JSON safe to embed inside a `<script>` element. */
 export function scriptJson(value: unknown): string {
   return JSON.stringify(value)
@@ -120,7 +135,7 @@ function knowledgeLd(k: Venue['knowledge']): Record<string, unknown> {
   const features = k.accessibility?.features ?? [];
   return {
     ...(k.cuisine?.length ? { servesCuisine: k.cuisine } : {}),
-    ...(k.menu?.url ? { hasMenu: k.menu.url } : {}),
+    ...(httpUrl(k.menu?.url) ? { hasMenu: httpUrl(k.menu?.url) } : {}),
     ...(features.length
       ? {
           amenityFeature: features.map((f) => ({
@@ -144,7 +159,7 @@ export function jsonLd(m: PageModel): Record<string, unknown> {
     url: m.pageUrl,
     ...(v.phone_number ? { telephone: v.phone_number } : {}),
     ...(m.profile.email ? { email: m.profile.email } : {}),
-    ...(m.profile.website ? { sameAs: [m.profile.website] } : {}),
+    ...(httpUrl(m.profile.website) ? { sameAs: [httpUrl(m.profile.website)] } : {}),
     ...(a
       ? {
           address: {
@@ -275,14 +290,13 @@ ${extra}
 
 function venueHeader(v: Venue, profile: PageProfile): string {
   const addr = addressLine(v);
+  const website = httpUrl(profile.website);
   const meta = [
     addr ? esc(addr) : '',
     v.phone_number
       ? `<a href="tel:${esc(v.phone_number.replace(/[^+0-9]/g, ''))}">${esc(v.phone_number)}</a>`
       : '',
-    profile.website
-      ? `<a href="${esc(profile.website)}" rel="noopener" target="_blank">Website</a>`
-      : '',
+    website ? `<a href="${esc(website)}" rel="noopener" target="_blank">Website</a>` : '',
   ].filter(Boolean);
   return `<header>
   <h1>${esc(v.name)}</h1>
