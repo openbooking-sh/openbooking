@@ -14,9 +14,11 @@ export {
   renderCancellationEmail,
   renderConfirmationEmail,
   renderOwnerEmail,
+  renderWaitlistOfferEmail,
   type CustomerEmailInput,
   type OwnerEmailInput,
   type RenderedEmail,
+  type WaitlistOfferEmailInput,
 } from './templates';
 export {
   attachNotifications,
@@ -26,3 +28,8 @@ export {
 } from './notify';
 export { formatAmount, formatWhen } from './format';
 export { MemorySuppressionList, suppressionHash, type SuppressionList } from './suppression';
+export {
+  attachWaitlistNotifications,
+  type WaitlistNotificationHandle,
+  type WaitlistNotificationOptions,
+} from './waitlist';

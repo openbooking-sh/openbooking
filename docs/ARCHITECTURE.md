@@ -29,7 +29,7 @@
 | `@openbooking-sh/core`            | Domain model (zod), `BookingProvider`, `BookingService`, errors, idempotency, cancellation rules, time-zone helpers | `zod`                                                                   |
 | `@openbooking-sh/provider-memory` | Configured provider (catalog + slot rules) on a pluggable `BookingRecordStore`; demo salon and restaurant           | core                                                                    |
 | `@openbooking-sh/postgres`        | Postgres stores: bookings/holds, idempotency, Studio activity, Cal.com records; `migrate()`                         | core, provider-memory, studio, `pg`                                     |
-| `@openbooking-sh/adapter-mcp`     | Seven MCP tools, Streamable HTTP handler, stdio                                                                     | core, `@modelcontextprotocol/server`                                    |
+| `@openbooking-sh/adapter-mcp`     | Seven MCP tools (plus three waitlist tools when enabled), Streamable HTTP handler, stdio                            | core, `@modelcontextprotocol/server`                                    |
 | `@openbooking-sh/adapter-ucp`     | UCP profile, booking-session REST, availability extension                                                           | core, `hono`                                                            |
 | `@openbooking-sh/adapter-a2a`     | Agent Card builder plus the SendMessage endpoint                                                                    | core                                                                    |
 | `@openbooking-sh/server`          | Mounts everything on one Hono app; `listen()` for Node                                                              | all adapters, `hono`, `@hono/node-server`, `@modelcontextprotocol/hono` |
@@ -81,6 +81,7 @@ Its contract:
 
   The provider just records the computed fee and refund.
 
+- **Waitlist.** `Waitlist` (core) sits on the service and offers freed capacity to the first matching entry as a real hold, then emails the customer; accepting is the ordinary `confirm`. It claims entries atomically in its `WaitlistStore`, so no slot is offered twice and no entry holds two. See [RECIPES §9](./RECIPES.md#9-waitlist-offer-a-freed-slot-with-a-hold).
 - **State idempotency.** Confirming an already-confirmed booking returns it, even with a fresh key. Cancelling an already-cancelled booking is a no-op. An agent that loses a response and retries with a new key therefore still can't double-book or double-charge.
 - **Events.** `onEvent` fires after every operation (operation, ok, booking id, status, error code, replayed). The demo logs it; the bench counts with it.
 
