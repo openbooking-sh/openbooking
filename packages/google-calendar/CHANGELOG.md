@@ -1,5 +1,27 @@
 # @openbooking-sh/google-calendar
 
+## 0.13.0
+
+### Patch Changes
+
+- Updated dependencies [6ae5bb8]
+- Updated dependencies [de2a7ef]
+- Updated dependencies [e6a751c]
+- Updated dependencies [7f71337]
+- Updated dependencies [8e2e69d]
+- Updated dependencies [3f34dc9]
+- Updated dependencies [3825c49]
+- Updated dependencies [086199e]
+- Updated dependencies [02b8605]
+- Updated dependencies [4e52868]
+- Updated dependencies [5dc9991]
+- Updated dependencies [627d7f7]
+- Updated dependencies [db42a3d]
+- Updated dependencies [cdbb3c4]
+- Updated dependencies [074f42f]
+  - @openbooking-sh/core@0.13.0
+  - @openbooking-sh/provider-memory@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

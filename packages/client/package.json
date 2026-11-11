@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/client",
-  "version": "0.0.0",
+  "version": "0.13.0",
   "description": "Typed fetch client for the OpenBooking booking API. Check availability, hold, confirm and cancel from a browser, an edge function or Node.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",

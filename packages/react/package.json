@@ -1,6 +1,6 @@
 {
   "name": "@openbooking-sh/react",
-  "version": "0.0.0",
+  "version": "0.13.0",
   "description": "React components for OpenBooking: a drop-in BookingWidget and headless hooks (useAvailability, useBooking) on the typed client.",
   "license": "Apache-2.0",
   "homepage": "https://openbooking.sh",
