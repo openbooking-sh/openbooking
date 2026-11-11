@@ -11,3 +11,4 @@ export * from './rate-limit';
 export * from './webhooks';
 export * from './payments';
 export * from './guests';
+export * from './knowledge';

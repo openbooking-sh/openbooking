@@ -8,6 +8,7 @@
  */
 import * as z from 'zod';
 import { DIETARY_NOTE_MAX } from './guests';
+import { VenueKnowledgeSchema } from './knowledge';
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -75,6 +76,8 @@ export const VenueSchema = z.object({
   phone_number: z.string().optional(),
   url: z.url().optional(),
   description: z.string().optional(),
+  /** Menu, dietary options, accessibility, parking ... for concierge questions. Optional. */
+  knowledge: VenueKnowledgeSchema.optional(),
 });
 export type Venue = z.infer<typeof VenueSchema>;
 

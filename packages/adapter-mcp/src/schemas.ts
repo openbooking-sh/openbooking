@@ -10,6 +10,7 @@ import {
   ErrorPayloadSchema,
   IdempotencyKeySchema,
   LocalTimeSchema,
+  VenueKnowledgeSchema,
   MoneySchema,
   BookingStatusSchema,
 } from '@openbooking-sh/core';
@@ -194,6 +195,11 @@ export const BusinessInfoOutput = z.object({
     timezone: z.string(),
     currency: z.string().nullable(),
   }),
+  knowledge: VenueKnowledgeSchema.extend({ safety_note: z.string() })
+    .nullable()
+    .describe(
+      'Facts about the place (menu, dietary options, atmosphere, accessibility, parking, dress code, languages, children). null when the business has not provided any. Facts, not guarantees: for allergies or health needs the guest must confirm with the venue (see safety_note).',
+    ),
   services: z.array(
     z.object({
       id: z.string(),

@@ -1,6 +1,7 @@
 import {
   BookingError,
   fromZodError,
+  knowledgeForAgents,
   formatMoney,
   time,
   toErrorPayload,
@@ -182,7 +183,7 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
     {
       title: 'Get business info',
       description:
-        'Services with duration and price, staff customers can ask for, opening hours and how far ahead bookings are accepted. Call this first to know what can be booked.' +
+        'Services with duration and price, staff customers can ask for, opening hours, how far ahead bookings are accepted and, when the business provides it, facts about the place (menu, dietary options, accessibility, parking). Call this first to know what can be booked.' +
         forBusiness,
       inputSchema: advertised(info),
       outputSchema: BusinessInfoOutput,
@@ -214,6 +215,7 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
           timezone: venue.timezone,
           currency: venue.currency ?? null,
         },
+        knowledge: knowledgeForAgents(venue.knowledge),
         services: offerings.map((o) => ({
           id: o.id,
           name: o.name,
@@ -236,7 +238,10 @@ export function registerBookingTools(server: McpServer, options: BookingToolsOpt
           ? { min_lead_minutes: hours.min_lead_minutes, max_days_ahead: hours.max_days_ahead }
           : null,
         next_step:
-          'Help the user pick a service (and a staff member if they care), then call search_availability with offering_id and a date.',
+          'Help the user pick a service (and a staff member if they care), then call search_availability with offering_id and a date.' +
+          (venue.knowledge
+            ? ' Answer questions about the menu, diets, accessibility or parking from the knowledge block only; for allergies or health needs tell the guest to confirm with the venue directly.'
+            : ''),
       };
     }),
   );

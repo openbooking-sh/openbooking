@@ -16,6 +16,7 @@ import {
   IdempotencyKeySchema,
   LocalTimeSchema,
   MoneySchema,
+  VenueKnowledgeSchema,
 } from '@openbooking-sh/core';
 import * as z from 'zod';
 
@@ -43,6 +44,11 @@ export const InfoResponseSchema = z.object({
       price: MoneySchema.nullable().describe('Per person. null = priced at the venue.'),
     }),
   ),
+  knowledge: VenueKnowledgeSchema.extend({ safety_note: z.string() })
+    .optional()
+    .describe(
+      'Facts the business gave about the place: menu, dietary options, accessibility, parking. Present only when provided. Facts, not guarantees: confirm allergies with the venue (see safety_note).',
+    ),
   staff: z.array(Staff),
   profile: z.object({
     category: z.string().optional(),
