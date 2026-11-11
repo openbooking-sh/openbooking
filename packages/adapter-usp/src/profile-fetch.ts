@@ -13,12 +13,12 @@
  *    failure is remembered briefly so a bad URL cannot be used to hammer a host, and concurrent
  *    requests for one URI share a single fetch.
  */
-import { lookup } from 'node:dns/promises';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
-import { BlockList, isIP } from 'node:net';
+import { isIP } from 'node:net';
 import * as z from 'zod';
 import { ProtocolError } from './protocol';
+import { resolvePublicAddress, type ResolveHost } from './public-address';
 
 // ---------------------------------------------------------------------------
 // What a platform profile looks like to us (profile.json#PlatformProfile, the parts we read)
@@ -38,70 +38,6 @@ export type PlatformProfile = z.infer<typeof PlatformProfileSchema>;
 export type ProfileFetcher = (uri: string) => Promise<PlatformProfile>;
 
 // ---------------------------------------------------------------------------
-// Special-use addresses: where a profile URL may never lead
-// ---------------------------------------------------------------------------
-
-const blocked = new BlockList();
-for (const [net, bits] of [
-  ['0.0.0.0', 8], // "this network"
-  ['10.0.0.0', 8], // private
-  ['100.64.0.0', 10], // carrier-grade NAT
-  ['127.0.0.0', 8], // loopback
-  ['169.254.0.0', 16], // link-local, including the cloud metadata address
-  ['172.16.0.0', 12], // private
-  ['192.0.0.0', 24], // IETF protocol assignments
-  ['192.0.2.0', 24], // documentation
-  ['192.88.99.0', 24], // 6to4 relay (deprecated)
-  ['192.168.0.0', 16], // private
-  ['198.18.0.0', 15], // benchmarking
-  ['198.51.100.0', 24], // documentation
-  ['203.0.113.0', 24], // documentation
-  ['224.0.0.0', 4], // multicast
-  ['240.0.0.0', 4], // reserved, and the broadcast address
-] as const) {
-  blocked.addSubnet(net, bits, 'ipv4');
-}
-for (const [net, bits] of [
-  ['::', 128], // unspecified
-  ['::1', 128], // loopback
-  ['64:ff9b::', 96], // NAT64: can embed any IPv4 address, including private ones
-  ['100::', 64], // discard-only
-  ['2001::', 23], // IETF protocol assignments (Teredo and others)
-  ['2001:db8::', 32], // documentation
-  ['2002::', 16], // 6to4: embeds an IPv4 address
-  ['fc00::', 7], // unique local
-  ['fe80::', 10], // link-local
-  ['fec0::', 10], // site-local (deprecated)
-  ['ff00::', 8], // multicast
-] as const) {
-  blocked.addSubnet(net, bits, 'ipv6');
-}
-
-/** True for any address a profile fetch must not reach. Unparseable input counts as blocked. */
-export function isSpecialUseAddress(address: string): boolean {
-  const family = isIP(address);
-  if (family === 4) return blocked.check(address, 'ipv4');
-  if (family === 6) {
-    // An IPv4 address written as IPv6 (::ffff:10.0.0.1 or ::ffff:0a00:0001) is that IPv4 address.
-    const mapped = mappedIpv4(address);
-    if (mapped) return blocked.check(mapped, 'ipv4');
-    return blocked.check(address, 'ipv6');
-  }
-  return true;
-}
-
-function mappedIpv4(address: string): string | undefined {
-  const a = address.toLowerCase();
-  const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
-  if (dotted) return dotted[1];
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(a);
-  if (!hex) return undefined;
-  const hi = parseInt(hex[1]!, 16);
-  const lo = parseInt(hex[2]!, 16);
-  return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
-}
-
-// ---------------------------------------------------------------------------
 // The fetcher
 // ---------------------------------------------------------------------------
 
@@ -118,7 +54,7 @@ export interface ProfileFetcherOptions {
   maxEntries?: number;
   now?: () => number;
   /** DNS resolution (inject in tests). Must return every address for the host. */
-  resolve?: (hostname: string) => Promise<Array<{ address: string; family: number }>>;
+  resolve?: ResolveHost;
   /**
    * The HTTPS client (inject in tests). Called with the pinned address as `host` and the real
    * host name in `servername` and the `Host` header.
@@ -140,8 +76,6 @@ export function createProfileFetcher(options: ProfileFetcherOptions = {}): Profi
   const failureTtl = options.failureTtlSeconds ?? 30;
   const maxEntries = options.maxEntries ?? 1000;
   const now = options.now ?? Date.now;
-  const resolve =
-    options.resolve ?? ((host: string) => lookup(host, { all: true, verbatim: true }));
   const send = options.httpsRequest ?? httpsRequest;
 
   const cache = new Map<string, Entry>();
@@ -175,21 +109,17 @@ export function createProfileFetcher(options: ProfileFetcherOptions = {}): Profi
   async function fetchOnce(uri: string): Promise<{ profile: PlatformProfile; ttl: number }> {
     const { hostname, path } = target(uri);
 
-    let answers: Array<{ address: string; family: number }>;
-    try {
-      answers = await resolve(hostname);
-    } catch {
-      throw unreachable('The profile host could not be resolved.');
-    }
-    if (answers.length === 0) throw unreachable('The profile host could not be resolved.');
-    // Every answer must be public, not just the one we would use: a host that also answers with an
-    // internal address is the shape of a rebinding attack.
-    if (answers.some((a) => isSpecialUseAddress(a.address))) {
-      throw unreachable('The profile host is not on the public internet.');
+    const resolved = await resolvePublicAddress(hostname, options.resolve);
+    if (!resolved.ok) {
+      throw unreachable(
+        resolved.reason === 'unresolved'
+          ? 'The profile host could not be resolved.'
+          : 'The profile host is not on the public internet.',
+      );
     }
 
     // Connect to the address we validated, never to the host name again.
-    const { address, family } = answers[0]!;
+    const { address, family } = resolved;
     const { status, headers, body } = await new Promise<{
       status: number;
       headers: IncomingMessage['headers'];

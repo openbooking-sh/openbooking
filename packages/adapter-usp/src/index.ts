@@ -14,9 +14,14 @@ export { ProtocolError } from './protocol';
 export { CONFIRMATION_ACTION, type ConsentMode } from './booking-mapping';
 export {
   createProfileFetcher,
-  isSpecialUseAddress,
   type PlatformProfile,
   type ProfileFetcher,
   type ProfileFetcherOptions,
 } from './profile-fetch';
+export {
+  isSpecialUseAddress,
+  resolvePublicAddress,
+  type PublicAddress,
+  type ResolveHost,
+} from './public-address';
 export { negotiate, BUSINESS_CAPABILITIES, type Negotiation } from './negotiation';
