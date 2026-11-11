@@ -425,7 +425,21 @@ export class BookingService {
       // The dietary note stays out of `req`: it is fingerprinted and stored with the idempotency
       // record, which outlives the note.
       const { idempotency_key, dietary_notes, ...req } = parse(HoldInputSchema, input, 'hold_slot');
-      return this.#idempotent(meta, idempotency_key, 'hold', req, async (ctx) => {
+      // A hold that fails after the provider made it (the note, or the idempotency record, could
+      // not be written) is given back at once. Nothing is recorded for the key then, so the
+      // agent's retry runs again, and would otherwise be refused by its own first hold until that
+      // lapsed. Letting the step fail quietly instead would lose an allergy note, or let a retry
+      // take a second place where a slot has room for several.
+      const undo = async (booking: Booking, ctx: ProviderContext): Promise<void> => {
+        await this.#dropHold(booking, ctx, 'The hold could not be completed');
+        await this.#releaseGuard(booking.booking_id, ctx);
+        if (dietary_notes?.trim()) {
+          await this.guests
+            .deleteDietaryNotes(booking.venue_id, [booking.booking_id])
+            .catch(() => undefined);
+        }
+      };
+      const run = async (ctx: ProviderContext): Promise<Booking> => {
         await this.#checkHoldLimit();
         const ttl = options.ttlSeconds ?? this.holdTtlSeconds;
         const expires_at = new Date(ctx.now.getTime() + ttl * 1000);
@@ -444,9 +458,15 @@ export class BookingService {
           ctx,
         );
         await this.#claimGuard(booking, req.customer, 'hold', ctx);
-        await this.#saveDietaryNote(booking, dietary_notes);
+        try {
+          await this.#saveDietaryNote(booking, dietary_notes);
+        } catch (e) {
+          await undo(booking, ctx);
+          throw e;
+        }
         return this.#observe(booking);
-      });
+      };
+      return this.#idempotent(meta, idempotency_key, 'hold', req, run, undo);
     });
   }
 
@@ -890,13 +910,20 @@ export class BookingService {
     if (entry.name_key) await anti.flag(booking.booking_id, ctx.now);
   }
 
-  /** Give the hold back after the guard refused it. If that fails too, the hold lapses on its own. */
-  async #dropHold(booking: Booking, ctx: ProviderContext): Promise<void> {
+  /**
+   * Give the hold back after the guard refused it or a later step failed. If that fails too, the
+   * hold lapses on its own.
+   */
+  async #dropHold(
+    booking: Booking,
+    ctx: ProviderContext,
+    reason = 'Booking limit reached',
+  ): Promise<void> {
     try {
       await this.provider.cancelBooking(
         {
           booking_id: booking.booking_id,
-          reason: 'Booking limit reached',
+          reason,
           fee: null,
           refund: null,
           release_hold: true,
@@ -1063,9 +1090,14 @@ export class BookingService {
     operation: Operation,
     request: unknown,
     fn: (ctx: ProviderContext) => Promise<T>,
+    undo?: (value: T, ctx: ProviderContext) => Promise<void>,
   ): Promise<T> {
-    const { value, replayed } = await this.#guard.run(key, operation, request, () =>
-      fn(this.#ctx(key)),
+    const { value, replayed } = await this.#guard.run(
+      key,
+      operation,
+      request,
+      () => fn(this.#ctx(key)),
+      undo && ((done) => undo(done, this.#ctx(key))),
     );
     meta.replayed = replayed;
     if (!replayed) return value;
