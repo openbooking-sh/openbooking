@@ -10,3 +10,9 @@ export {
 } from './server';
 export { serveMcpStdio } from './stdio';
 export * as toolSchemas from './schemas';
+export {
+  registerWaitlistTools,
+  WAITLIST_INSTRUCTIONS,
+  WAITLIST_TOOL_NAMES,
+  type WaitlistToolsOptions,
+} from './waitlist';

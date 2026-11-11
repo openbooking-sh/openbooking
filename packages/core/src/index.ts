@@ -13,3 +13,4 @@ export * from './webhooks';
 export * from './payments';
 export * from './guard';
 export * from './knowledge';
+export * from './waitlist';

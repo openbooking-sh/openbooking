@@ -125,6 +125,45 @@ export function renderOwnerEmail(input: OwnerEmailInput): RenderedEmail {
   });
 }
 
+export interface WaitlistOfferEmailInput extends CustomerEmailInput {
+  /** The hold lapses at this instant (ISO 8601): the offer ends with it. */
+  heldUntil: string;
+  /** Page where the customer reviews and confirms the held booking. */
+  acceptUrl?: string;
+}
+
+/** A time the customer was waiting for opened up and is held for them. Nothing is booked yet. */
+export function renderWaitlistOfferEmail(input: WaitlistOfferEmailInput): RenderedEmail {
+  const { booking: b, venue } = input;
+  const tz = venue.timezone;
+  const rows: Row[] = [
+    ['Service', b.slot.offering.name],
+    ['When', formatWhen(b.slot.start, tz)],
+    ...(b.slot.resource ? [['With', b.slot.resource.label] as Row] : []),
+    ...(b.slot.party_size.total > 1 ? [['Guests', String(b.slot.party_size.total)] as Row] : []),
+    ['Price', b.slot.price ? formatAmount(b.slot.price) : 'Paid at the venue'],
+    ...depositRows(b),
+    ['Held for you until', formatWhen(input.heldUntil, tz)],
+  ];
+  return compose({
+    subject: `A time opened up: ${b.slot.offering.name}, ${formatWhenShort(b.slot.start, tz)} at ${venue.name}`,
+    heading: `A time opened up at ${venue.name}`,
+    intro: `Hi ${b.customer?.first_name ?? 'there'}, you asked to be told if a time opened up. We are holding this one for you, but it is not booked until you confirm it.`,
+    rows,
+    sections: [
+      ['Cancellation policy', b.slot.cancellation_policy.description],
+      [
+        'If you do not want it',
+        'Do nothing. The hold is released at the time above and offered to the next person.',
+      ],
+    ],
+    venue,
+    ...(input.acceptUrl ? { link: [input.acceptUrl, 'Review and confirm'] } : {}),
+    ...(input.privacyUrl ? { privacyUrl: input.privacyUrl } : {}),
+    ...(input.unsubscribeUrl ? { unsubscribeUrl: input.unsubscribeUrl } : {}),
+  });
+}
+
 /**
  * What becomes of a paid deposit if the customer cancels, in words. It reads the fields that
  * `evaluateCancellation` in core reads, so the email and the refund agree.

@@ -27,6 +27,7 @@ import {
   type BookingServiceOptions,
   type WebhookOptions,
   type Webhooks,
+  type Waitlist,
 } from '@openbooking-sh/core';
 import {
   actorFromRequest,
@@ -95,6 +96,11 @@ export interface OpenBookingServerOptions {
         mcp?: boolean;
       }
     | false;
+  /**
+   * A waitlist (`new Waitlist({ service })`) to offer over MCP: adds join_waitlist, check_waitlist
+   * and leave_waitlist. It must be built on the same service this app uses.
+   */
+  waitlist?: Waitlist;
   /**
    * Host header allow-list for the MCP endpoint (DNS-rebinding protection). Defaults to the host of
    * `baseUrl` plus localhost/127.0.0.1. Pass `false` to disable (e.g. behind a trusted proxy).
@@ -261,7 +267,12 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
   }
 
   if (mcpPath) {
-    mcpHandler = createMcpHttpHandler({ service, name: 'openbooking', version });
+    mcpHandler = createMcpHttpHandler({
+      service,
+      name: 'openbooking',
+      version,
+      ...(options.waitlist ? { waitlist: options.waitlist } : {}),
+    });
     const handler = mcpHandler;
     if (options.allowedHosts !== false) {
       const hosts = options.allowedHosts ?? [

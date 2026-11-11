@@ -412,6 +412,40 @@ const ob = createOpenBookingApp({
 - **Flags, never bans.** When signals add up, the booking still goes through but is flagged for the venue: `agent_many_names` (10 names in 24 hours from one agent), `contact_many_names` (3 names in 30 days on one email or phone), `agent_cancel_churn` (10 confirmed bookings cancelled in 24 hours by one agent), `contact_cancel_churn` (3 in 7 days by one contact). Each rule's `{ count, window_hours }` can be changed, or set to `false`. Flags are never on the `Booking` and never in an MCP, UCP, USP, A2A or booking-page response; staff get them from `service.riskFlags(ids)`, and Studio's `/api/bookings` returns `risk_flags` on flagged bookings. Not built: a rule for peak slots in particular, and showing flags in the Studio UI.
 - **What the ledger stores.** Hashed keys (HMAC with your salt) for the contact details and name, the client id, and times. No names, emails or phone numbers. Entries of bookings that ended 30 days ago are removed by `service.sweepExpired()`. Bookings made before you turn the guard on are not counted.
 
+## 10. Waitlist: offer a freed slot with a hold
+
+"Tell me if something opens up." A customer joins for a day (and optionally a service and a time window) that is full. When a booking is cancelled or a hold lapses, the first person waiting whose request now has something bookable gets a hold on it for a short while and an email. Nothing is booked for them: they confirm it like any hold, with `user_confirmed`.
+
+```ts
+import { BookingService, Waitlist } from '@openbooking-sh/core';
+import { attachWaitlistNotifications } from '@openbooking-sh/notifications';
+import { createOpenBookingApp } from '@openbooking-sh/server';
+
+const service = new BookingService({ provider });
+const waitlist = new Waitlist({
+  service,
+  offerTtlSeconds: 15 * 60, // how long a freed slot is held for the person offered it
+  // store: postgresStores(db).waitlist,   // with more than one instance (needs migration 8)
+});
+attachWaitlistNotifications({
+  waitlist,
+  mailer,
+  config: { from: 'Bistro <bookings@example.com>' },
+  acceptUrl: (b) => `https://example.com/book/confirm/${b.booking_id}`, // the booking page's confirm link
+});
+createOpenBookingApp({ service, waitlist, baseUrl: 'https://example.com' }); // adds the MCP tools
+setInterval(() => void waitlist.sweep(), 60_000); // or from a cron
+```
+
+- **Tools** (only when a waitlist is passed): `join_waitlist`, `check_waitlist`, `leave_waitlist`. Joining needs `user_confirmed: true` (the customer agreed to be emailed and to have a slot held for them; that is stored as consent evidence on the entry) and an email address, because that is where the offer goes. It is refused with `invalid_state` when something is bookable for the request, and the error lists the slots to hold instead. A retry with the same `idempotency_key` returns the same entry.
+- **Order.** First come, first served per venue and day. An entry only gets a slot that fits its service, party size and time window, found by an ordinary availability search, so a freed 19:00 table does not go to someone who asked for 21:00. Entries that do not fit are skipped and keep their place.
+- **One offer per slot, one slot per entry.** The offer is a real hold, so the provider's atomic reservation decides who gets a slot. Moving an entry from waiting to offered is an atomic compare-and-set in the `WaitlistStore` (memory, or Postgres with a row lock), so two cancellations at once, or two server instances handling the same freed slot, cannot offer a slot twice or give an entry two. The memory store and the Postgres store run the same contract tests.
+- **Accepting is the normal confirm.** The offer carries a `booking_id`; the customer's agent (`check_waitlist` shows it) or the booking page's confirm link confirms it, with `user_confirmed`. Confirming marks the entry accepted. Releasing the hold or `leave_waitlist` marks it declined, and a hold that runs out marks it expired; either way the slot passes to the next entry.
+- **Lapses are noticed like expiries are.** Offers pass on when something notices the hold lapsed (any read of the booking, `service.sweepExpired()`). `waitlist.sweep()` does that, retires entries whose day has passed, and deletes finished entries after `retentionDays` (30 by default). Run it on a timer or cron; it is safe from every instance.
+- **Customer data.** Entries hold a name and email or phone. `waitlist.exportCustomer(match)` and `waitlist.eraseCustomer(match)` cover them (erasing releases a slot held for that customer first), and `store.deleteVenue(id)` removes a business's entries. Offer emails respect unsubscribes (`isSuppressed`): an unsubscribed customer's hold simply lapses. Waitlist events (`waitlist.on`) carry the customer, so send them to no logs or analytics.
+- **Limits.** One email address or phone number may have 5 open entries per venue (`maxActivePerCustomer`).
+- Not built: a Studio list and walk-ins (the store and `offerFreed(booking)` are the base for it), offers when a booking is moved with `reschedule`, preferring a staff member or table feature, SMS, and hosted businesses (the hosted app does not create a waitlist yet, so Studio's customer erasure there does not cover waitlist entries until it does).
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:

@@ -3,6 +3,7 @@ export { migrate, MIGRATIONS } from './migrations';
 export { PostgresBookingStore } from './bookings';
 export { PostgresIdempotencyStore, type PostgresIdempotencyStoreOptions } from './idempotency';
 export { PostgresActivityLog } from './activity';
+export { PostgresWaitlistStore } from './waitlist';
 export { PostgresCalcomStore } from './calcom';
 export { PostgresGuardStore } from './guard';
 export { PostgresUspState, type PostgresUspStateOptions, type UspCredentialRecord } from './usp';
@@ -30,6 +31,7 @@ import {
 } from './hosted';
 import { PostgresIdempotencyStore, type PostgresIdempotencyStoreOptions } from './idempotency';
 import { PostgresUspState, type PostgresUspStateOptions } from './usp';
+import { PostgresWaitlistStore } from './waitlist';
 
 export interface PostgresStores {
   /** For `new MemoryBookingProvider(config, { store })` / `createDemoSalonProvider({ store })`. */
@@ -42,6 +44,8 @@ export interface PostgresStores {
   guard: PostgresGuardStore;
   /** For `new CalcomBookingProvider({ store })`. */
   calcom: PostgresCalcomStore;
+  /** For `new Waitlist({ service, store })`: people waiting for a full time, shared by instances. */
+  waitlist: PostgresWaitlistStore;
   /** For `createUspRouter({ state })`: owners, credentials, replay memory and request keys. */
   usp: PostgresUspState;
   /** Hosted (`createHostedApp`): accounts, per-business activity, calendar links, email log, limits. */
@@ -65,6 +69,7 @@ export function postgresStores(
     activity: new PostgresActivityLog(db),
     guard: new PostgresGuardStore(db),
     calcom: new PostgresCalcomStore(db),
+    waitlist: new PostgresWaitlistStore(db),
     usp: new PostgresUspState(db, options.usp),
     businesses: new PostgresBusinessStore(db),
     activityFor: (businessId) => new PostgresActivityLog(db, { scope: businessId }),

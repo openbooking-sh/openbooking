@@ -236,6 +236,36 @@ export const MIGRATIONS: ReadonlyArray<{ version: number; name: string; sql: str
       alter table ob_guard enable row level security;
     `,
   },
+  {
+    version: 9,
+    name: 'waitlist',
+    // People waiting for a full time to open, and the slot offered to them. Names and contact
+    // details live in `data` (and email and phone digits in their own columns, so a data request
+    // can find them), so the table is row-level secured like the others and erased with the
+    // customer. `seq` is the order people joined.
+    sql: `
+      create table ob_waitlist (
+        seq              bigserial primary key,
+        waitlist_id      text not null unique,
+        venue_id         text not null,
+        date             text not null,
+        status           text not null,
+        offer_booking_id text,
+        email            text,
+        phone_digits     text,
+        created_at       timestamptz not null,
+        updated_at       timestamptz not null,
+        data             jsonb not null
+      );
+      create index ob_waitlist_queue on ob_waitlist (venue_id, date, status, seq);
+      create index ob_waitlist_offer on ob_waitlist (offer_booking_id) where offer_booking_id is not null;
+      create index ob_waitlist_email on ob_waitlist (email) where email is not null;
+      create index ob_waitlist_phone on ob_waitlist (phone_digits) where phone_digits is not null;
+      create index ob_waitlist_status on ob_waitlist (status, updated_at);
+
+      alter table ob_waitlist enable row level security;
+    `,
+  },
 ];
 
 /**
