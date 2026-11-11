@@ -104,7 +104,7 @@ Each offer reuses the `stay` shape (`id`, `stay_dates`, `accommodation_type`, `r
 - **`payment_token` (request field, complete).**
   - It pays a deposit that is due at confirmation. It stands in for UCP `payment.instruments[]` and payment handlers until a real payment-handler integration exists.
   - We deliberately do **not** guess the instrument/credential shape.
-  - The demo provider accepts tokens starting with `tok_`; `tok_fail…` is declined.
+  - The demo salon and restaurant accept pretend tokens starting with `tok_`; `tok_fail…` is declined. Your own `MemoryBookingProvider` accepts them only with `demoPayments: true`; without a payment provider it refuses to confirm a booking that needs a deposit.
 
 ### 1.9 Cancellation policy
 

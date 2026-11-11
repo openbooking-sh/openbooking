@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BookingService,
   ManualClock,
@@ -11,7 +11,7 @@ import {
   type PaymentVerification,
   type RefundRequest,
 } from '@openbooking-sh/core';
-import { createDemoSalonProvider } from '../src';
+import { MemoryBookingProvider, createDemoSalonProvider, demoSalonConfig } from '../src';
 
 const NOW = '2026-10-01T06:00:00Z';
 const CUSTOMER = { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' };
@@ -236,5 +236,73 @@ describe('deposits through a payment provider', () => {
       user_confirmed: true,
     });
     expect(payments.refunds).toEqual([]);
+  });
+});
+
+describe('deposits with no payment provider', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function setupWithout(options: { demoPayments?: boolean } = {}) {
+    const service = new BookingService({
+      provider: new MemoryBookingProvider(demoSalonConfig(), options),
+      clock: new ManualClock(NOW),
+    });
+    const confirm = (booking_id: string, payment_token: string) =>
+      service.confirm({
+        booking_id,
+        idempotency_key: key(),
+        user_confirmed: true,
+        customer: CUSTOMER,
+        payment_token,
+      });
+    const failure = async (p: Promise<unknown>) =>
+      (await p.catch((e: BookingError) => e)) as BookingError;
+    return { service, confirm, failure };
+  }
+
+  it('never records a deposit as paid from a token nobody checked', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { service, confirm, failure } = setupWithout();
+    const hold = await holdDepositSlot(service);
+
+    for (const token of ['tok_visa', 'manual:collected-in-studio', 'cs_made_up']) {
+      const err = await runAsActor({ protocol: 'mcp', agent: 'Claude' }, () =>
+        failure(confirm(hold.booking_id, token)),
+      );
+      expect(err.code).toBe('operation_not_supported');
+      expect(err.suggested_next_action).toMatch(/nothing was charged/);
+    }
+    const booking = await service.getBooking(hold.booking_id);
+    expect(booking.status).toBe('held');
+    expect(booking.payment.status).not.toBe('paid');
+    // The business is told why, once, and without customer details.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toMatch(/no payment provider is configured/);
+    expect(String(warn.mock.calls[0]![0])).not.toContain(CUSTOMER.email);
+  });
+
+  it('still lets staff record a deposit taken in person in Studio', async () => {
+    const { service, confirm } = setupWithout();
+    const hold = await holdDepositSlot(service);
+    const booking = await runAsActor({ protocol: 'studio', agent: 'Studio' }, () =>
+      confirm(hold.booking_id, 'manual:collected-in-studio'),
+    );
+    expect(booking.payment).toMatchObject({
+      status: 'paid',
+      reference: 'manual:collected-in-studio',
+    });
+  });
+
+  it('accepts pretend tokens only when demoPayments is switched on', async () => {
+    const { service, confirm, failure } = setupWithout({ demoPayments: true });
+    const hold = await holdDepositSlot(service);
+    expect((await failure(confirm(hold.booking_id, 'tok_fail_card'))).code).toBe('payment_failed');
+    // "manual:" is for Studio only, with or without demo payments.
+    const manual = await runAsActor({ protocol: 'mcp', agent: 'Claude' }, () =>
+      failure(confirm(hold.booking_id, 'manual:collected-in-studio')),
+    );
+    expect(manual.code).toBe('payment_failed');
+    const booking = await confirm(hold.booking_id, 'tok_visa');
+    expect(booking.payment.status).toBe('paid');
   });
 });

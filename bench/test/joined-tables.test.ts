@@ -63,6 +63,7 @@ describe('restaurant tasks', () => {
     const leaky = () =>
       new MemoryBookingProvider(demoRestaurantConfig(), {
         store: new DoubleBookedJoinedTableStore(),
+        demoPayments: true,
       });
 
     // The same run on a sound provider is clean, so the failure below is the forged overlap.

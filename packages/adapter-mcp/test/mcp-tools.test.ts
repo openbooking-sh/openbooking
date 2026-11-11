@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { BookingService, ManualClock, type BookingProvider } from '@openbooking-sh/core';
 import {
   MemoryBookingProvider,
   createDemoRestaurantProvider,
   demoRestaurantVenue,
+  demoSalonConfig,
 } from '@openbooking-sh/provider-memory';
 import { TOOL_NAMES, createMcpHttpHandler } from '../src';
 
@@ -164,5 +165,33 @@ describe('MCP adapter', () => {
     });
     expect(res.data.error.code).toBe('hold_expired');
     expect(res.data.error.suggested_next_action).toContain('search_availability');
+  });
+
+  it('does not confirm a deposit booking on a made-up payment token when no payment provider is set', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    cleanups.push(async () => warn.mockRestore());
+    const { call } = await connect(300, new MemoryBookingProvider(demoSalonConfig()));
+    const search = await call('search_availability', {
+      date: '2026-10-02',
+      offering_id: 'color-cut',
+      time_from: '13:00',
+      time_to: '13:00',
+    });
+    const hold = await call('hold_slot', {
+      slot_id: search.data.slots[0].slot_id,
+      idempotency_key: randomUUID(),
+    });
+    const res = await call('confirm_booking', {
+      booking_id: hold.data.booking_id,
+      user_confirmed: true,
+      idempotency_key: randomUUID(),
+      customer: { first_name: 'Ada', last_name: 'Lovelace', email: 'ada@example.com' },
+      payment_token: 'tok_visa',
+    });
+    expect(res.isError).toBe(true);
+    expect(res.data.error.code).toBe('operation_not_supported');
+    expect(res.data.error.suggested_next_action).toMatch(/nothing was charged/);
+    const booking = await call('get_booking', { booking_id: hold.data.booking_id });
+    expect(booking.data.status).toBe('held');
   });
 });

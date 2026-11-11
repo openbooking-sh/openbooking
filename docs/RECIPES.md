@@ -277,8 +277,10 @@ customer details, so never point a webhook at an analytics or logging service. W
 
 ## 7. Take deposits with Stripe
 
-A slot can require a deposit at confirmation. Give the service a payment provider and the engine
-handles the rest:
+A slot can require a deposit at confirmation. Without a payment provider, `MemoryBookingProvider`
+refuses to confirm such a booking (only Studio can record a deposit taken in person), because no
+one has checked the payment. The pretend `tok_…` tokens of the demos need `demoPayments: true`.
+Give the service a payment provider and the engine handles the rest:
 
 ```ts
 import { StripePayments } from '@openbooking-sh/payments-stripe';
