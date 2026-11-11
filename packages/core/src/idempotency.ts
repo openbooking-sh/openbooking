@@ -9,6 +9,8 @@
  *    others wait for its result and replay it.
  *  - Only successes are stored. Failed calls change no state (providers must be atomic), so a retry
  *    after an error simply re-executes — e.g. confirm without consent, then with consent, same key.
+ *  - A call that succeeded but whose result could not be stored fails too, after its `undo` has
+ *    taken the change back: a retry would otherwise run a second time on top of the first.
  *  - Records are kept for at least 24h (UCP minimum).
  */
 import { BookingError } from './errors';
@@ -132,13 +134,15 @@ export class IdempotencyGuard {
 
   /**
    * Run `fn` at most once per `key` for an identical `operation` + `request`.
-   * `request` must exclude the idempotency key itself.
+   * `request` must exclude the idempotency key itself. `undo` takes back what `fn` did when its
+   * result cannot be recorded; it runs before the key is given up, so no retry overlaps it.
    */
   async run<T>(
     key: string,
     operation: string,
     request: unknown,
     fn: () => Promise<T>,
+    undo?: (value: T) => Promise<void>,
   ): Promise<IdempotentResult<T>> {
     const fingerprint = `${operation}:${stableStringify(request)}`;
 
@@ -158,13 +162,13 @@ export class IdempotencyGuard {
           if (existing.fingerprint !== fingerprint) throw conflict(key);
           return { value: structuredClone(existing.value) as T, replayed: true };
         }
-        if (!this.#store.claim) return this.#execute(key, fingerprint, fn);
+        if (!this.#store.claim) return this.#execute(key, fingerprint, fn, undo);
         // Another instance may be running this very key. Whoever claims it first runs; the rest
         // look again for its result. A failed run releases the claim, so one of the waiting
         // callers then runs (failures are never stored, so a retry re-executes).
         if (await this.#store.claim(key, fingerprint, CLAIM_TTL_MS)) {
           try {
-            return await this.#execute(key, fingerprint, fn);
+            return await this.#execute(key, fingerprint, fn, undo);
           } finally {
             await this.#store.release?.(key).catch(() => undefined);
           }
@@ -184,13 +188,20 @@ export class IdempotencyGuard {
     key: string,
     fingerprint: string,
     fn: () => Promise<T>,
+    undo?: (value: T) => Promise<void>,
   ): Promise<IdempotentResult<T>> {
     const value = await fn();
-    await this.#store.set(
-      key,
-      { fingerprint, value: structuredClone(value), created_at: this.#now() },
-      this.#ttlMs,
-    );
+    try {
+      await this.#store.set(
+        key,
+        { fingerprint, value: structuredClone(value), created_at: this.#now() },
+        this.#ttlMs,
+      );
+    } catch (e) {
+      // Nothing is recorded for the key, so a retry runs again: it must not meet this run's work.
+      await undo?.(value).catch(() => undefined);
+      throw e;
+    }
     return { value, replayed: false };
   }
 }
