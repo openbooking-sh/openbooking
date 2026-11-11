@@ -24,6 +24,8 @@ export const ErrorCodeSchema = z.enum([
   'operation_not_supported',
   'provider_error',
   'rate_limited',
+  'booking_limit_reached',
+  'not_transferable',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 
@@ -69,6 +71,10 @@ const DEFAULT_NEXT_ACTION: Record<ErrorCode, string> = {
     'A temporary problem occurred at the booking system. Retry the same call with the same idempotency_key shortly.',
   rate_limited:
     'Too many holds were made from here in a short time. Wait a few minutes, or complete or release existing holds first.',
+  booking_limit_reached:
+    'Tell the user this venue limits online bookings and holds. Release any hold you no longer need, and ask the user to contact the venue if they need more.',
+  not_transferable:
+    'This booking is in the named guest’s name and cannot be changed to someone else online. Tell the user to contact the venue.',
 };
 
 const RETRYABLE: ReadonlySet<ErrorCode> = new Set([

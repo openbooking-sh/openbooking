@@ -93,11 +93,14 @@ export function createStudio(options: StudioOptions): Studio {
   const withVia = async (bookings: Booking[]) => {
     await recorder.idle();
     const via = await activity.bookedVia(bookings.map((b) => b.booking_id));
+    // Broker-pattern flags are for the venue's staff: only this (authenticated) router shows them.
+    const flags = await service.riskFlags(bookings.map((b) => b.booking_id));
     return bookings.map((b) => ({
       ...b,
       booked_via: via.get(b.booking_id) ?? null,
       source_label: sourceLabel(b.source),
       source_detail: sourceDetail(b.source),
+      ...(flags.has(b.booking_id) ? { risk_flags: flags.get(b.booking_id) } : {}),
     }));
   };
   const oneWithVia = async (b: Booking) => (await withVia([b]))[0]!;
