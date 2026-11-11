@@ -9,6 +9,7 @@ import { ManualClock } from '@openbooking-sh/core';
 import { MemoryMailer } from '@openbooking-sh/notifications';
 import { createFakeGoogle } from '../../google-calendar/test/fake-google';
 import {
+  MemoryBusinessStore,
   PostHogAnalytics,
   SlackNotifier,
   createHostedApp,
@@ -272,6 +273,57 @@ describe('Studio settings', () => {
     });
     expect(bad.status).toBe(400);
     expect(bad.json.error.message).toContain('ghost');
+  });
+
+  it('accepts only an http(s) website, and never links one saved before that rule', async () => {
+    const businesses = new MemoryBusinessStore();
+    const { req, signup } = setup({ businesses });
+    const { token, business_id } = await signup();
+    const { settings } = (await req('/studio/api/settings', { token })).json;
+
+    for (const website of [
+      'javascript:alert(document.cookie)',
+      'data:text/html,<script>x</script>',
+    ]) {
+      const bad = await req('/studio/api/settings', {
+        method: 'PUT',
+        body: { ...settings, profile: { ...settings.profile, website } },
+        token,
+      });
+      expect(bad.status, website).toBe(400);
+    }
+    const good = await req('/studio/api/settings', {
+      method: 'PUT',
+      body: {
+        ...settings,
+        profile: { ...settings.profile, website: 'https://studionord.example' },
+      },
+      token,
+    });
+    expect(good.status, good.text).toBe(200);
+    expect((await req(`/b/${business_id}`, { accept: 'text/html' })).text).toContain(
+      'href="https://studionord.example"',
+    );
+
+    // A business stored before the rule (stored settings are not re-validated on read).
+    await businesses.update(business_id, (b) => ({
+      ...b,
+      settings: {
+        ...b.settings,
+        profile: { ...b.settings.profile, website: 'JavaScript:alert(document.cookie)' },
+      },
+      version: b.version + 1,
+    }));
+    const page = await req(`/b/${business_id}`, { accept: 'text/html' });
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('Studio Nord');
+    expect(page.text.toLowerCase()).not.toContain('javascript:alert');
+    expect(page.text).not.toContain('>Website</a>');
+    const info = await req(`/b/${business_id}/book/api/info`);
+    expect(info.status).toBe(200);
+    expect(info.json.profile.website).toBeUndefined();
+    const ucp = await req(`/b/${business_id}`, { accept: 'application/json' });
+    expect(JSON.stringify(ucp.json).toLowerCase()).not.toContain('javascript:');
   });
 });
 

@@ -403,4 +403,54 @@ describe('attachCalendarSync', () => {
     await sync.idle();
     expect(onError).toHaveBeenCalledWith(expect.any(GoogleAuthError));
   });
+
+  it("reports Google's error code without the customer details its message echoes", async () => {
+    const google = createFakeGoogle();
+    // Google refuses the insert and quotes the event back, as its validation messages can.
+    const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(url).includes('/events')) {
+        const body = JSON.parse(String(init.body));
+        return Response.json(
+          {
+            error: {
+              code: 400,
+              status: 'INVALID_ARGUMENT',
+              message: `Invalid event: ${body.summary}\n${body.description}`,
+              errors: [{ reason: 'invalid', message: body.description }],
+            },
+          },
+          { status: 400 },
+        );
+      }
+      return google.fetch(url as string, init);
+    }) as typeof fetch;
+    const clock = new ManualClock(START);
+    const client = new GoogleCalendarClient({
+      credentials: CREDS,
+      tokens: memoryTokens(fresh()),
+      fetch: fetchFn,
+      now: () => clock.now().getTime(),
+    });
+    const service = new BookingService({
+      provider: new MemoryBookingProvider(demoSalonConfig()),
+      clock,
+    });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const sync = attachCalendarSync({ service, client, config: () => CONFIG });
+      expect((await book(service)).status).toBe('confirmed');
+      await sync.idle();
+      expect(logged).toHaveBeenCalled();
+      const text = logged.mock.calls
+        .flat()
+        .map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : String(a)))
+        .join('\n');
+      expect(text).toContain('Google Calendar API error 400 (INVALID_ARGUMENT)');
+      for (const secret of ['ada@example.com', 'Lovelace', '+4712345678']) {
+        expect(text).not.toContain(secret);
+      }
+    } finally {
+      logged.mockRestore();
+    }
+  });
 });

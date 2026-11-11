@@ -253,9 +253,17 @@ function instantOf(
 }
 
 async function apiError(res: Response): Promise<GoogleApiError> {
-  const json = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+  // Google's status code or reason, not its message: the message can quote the request, and an
+  // inserted event holds the customer's name, email and phone. This error reaches logs.
+  const json = (await res.json().catch(() => ({}))) as {
+    error?: { status?: unknown; errors?: Array<{ reason?: unknown }> };
+  };
+  const code = [json.error?.status, json.error?.errors?.[0]?.reason, res.statusText].find(
+    (v): v is string => typeof v === 'string' && v !== '',
+  );
+  const safe = code?.replace(/[^\s@]+@[^\s@]+/g, '[email]').slice(0, 60);
   return new GoogleApiError(
     res.status,
-    `Google Calendar API error ${res.status}: ${json.error?.message ?? res.statusText}`,
+    `Google Calendar API error ${res.status}${safe ? ` (${safe})` : ''}`,
   );
 }
