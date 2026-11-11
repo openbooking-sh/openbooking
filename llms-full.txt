@@ -389,6 +389,36 @@ const bistro: VenueConfig = {
 - **Demo restaurant.** `createDemoRestaurantProvider()` (and `pnpm dev`) uses all of the above, as a small bistro: tables 6 and 7 (two 4-tops) join for parties of 5 to 8 when no single table is free; lunch Tue–Sat has two seatings (12:00 and 13:15); dinner starts on the half hour; Sunday supper takes at most 24 guests online; at most 20 guests may arrive in the same 15 minutes; dinner table time is 90 minutes, 2 hours from 5 guests and 2.5 hours from 7. The benchmark and the tests run against it.
 - Not built: joining three or more tables by chaining (list the triple as its own combination), tables that may only be joined at certain times, and joined tables in hosted businesses (they store the simpler settings shape).
 
+## 9. Anti-scalping: limits, name-bound bookings and broker flags
+
+Real assistants act for one consenting person; bots that hoard slots to resell them don't. All of this is optional (`serviceOptions.guard`). Without it nothing changes.
+
+```ts
+const ob = createOpenBookingApp({
+  provider,
+  baseUrl,
+  serviceOptions: {
+    guard: {
+      salt: process.env.GUARD_SALT, // keeps the lookup keys private; keep it stable
+      guest: { maxActive: 4, maxPerDay: 2 }, // upcoming bookings per guest and venue
+      agent: { maxHolds: 6, maxActive: 40 }, // per assistant, see below
+      nonTransferable: true,
+      // flags: { contact_many_names: { count: 3, window_hours: 720 } },  // tune or `false`
+    },
+  },
+});
+// Several instances: guard: { store: postgresStores(db).guard, ... } (needs migration 8).
+```
+
+- **Per guest.** A guest is a normalised email or phone number (`A.Da+x@gmail.com` and `ada@gmail.com` are one guest; so are `+47 123 45 678` and `+4712345678`; either one matches). Held and confirmed bookings that have not ended count; expired holds and cancelled bookings do not. Checked when a hold names the guest and again at confirm, before any deposit is taken.
+- **Per agent.** Open holds and upcoming bookings per agent identity. Without more, that identity is the client name an MCP, UCP, USP or A2A caller reports (`mcp:claude-ai`). It is self-reported and shared by every user of that assistant, so keep these limits generous; callers that name no client, the booking page and the API are not limited this way. Return a better id from `guard.identifyAgent(actor)` (an API key id, or a verified agent id once Web Bot Auth, OPE-57, lands) and the same limits and flags key on it.
+- **Staff are exempt.** Studio actions (a manual booking, a transfer) are never limited.
+- **Atomic.** The check and the write are one step in the guard ledger (`MemoryGuardStore`, or `PostgresGuardStore` shared by all instances), so concurrent holds cannot all slip under a limit. The hold is created first and handed back at once if the ledger refuses it. A reschedule updates the ledger but does not re-check the per-day limit (the new time is only known after the move).
+- **What a refusal says.** `booking_limit_reached`, not retryable. The message and `suggested_next_action` say the venue limits online bookings and to contact the venue; they never say the number, so a bot learns nothing about how to spread out.
+- **Name-bound bookings.** With `nonTransferable`, once a hold or booking names a guest only Studio can put another name on it: `confirm_booking` or `update_booking` with a different name is refused with `not_transferable` (a different spelling of the same name, or new contact details, is fine). Search results, holds and confirmations add one sentence to the cancellation terms: "This booking is in the guest's name and cannot be transferred to anyone else."
+- **Flags, never bans.** When signals add up, the booking still goes through but is flagged for the venue: `agent_many_names` (10 names in 24 hours from one agent), `contact_many_names` (3 names in 30 days on one email or phone), `agent_cancel_churn` (10 confirmed bookings cancelled in 24 hours by one agent), `contact_cancel_churn` (3 in 7 days by one contact). Each rule's `{ count, window_hours }` can be changed, or set to `false`. Flags are never on the `Booking` and never in an MCP, UCP, USP, A2A or booking-page response; staff get them from `service.riskFlags(ids)`, and Studio's `/api/bookings` returns `risk_flags` on flagged bookings. Not built: a rule for peak slots in particular, and showing flags in the Studio UI.
+- **What the ledger stores.** Hashed keys (HMAC with your salt) for the contact details and name, the client id, and times. No names, emails or phone numbers. Entries of bookings that ended 30 days ago are removed by `service.sweepExpired()`. Bookings made before you turn the guard on are not counted.
+
 ## Rules for AI coding tools
 
 If you're an AI assistant adding OpenBooking to a project:
@@ -1535,6 +1565,7 @@ The UCP status mapping is in [SPEC-NOTES §1.5](./SPEC-NOTES.md#15-status-mappin
 - **Postgres.** `@openbooking-sh/postgres` makes everything durable and safe across instances. `PostgresBookingStore` reserves under a transaction-scoped advisory lock per venue resource (check overlap, then insert), so overlapping holds can never both commit. A booking of joined tables takes the lock of each of its tables, in sorted order, and is one row, so it holds all of them or none. Updates take the same locks, and a confirm that turns blocking re-checks for overlaps: a late confirm whose hold lapsed and was re-booked fails with `hold_expired` instead of double-booking. Expiry is applied on read, so no sweeper job is needed. Run `migrate(db)` on start (idempotent, lock-serialised).
 - **Idempotency store.** `PostgresIdempotencyStore` (or your own `IdempotencyStore` on Redis/SQL) as `serviceOptions.idempotencyStore`. Two simultaneous first calls with one key run once, also across instances: the first to claim the key (an optional `claim()`/`release()` on the store; the Postgres store has them) runs, and the other waits for its result and replays it. A claim that is never finished, because its instance died, expires after 60 seconds. A store without `claim()` still joins calls per process only, so across instances both can run (inventory stays safe through the atomic store, and the later record wins).
 - **USP state.** The USP adapter (`@openbooking-sh/adapter-usp`, in progress) remembers who owns each hold, booking credentials (by hash), proofs it has already seen, and what request each `Idempotency-Key` was first used for. In memory by default, which is fine for one process. With more than one instance (serverless), pass `postgresStores(db).usp` as `createUspRouter({ state })`: otherwise a credential issued by one instance is unknown to the others and a replayed proof is caught by only one. Each check-and-record is one atomic statement, so two instances racing on the same proof or key cannot both win.
+- **Anti-scalping ledger.** Optional (`serviceOptions.guard`, recipe 9). The engine keeps a small ledger by booking id (hashed guest, name and agent keys, times, status, staff-only risk flags) next to the provider, so limits work with any booking system. `GuardStore.claim` counts and writes in one atomic step; `PostgresGuardStore` takes an advisory lock per venue, so instances sharing a database cannot both pass a limit with room for one. Run `migrate(db)` for the `ob_guard` table (migration 8).
 - **Clock.** Inject a `Clock` for tests and simulations (`ManualClock`, the bench's `OffsetClock`).
 - **MCP.** `createMcpHandler` is stateless, so any instance can serve any request. Set `allowedHosts` to your public hostnames.
 

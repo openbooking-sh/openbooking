@@ -15,6 +15,13 @@ import { evaluateBookingCancellation } from './cancellation';
 import { systemClock, type Clock } from './clock';
 import { BookingError, fromZodError, isBookingError, type ErrorCode } from './errors';
 import {
+  Guard,
+  NON_TRANSFERABLE_NOTICE,
+  type GuardClaim,
+  type GuardLimits,
+  type GuardOptions,
+} from './guard';
+import {
   IdempotencyGuard,
   MemoryIdempotencyStore,
   DEFAULT_IDEMPOTENCY_TTL_MS,
@@ -32,6 +39,7 @@ import {
   UpdateInputSchema,
   type AvailabilityQueryInput,
   type Booking,
+  type Customer,
   type CancelInput,
   type RescheduleInput,
   type ConfirmInput,
@@ -155,6 +163,11 @@ export interface BookingServiceOptions {
    * deposit is judged by the booking system itself (tokens in the demo provider).
    */
   payments?: PaymentProvider;
+  /**
+   * Anti-scalping: limits per guest and per agent, name-bound bookings and broker-pattern flags.
+   * Off unless set. See {@link GuardOptions}.
+   */
+  guard?: GuardOptions;
 }
 
 export interface SearchResult {
@@ -187,6 +200,7 @@ export class BookingService {
   readonly #guard: IdempotencyGuard;
   readonly #listeners = new Set<(e: BookingEvent) => void>();
   readonly #expiryClaims: ExpiryClaims;
+  readonly #anti: Guard | undefined;
   /** Bookings whose expiry this process already claimed or lost; saves a store round trip per read. */
   readonly #settledExpiries = new Set<string>();
 
@@ -202,6 +216,7 @@ export class BookingService {
       now,
     );
     this.#expiryClaims = options.expiryClaims ?? new MemoryExpiryClaims();
+    this.#anti = options.guard ? new Guard(options.guard) : undefined;
     if (options.onEvent) this.#listeners.add(options.onEvent);
     const limit = options.holdLimit ?? { limit: 20, windowMs: 10 * 60_000 };
     this.#holdLimit = limit
@@ -282,7 +297,7 @@ export class BookingService {
         { ...query, venue_id: venue.id },
         this.#ctx(),
       );
-      return { venue, slots: slots.slice(0, query.limit) };
+      return { venue, slots: slots.slice(0, query.limit).map((s) => this.#noticeSlot(s)) };
     });
   }
 
@@ -347,6 +362,16 @@ export class BookingService {
     });
   }
 
+  /**
+   * Broker-pattern flags for staff tools such as Studio, by booking id (only flagged bookings
+   * appear). They live in the guard ledger, not on the booking, so no adapter or public API can
+   * return them by accident. Empty unless `guard` is configured.
+   */
+  async riskFlags(bookingIds: string[]): Promise<Map<string, string[]>> {
+    if (!this.#anti || !bookingIds.length) return new Map();
+    return this.#anti.store.flagsOf(bookingIds).catch(() => new Map<string, string[]>());
+  }
+
   /** Subscribe to every BookingEvent. Returns an unsubscribe function. */
   on(listener: (event: BookingEvent) => void): () => void {
     this.#listeners.add(listener);
@@ -386,6 +411,7 @@ export class BookingService {
           },
           ctx,
         );
+        await this.#claimGuard(booking, req.customer, 'hold', ctx);
         return this.#observe(booking);
       });
     });
@@ -435,6 +461,10 @@ export class BookingService {
             );
           }
 
+          this.#assertSameName(booking.customer, req.customer);
+          // Before any money moves: a guest at their limit is refused here, not after paying.
+          await this.#claimGuard(booking, customer, 'confirm', ctx);
+
           const deposit = booking.slot.deposit;
           let payment: { reference: string; amount: Money } | undefined;
           if (deposit?.due === 'at_confirmation') {
@@ -461,6 +491,7 @@ export class BookingService {
             },
             ctx,
           );
+          await this.#settleGuard(confirmed, customer, ctx);
           return this.#observe(confirmed);
         });
       },
@@ -486,6 +517,10 @@ export class BookingService {
           if (booking.status === 'cancelled') {
             throw new BookingError('invalid_state', `Booking ${booking.booking_id} is cancelled.`);
           }
+          this.#assertSameName(booking.customer, req.customer);
+          // New contact details count against the new guest's limits, so moving a booking to
+          // another email can't be used to dodge them.
+          if (req.customer) await this.#claimGuard(booking, req.customer, 'confirm', ctx);
           const updated = await this.provider.updateBooking(
             {
               booking_id: booking.booking_id,
@@ -567,6 +602,9 @@ export class BookingService {
           );
           // The user approved the new time and terms, so that is what the evidence shows.
           meta.consent = consentFor(moved);
+          // The ledger follows the booking to its new time. The per-day limit is not re-checked
+          // here: the new time is only known once the provider has moved the booking.
+          await this.#settleGuard(moved, moved.customer, ctx);
           return this.#observe(moved);
         });
       },
@@ -606,6 +644,7 @@ export class BookingService {
               },
               ctx,
             );
+            await this.#releaseGuard(released.booking_id, ctx);
             return { booking: await this.#observe(released), already_inactive: false };
           }
 
@@ -640,6 +679,7 @@ export class BookingService {
             },
             ctx,
           );
+          await this.#releaseGuard(cancelled.booking_id, ctx);
           await this.#refund(booking, outcome.refund);
           return { booking: await this.#observe(cancelled), already_inactive: false };
         });
@@ -738,6 +778,115 @@ export class BookingService {
     }
   }
 
+  /**
+   * Record a booking in the guard ledger and refuse it if it breaks a limit. Atomic: the limit
+   * check and the write are one store call. A hold that is refused is released again at once.
+   */
+  async #claimGuard(
+    booking: Booking,
+    customer: Customer | null | undefined,
+    phase: 'hold' | 'confirm',
+    ctx: ProviderContext,
+  ): Promise<void> {
+    const anti = this.#anti;
+    if (!anti) return;
+    const actor = currentActor();
+    const entry = anti.entryFor(booking, {
+      customer: customer ?? booking.customer,
+      agentKey: anti.agentKey(actor),
+      status: booking.status === 'confirmed' ? 'confirmed' : 'held',
+      now: ctx.now,
+    });
+    let result: GuardClaim;
+    try {
+      result = await anti.store.claim(entry, anti.limits(actor, phase), ctx.now);
+    } catch (cause) {
+      if (phase === 'hold') await this.#dropHold(booking, ctx);
+      throw new BookingError('provider_error', 'Unexpected error in the booking system.', {
+        cause,
+      });
+    }
+    if (!result.ok) {
+      if (phase === 'hold') await this.#dropHold(booking, ctx);
+      throw limitRefusal(result.limit);
+    }
+    if (entry.name_key) await anti.flag(booking.booking_id, ctx.now);
+  }
+
+  /** Give the hold back after the guard refused it. If that fails too, the hold lapses on its own. */
+  async #dropHold(booking: Booking, ctx: ProviderContext): Promise<void> {
+    try {
+      await this.provider.cancelBooking(
+        {
+          booking_id: booking.booking_id,
+          reason: 'Booking limit reached',
+          fee: null,
+          refund: null,
+          release_hold: true,
+        },
+        ctx,
+      );
+    } catch {
+      // see above
+    }
+  }
+
+  /** The booking is confirmed (or moved): bring the ledger up to date. Best effort. */
+  async #settleGuard(booking: Booking, customer: Customer | null, ctx: ProviderContext) {
+    const anti = this.#anti;
+    if (!anti) return;
+    try {
+      const entry = anti.entryFor(booking, {
+        customer,
+        agentKey: anti.agentKey(currentActor()),
+        status: booking.status === 'held' ? 'held' : 'confirmed',
+        now: ctx.now,
+      });
+      await anti.store.claim(entry, {}, ctx.now);
+      await anti.flag(booking.booking_id, ctx.now);
+    } catch {
+      // The booking exists; a missed ledger update only means one limit check sees it late.
+    }
+  }
+
+  /** A hold was released or a booking cancelled: stop counting it, and look for churn. */
+  async #releaseGuard(bookingId: string, ctx: ProviderContext): Promise<void> {
+    const anti = this.#anti;
+    if (!anti) return;
+    try {
+      await anti.store.release(bookingId, ctx.now);
+      await anti.flag(bookingId, ctx.now);
+    } catch {
+      // see #settleGuard
+    }
+  }
+
+  /** Name-bound bookings: only the venue itself may put another name on a booking. */
+  #assertSameName(current: Customer | null, next: Customer | undefined): void {
+    const anti = this.#anti;
+    if (!anti?.nonTransferable || !current || !next) return;
+    if (currentActor()?.protocol === 'studio') return;
+    if (anti.nameKey(current) === anti.nameKey(next)) return;
+    throw new BookingError(
+      'not_transferable',
+      'This booking is in the name of the guest it was made for and cannot be changed to another name online.',
+    );
+  }
+
+  /** Terms shown before booking: say it when bookings can't be handed on. */
+  #noticeSlot(slot: Slot): Slot {
+    if (!this.#anti?.nonTransferable) return slot;
+    const policy = slot.cancellation_policy;
+    if (policy.description.includes(NON_TRANSFERABLE_NOTICE)) return slot;
+    return {
+      ...slot,
+      cancellation_policy: {
+        ...policy,
+        description: `${policy.description} ${NON_TRANSFERABLE_NOTICE}`.trim(),
+      },
+    };
+  }
+
   #ctx(idempotency_key?: string): ProviderContext {
     return { now: this.clock.now(), ...(idempotency_key ? { idempotency_key } : {}) };
   }
@@ -757,6 +906,8 @@ export class BookingService {
    * announced by THIS call.
    */
   async sweepExpired(): Promise<string[]> {
+    // Ledger entries of bookings that ended a month ago are of no use to any rule.
+    await this.#anti?.store.purge?.(this.clock.now().getTime() - 30 * 86_400_000).catch(() => 0);
     if (!this.provider.listBookings) return [];
     const announced: string[] = [];
     for (const raw of await this.provider.listBookings({}, this.#ctx())) {
@@ -813,6 +964,12 @@ export class BookingService {
 
   /** Holds past `expires_at` are presented as `expired` even if the provider has not swept them. */
   #normalize(booking: Booking): Booking {
+    if (
+      this.#anti?.nonTransferable &&
+      (booking.status === 'held' || booking.status === 'confirmed')
+    ) {
+      booking = { ...booking, slot: this.#noticeSlot(booking.slot) };
+    }
     if (
       booking.status === 'held' &&
       booking.expires_at &&
@@ -911,6 +1068,25 @@ function bookingOf(result: unknown): Booking | undefined {
     if ('booking' in result) return (result as CancelResult).booking;
   }
   return undefined;
+}
+
+/**
+ * Says no without saying where the line is: a guard that reports its threshold tells a scalper how
+ * many bookings to spread over how many identities.
+ */
+function limitRefusal(limit: keyof GuardLimits): BookingError {
+  const guest = limit === 'guest_venue' || limit === 'guest_day';
+  return new BookingError(
+    'booking_limit_reached',
+    guest
+      ? 'This guest already has as many upcoming bookings with this venue as can be made online.'
+      : 'This assistant already has as many open holds or bookings with this venue as can be made online.',
+    {
+      suggested_next_action: guest
+        ? 'Tell the user the venue limits online bookings per guest, and that they can contact the venue to book more. Do not retry.'
+        : 'Release holds you no longer need (cancel_booking) and confirm the ones the user wants. If the user needs more, tell them to contact the venue.',
+    },
+  );
 }
 
 function holdExpired(booking: Booking): BookingError {
