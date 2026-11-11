@@ -114,6 +114,25 @@ const SCHEMA_TYPES: Record<string, string> = {
   restaurant: 'Restaurant',
 };
 
+/** schema.org terms for the venue facts that have one. Dietary and allergen details are left out on purpose. */
+function knowledgeLd(k: Venue['knowledge']): Record<string, unknown> {
+  if (!k) return {};
+  const features = k.accessibility?.features ?? [];
+  return {
+    ...(k.cuisine?.length ? { servesCuisine: k.cuisine } : {}),
+    ...(k.menu?.url ? { hasMenu: k.menu.url } : {}),
+    ...(features.length
+      ? {
+          amenityFeature: features.map((f) => ({
+            '@type': 'LocationFeatureSpecification',
+            name: f.replaceAll('_', ' '),
+            value: true,
+          })),
+        }
+      : {}),
+  };
+}
+
 export function jsonLd(m: PageModel): Record<string, unknown> {
   const v = m.venue;
   const a = v.address;
@@ -138,6 +157,7 @@ export function jsonLd(m: PageModel): Record<string, unknown> {
           },
         }
       : {}),
+    ...knowledgeLd(v.knowledge),
     makesOffer: m.offerings.map((o) => ({
       '@type': 'Offer',
       name: o.name,

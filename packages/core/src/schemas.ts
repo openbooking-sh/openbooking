@@ -7,6 +7,7 @@
  * Anything without a UCP equivalent is marked `EXTENSION:` and listed in docs/SPEC-NOTES.md.
  */
 import * as z from 'zod';
+import { VenueKnowledgeSchema } from './knowledge';
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -74,6 +75,8 @@ export const VenueSchema = z.object({
   phone_number: z.string().optional(),
   url: z.url().optional(),
   description: z.string().optional(),
+  /** Menu, dietary options, accessibility, parking ... for concierge questions. Optional. */
+  knowledge: VenueKnowledgeSchema.optional(),
 });
 export type Venue = z.infer<typeof VenueSchema>;
 

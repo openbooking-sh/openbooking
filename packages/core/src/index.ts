@@ -10,4 +10,5 @@ export * as time from './time';
 export * from './rate-limit';
 export * from './webhooks';
 export * from './payments';
+export * from './knowledge';
 export * from './waitlist';
