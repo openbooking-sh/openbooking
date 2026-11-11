@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   BookingError,
+  currentActor,
   time,
   type AvailabilityQuery,
   type Booking,
@@ -47,6 +48,13 @@ export interface MemoryProviderOptions {
    * are hidden from search and refused on hold. Throwing fails the call with a retryable error.
    */
   busy?: BusySource;
+  /**
+   * Accept pretend payment tokens: any `payment_token` starting with "tok_" pays a deposit
+   * ("tok_fail…" is declined). For demos and tests only. Off by default, because a real business
+   * would record deposits as paid that nobody paid. To take real deposits, give the engine a
+   * payment provider (`serviceOptions.payments`, e.g. `@openbooking-sh/payments-stripe`).
+   */
+  demoPayments?: boolean;
 }
 
 /** A resource that is unavailable for reasons the store doesn't know about. */
@@ -84,10 +92,13 @@ export class MemoryBookingProvider implements BookingProvider {
   readonly #venues: Map<string, VenueConfig>;
   readonly #store: BookingRecordStore;
   readonly #busy: BusySource | undefined;
+  readonly #demoPayments: boolean;
+  #warnedNoPayments = false;
 
   constructor(config: MemoryProviderConfig, options: MemoryProviderOptions = {}) {
     this.#store = options.store ?? new MemoryBookingStore();
     this.#busy = options.busy;
+    this.#demoPayments = options.demoPayments ?? false;
     this.info = {
       name: config.name,
       ...(config.description ? { description: config.description } : {}),
@@ -297,8 +308,8 @@ export class MemoryBookingProvider implements BookingProvider {
       let payment = b.payment;
       const deposit = b.slot.deposit;
       if (deposit?.due === 'at_confirmation') {
-        // Demo payment rule: tokens starting with "tok_" succeed, except "tok_fail…".
-        // "manual:…" marks a deposit staff collected in person (Studio bookings).
+        // "manual:…" marks a deposit staff collected in person, so only Studio may send it.
+        // Demo payment rule (opt-in): tokens starting with "tok_" succeed, except "tok_fail…".
         const token = req.payment_token ?? '';
         if (req.payment) {
           // The engine already checked this deposit with a payment provider.
@@ -307,8 +318,19 @@ export class MemoryBookingProvider implements BookingProvider {
             amount: req.payment.amount,
             reference: req.payment.reference,
           };
-        } else if (token.startsWith('manual:')) {
+        } else if (token.startsWith('manual:') && currentActor()?.protocol === 'studio') {
           payment = { status: 'paid', amount: deposit.amount, reference: token };
+        } else if (!this.#demoPayments) {
+          // No payment provider checked this token, so it proves nothing: never record it as paid.
+          this.#warnNoPayments();
+          throw new BookingError(
+            'operation_not_supported',
+            'This business cannot take the deposit online, so the booking was not confirmed.',
+            {
+              suggested_next_action:
+                'Tell the user this booking needs a deposit that cannot be paid here, and that nothing was charged. They can contact the business directly, or you can offer a service without a deposit. Do not retry with another payment_token.',
+            },
+          );
         } else if (!token.startsWith('tok_') || token.startsWith('tok_fail')) {
           throw new BookingError('payment_failed', 'The deposit payment was declined.', {
             suggested_next_action:
@@ -373,6 +395,17 @@ export class MemoryBookingProvider implements BookingProvider {
 
   async listResources(venueId: string): Promise<Resource[]> {
     return structuredClone(this.#venue(venueId).resources);
+  }
+
+  /** Tells the business, once, why deposit bookings are being refused. */
+  #warnNoPayments(): void {
+    if (this.#warnedNoPayments) return;
+    this.#warnedNoPayments = true;
+    console.warn(
+      '[openbooking] A booking with a deposit was refused: no payment provider is configured. ' +
+        'Set serviceOptions.payments (e.g. @openbooking-sh/payments-stripe) to take deposits, ' +
+        'or remove the deposit from the service. demoPayments: true accepts pretend tokens, for demos only.',
+    );
   }
 
   async getBooking(bookingId: string, ctx: ProviderContext): Promise<Booking | null> {

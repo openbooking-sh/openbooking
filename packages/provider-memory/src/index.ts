@@ -32,16 +32,22 @@ import { MemoryBookingProvider, type MemoryProviderOptions } from './provider';
 import { demoSalonConfig } from './salon';
 import { demoRestaurantConfig } from './seed';
 
-/** Ready-to-use provider for the fictional "Demo Bistro Oslo" restaurant. */
+/**
+ * Ready-to-use provider for the fictional "Demo Bistro Oslo" restaurant. Pretend payment tokens
+ * ("tok_…") are accepted unless you pass `demoPayments: false`.
+ */
 export function createDemoRestaurantProvider(
   options: MemoryProviderOptions = {},
 ): MemoryBookingProvider {
-  return new MemoryBookingProvider(demoRestaurantConfig(), options);
+  return new MemoryBookingProvider(demoRestaurantConfig(), { demoPayments: true, ...options });
 }
 
-/** Ready-to-use provider for the fictional "Studio Nord" hair salon. */
+/**
+ * Ready-to-use provider for the fictional "Studio Nord" hair salon. Pretend payment tokens
+ * ("tok_…") are accepted unless you pass `demoPayments: false`.
+ */
 export function createDemoSalonProvider(
   options: MemoryProviderOptions = {},
 ): MemoryBookingProvider {
-  return new MemoryBookingProvider(demoSalonConfig(), options);
+  return new MemoryBookingProvider(demoSalonConfig(), { demoPayments: true, ...options });
 }
