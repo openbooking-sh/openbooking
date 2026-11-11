@@ -10,6 +10,7 @@ export {
   type ActivityRecorder,
 } from './activity';
 export { computeOverview, type Overview, type AgentRow } from './stats';
+export { bookingsCsv, countBySource, sourceDetail, sourceLabel, type SourceCount } from './sources';
 export { actorFromRequest, agentName, MCP_CLIENT_INFO_META_KEY } from './agents';
 export {
   BusinessSettingsSchema,
