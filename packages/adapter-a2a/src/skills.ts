@@ -1,4 +1,4 @@
-import { BookingError, type BookingService } from '@openbooking-sh/core';
+import { BookingError, knowledgeForAgents, type BookingService } from '@openbooking-sh/core';
 
 export const SKILL_IDS = [
   'get_business_info',
@@ -36,8 +36,10 @@ export const SKILL_HANDLERS: Record<SkillId, Handler> = {
       service.listResources(venue.id),
       service.getVenueInfo(venue.id),
     ]);
+    const { knowledge, ...rest } = venue;
     return plain({
-      venue,
+      venue: rest,
+      knowledge: knowledgeForAgents(knowledge),
       services,
       resources,
       opening_hours: hours,

@@ -56,6 +56,29 @@ describe('MCP adapter', () => {
     );
   });
 
+  it('gives the venue facts with a note to confirm allergies, and null when there are none', async () => {
+    const { call } = await connect();
+    const info = (await call('get_business_info', {})).data;
+    expect(info.knowledge.cuisine).toContain('Modern Nordic');
+    expect(info.knowledge.menu.items.length).toBeGreaterThan(0);
+    expect(info.knowledge.dietary.options).toContain('vegan');
+    expect(info.knowledge.accessibility.features).toContain('step_free_entrance');
+    expect(info.knowledge.safety_note).toMatch(/confirm directly with the venue/);
+    expect(info.next_step).toMatch(/allergies/);
+    // The facts live in one block, not repeated on the venue.
+    expect(info.venue.knowledge).toBeUndefined();
+
+    const bare = demoRestaurantVenue();
+    delete bare.venue.knowledge;
+    const { call: callBare } = await connect(
+      300,
+      new MemoryBookingProvider({ name: 'Bare', venues: [bare] }),
+    );
+    const none = (await callBare('get_business_info', {})).data;
+    expect(none.knowledge).toBeNull();
+    expect(none.next_step).not.toMatch(/allergies/);
+  });
+
   it('tells the agent when tables are joined for the party', async () => {
     const venue = demoRestaurantVenue();
     venue.resources = ['t6', 't7'].map((id) => ({

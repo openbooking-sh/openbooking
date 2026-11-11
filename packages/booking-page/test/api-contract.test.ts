@@ -4,11 +4,16 @@
  * unchanged (zod drops unknown keys, so an undocumented field fails here).
  */
 import { BookingService, ManualClock } from '@openbooking-sh/core';
-import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
+import {
+  createDemoRestaurantProvider,
+  createDemoSalonProvider,
+  demoRestaurantVenue,
+} from '@openbooking-sh/provider-memory';
 import { validate } from '@readme/openapi-parser';
 import type * as z from 'zod';
 import { describe, expect, it } from 'vitest';
 import { api, buildOpenApi, createBookingPage } from '../src';
+import { jsonLd } from '../src/render';
 
 const BASE = 'https://app.example.com/b/studio-nord';
 const DATE = '2026-10-16';
@@ -159,5 +164,44 @@ describe('the OpenAPI document', () => {
     expect(doc.components.schemas.Slot.properties.price.anyOf[0]).toEqual({
       $ref: '#/components/schemas/Money',
     });
+  });
+});
+
+describe('venue knowledge', () => {
+  it('is in /info, matches the schema, and is left out when the business has none', async () => {
+    const restaurant = createBookingPage({
+      service: new BookingService({
+        provider: createDemoRestaurantProvider(),
+        clock: new ManualClock('2026-10-08T08:00:00Z'),
+      }),
+      pageUrl: BASE,
+      apiBase: BASE + '/book',
+      profile: () => ({ category: 'restaurant' }),
+    });
+    const json = await (await restaurant.app.request('/api/info')).json();
+    const parsed = api.InfoResponseSchema.parse(json);
+    expect(parsed).toEqual(json);
+    expect(parsed.knowledge?.safety_note).toMatch(/confirm directly with the venue/);
+    expect(parsed.knowledge?.dietary?.options).toContain('vegan');
+
+    const bare = await setup().page.app.request('/api/info');
+    expect('knowledge' in ((await bare.json()) as object)).toBe(false);
+  });
+
+  it('puts cuisine, menu link and accessibility in the schema.org data, but no diet claims', () => {
+    const ld = jsonLd({
+      venue: demoRestaurantVenue().venue,
+      offerings: [],
+      staff: [],
+      showParty: false,
+      profile: { category: 'restaurant' },
+      pageUrl: BASE,
+      apiPath: '/book/api',
+      prefill: {},
+    }) as any;
+    expect(ld.servesCuisine).toContain('Modern Nordic');
+    expect(ld.hasMenu).toBe('https://example.com/demo-bistro/menu');
+    expect(ld.amenityFeature.map((f: any) => f.name)).toContain('step free entrance');
+    expect(JSON.stringify(ld)).not.toMatch(/vegan|gluten|allerg/i);
   });
 });
