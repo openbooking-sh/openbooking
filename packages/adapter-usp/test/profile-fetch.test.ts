@@ -38,6 +38,13 @@ describe('isSpecialUseAddress', () => {
     '::ffff:10.0.0.1',
     '::ffff:7f00:1',
     '::ffff:a9fe:a9fe', // 169.254.169.254
+    '::FFFF:169.254.169.254', // the same, in other spellings
+    '0:0:0:0:0:ffff:a9fe:a9fe',
+    '0000:0000:0000:0000:0000:ffff:7f00:0001',
+    '::127.0.0.1', // "IPv4-compatible" IPv6
+    '::a9fe:a9fe',
+    '::10.0.0.1',
+    'fe80::1%eth0', // scoped
     '64:ff9b::7f00:1', // NAT64 to 127.0.0.1
     '2002:7f00:1::', // 6to4 of 127.0.0.1
     'not-an-ip',

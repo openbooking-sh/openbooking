@@ -6,11 +6,17 @@
  * links, and optionally an LLM that reads the home page plus up to two likely prices pages.
  * The result is a proposal; the owner reviews it before anything is saved.
  *
- * Fetching arbitrary URLs from a server is an SSRF risk, so only public http(s) addresses are
- * fetched (every redirect re-checked), with a timeout and a size cap.
+ * The owner names the URL and our server fetches it, so the fetch may only reach the public
+ * internet. For every hop (the address given and each redirect) the host is resolved once, refused
+ * if any answer is a private or special-use address, and the connection goes to that checked
+ * address, so a second DNS answer cannot point it elsewhere. The address rules are the ones the
+ * USP profile fetch uses. There is a time limit and a size cap.
  */
-import { lookup as dnsLookup } from 'node:dns/promises';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest, type RequestOptions } from 'node:https';
 import { isIP } from 'node:net';
+import { createBrotliDecompress, createGunzip } from 'node:zlib';
+import { isSpecialUseAddress, resolvePublicAddress } from '@openbooking-sh/adapter-usp';
 import type { WeekdayKey } from '@openbooking-sh/studio';
 
 export interface ImportedService {
@@ -49,6 +55,10 @@ export type Extractor = (input: { url: string; text: string; currency: string })
 >;
 
 export interface ImportOptions {
+  /**
+   * Replaces the HTTP client (tests). Every hop's address is still checked first, but a replaced
+   * client resolves the host itself: only the built-in client connects to the checked address.
+   */
   fetch?: typeof fetch;
   /** DNS lookup (tests). Returns every address the host resolves to. */
   lookup?: (host: string) => Promise<string[]>;
@@ -140,55 +150,168 @@ function normaliseUrl(raw: string): URL {
   return url;
 }
 
-async function assertPublic(url: URL, lookup: (host: string) => Promise<string[]>) {
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  let addresses: string[];
-  try {
-    addresses = isIP(host) ? [host] : await lookup(host);
-  } catch {
-    throw new ImportError(`Could not find ${url.hostname}. Check the address.`);
-  }
-  if (!addresses.length || addresses.some(isPrivateAddress)) {
-    throw new ImportError('That address is not a public website.');
-  }
+/** The checked address a hop's connection must go to. */
+export interface Pin {
+  address: string;
+  family: 4 | 6;
 }
 
-const defaultLookup = async (host: string) =>
-  (await dnsLookup(host, { all: true, verbatim: true })).map((a) => a.address);
+/** The public address for this hop, or an `ImportError` when the host is not a public one. */
+async function publicAddress(url: URL, options: ImportOptions): Promise<Pin> {
+  const lookup = options.lookup;
+  const found = await resolvePublicAddress(
+    url.hostname,
+    lookup && (async (host) => (await lookup(host)).map((a) => ({ address: a, family: isIP(a) }))),
+  );
+  if (found.ok) return { address: found.address, family: found.family };
+  throw new ImportError(
+    found.reason === 'unresolved'
+      ? `Could not find ${url.hostname}. Check the address.`
+      : 'That address is not a public website.',
+  );
+}
+
+const REQUEST_HEADERS = {
+  'user-agent': 'OpenBookingImporter/1.0 (+https://openbooking.sh)',
+  accept: 'text/html,application/xhtml+xml',
+};
+
+/** What a hop answered. Call exactly one of `text` and `discard`. */
+export interface Answer {
+  status: number;
+  header(name: string): string | undefined;
+  /** The body, cut off at the size cap. */
+  text(): Promise<string>;
+  discard(): void;
+}
 
 async function fetchPage(url: URL, options: ImportOptions): Promise<{ url: URL; html: string }> {
-  const doFetch = options.fetch ?? fetch;
-  const lookup = options.lookup ?? defaultLookup;
+  const timeoutMs = options.timeoutMs ?? 8000;
   let current = url;
   for (let hop = 0; hop < 4; hop++) {
-    await assertPublic(current, lookup);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
-    let res: Response;
+    // Checked for every hop: a redirect is how a public address points inward.
+    const pin = await publicAddress(current, options);
+    const unanswered = () =>
+      new ImportError(`${current.hostname} did not answer. Try again, or skip this step.`);
+    let res: Answer;
     try {
-      res = await doFetch(current, {
-        redirect: 'manual',
-        signal: controller.signal,
-        headers: {
-          'user-agent': 'OpenBookingImporter/1.0 (+https://openbooking.sh)',
-          accept: 'text/html,application/xhtml+xml',
-        },
-      });
+      res = options.fetch
+        ? await fetchWith(options.fetch, current, timeoutMs)
+        : await fetchPinned(current, pin, timeoutMs);
     } catch {
-      throw new ImportError(`${current.hostname} did not answer. Try again, or skip this step.`);
-    } finally {
-      clearTimeout(timer);
+      throw unanswered();
     }
-    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
-      current = normaliseUrl(new URL(res.headers.get('location')!, current).toString());
+    const location = res.header('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      res.discard();
+      current = normaliseUrl(new URL(location, current).toString());
       continue;
     }
-    if (!res.ok) throw new ImportError(`${current.hostname} answered ${res.status}.`);
-    const type = res.headers.get('content-type') ?? '';
-    if (!/html|xml/i.test(type)) throw new ImportError('That address is not a web page.');
-    return { url: current, html: await readCapped(res) };
+    if (res.status < 200 || res.status > 299) {
+      res.discard();
+      throw new ImportError(`${current.hostname} answered ${res.status}.`);
+    }
+    if (!/html|xml/i.test(res.header('content-type') ?? '')) {
+      res.discard();
+      throw new ImportError('That address is not a web page.');
+    }
+    try {
+      return { url: current, html: await res.text() };
+    } catch {
+      throw unanswered();
+    }
   }
   throw new ImportError('Too many redirects.');
+}
+
+/**
+ * GET a page over a connection to `pin`, the address that was checked, and never to whatever the
+ * host name resolves to now. The host name is still used for the `Host` header and for TLS (SNI
+ * and the certificate check). Redirects are not followed. `timeoutMs` covers the whole exchange,
+ * body included.
+ */
+export function fetchPinned(url: URL, pin: Pin, timeoutMs: number): Promise<Answer> {
+  return new Promise((done, fail) => {
+    const secure = url.protocol === 'https:';
+    const hostname = url.hostname.replace(/^\[|\]$/g, '');
+    const requestOptions: RequestOptions = {
+      host: pin.address,
+      family: pin.family,
+      port: url.port || (secure ? 443 : 80),
+      path: `${url.pathname}${url.search}`,
+      method: 'GET',
+      // No connection reuse: each hop's socket goes to the address checked for that hop.
+      agent: false,
+      headers: { ...REQUEST_HEADERS, host: url.host, 'accept-encoding': 'gzip, br' },
+      // An IP literal has no name to send; the certificate is then checked against the address.
+      ...(secure && !isIP(hostname) ? { servername: hostname } : {}),
+    };
+    const req = (secure ? httpsRequest : httpRequest)(requestOptions, (res) => {
+      const header = (name: string) => {
+        const value = res.headers[name];
+        return Array.isArray(value) ? value[0] : value;
+      };
+      done({
+        status: res.statusCode ?? 0,
+        header,
+        discard: () => req.destroy(),
+        text: () =>
+          new Promise<string>((ok, bad) => {
+            const encoding = (header('content-encoding') ?? '').toLowerCase();
+            const body =
+              encoding === 'gzip' || encoding === 'x-gzip'
+                ? res.pipe(createGunzip())
+                : encoding === 'br'
+                  ? res.pipe(createBrotliDecompress())
+                  : res;
+            const chunks: Buffer[] = [];
+            let size = 0;
+            const finish = () => {
+              ok(Buffer.concat(chunks).toString('utf8'));
+              req.destroy();
+            };
+            body.on('data', (chunk: Buffer) => {
+              size += chunk.length;
+              chunks.push(chunk);
+              // The cap counts decoded bytes, so a small compressed body cannot expand past it.
+              if (size >= MAX_BYTES) finish();
+            });
+            body.on('end', finish);
+            body.on('error', bad);
+            res.on('error', bad);
+            // Cut off (the time limit, or the far end) before the body finished.
+            res.on('close', () => {
+              if (!res.complete) bad(new Error('closed'));
+            });
+          }),
+      });
+    });
+    const timer = setTimeout(() => req.destroy(new Error('timeout')), timeoutMs);
+    req.on('error', fail);
+    req.on('close', () => clearTimeout(timer));
+    req.end();
+  });
+}
+
+/** The same exchange through a replaced client (tests). */
+async function fetchWith(doFetch: typeof fetch, url: URL, timeoutMs: number): Promise<Answer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await doFetch(url, {
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: REQUEST_HEADERS,
+    });
+    return {
+      status: res.status,
+      header: (name) => res.headers.get(name) ?? undefined,
+      text: () => readCapped(res),
+      discard: () => void res.body?.cancel().catch(() => undefined),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function readCapped(res: Response): Promise<string> {
@@ -209,35 +332,13 @@ async function readCapped(res: Response): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** Loopback, private, link-local, CGNAT, multicast, reserved and their IPv6 equivalents. */
+/**
+ * True for any address the importer must not fetch: loopback, private, link-local, CGNAT,
+ * unique-local, multicast, unspecified and reserved ranges, in IPv4, IPv6 and IPv4 written as IPv6.
+ * Anything that is not an IP address counts as private.
+ */
 export function isPrivateAddress(ip: string): boolean {
-  const v4 = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
-  if (isIP(v4) === 4) {
-    const [a, b] = v4.split('.').map(Number) as [number, number];
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 198 && (b === 18 || b === 19)) ||
-      a >= 224
-    );
-  }
-  const v6 = ip.toLowerCase();
-  return (
-    v6 === '::' ||
-    v6 === '::1' ||
-    v6.startsWith('fc') ||
-    v6.startsWith('fd') ||
-    v6.startsWith('fe8') ||
-    v6.startsWith('fe9') ||
-    v6.startsWith('fea') ||
-    v6.startsWith('feb') ||
-    v6.startsWith('ff')
-  );
+  return isSpecialUseAddress(ip);
 }
 
 // ---------------------------------------------------------------------------- parsing
