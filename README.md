@@ -145,7 +145,7 @@ The booking system for the people running the business, at `/studio`:
 - **Services & staff:** what customers and AI assistants can book.
 - **Insights and agent log:** bookings per channel (Claude, ChatGPT, Studio…) and every agent call with its result.
 
-In local dev (`baseUrl` on localhost) the Studio opens without a login. Anywhere else, set a token: `createOpenBookingApp({ ..., studio: { token: process.env.STUDIO_TOKEN } })`. Without a token, the Studio API stays locked. Agent names are self-reported by clients, so use them for analytics only, never for access control.
+In local dev (`baseUrl` on localhost) the Studio opens without a login, for requests from your own machine only. Anywhere else, set a token: `createOpenBookingApp({ ..., studio: { token: process.env.STUDIO_TOKEN } })`. Without a token, the Studio API stays locked. That includes a deployed app whose `baseUrl` is still localhost (for example because `BASE_URL` was never set): `NODE_ENV=production`, a hosting platform's environment, or a request from another machine or through a proxy all keep it locked. Agent names are self-reported by clients, so use them for analytics only, never for access control.
 
 ## Hosted: many businesses, one deployment
 

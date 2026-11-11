@@ -85,7 +85,7 @@ const salon: MemoryProviderConfig = {
 const { app } = createOpenBookingApp({
   provider: new MemoryBookingProvider(salon),
   baseUrl: process.env.BASE_URL ?? 'http://localhost:3000',
-  studio: { token: process.env.STUDIO_TOKEN }, // Studio is open without a token on localhost only
+  studio: { token: process.env.STUDIO_TOKEN }, // without a token: open on your own machine only
 });
 await listen(app, { port: 3000 });
 ```
@@ -457,4 +457,5 @@ If you're an AI assistant adding OpenBooking to a project:
   terms (`user_confirmed: true`).
 - **Every hold and confirm needs a fresh `idempotency_key`** (8+ characters); reuse it only to
   retry the same request.
-- **Protect Studio with `STUDIO_TOKEN` anywhere but localhost.**
+- **Protect Studio with `STUDIO_TOKEN` anywhere but localhost.** Without a token, Studio answers
+  only requests from the machine it runs on, and stays locked on a host.

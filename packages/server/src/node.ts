@@ -7,7 +7,7 @@ export interface ListenOptions {
 
 /** Anything with a web-standard fetch handler, e.g. a Hono app. */
 export interface FetchApp {
-  fetch(request: Request): Response | Promise<Response>;
+  fetch(request: Request, env?: unknown): Response | Promise<Response>;
 }
 
 /** Start a Node HTTP server for an OpenBooking app. Resolves once listening. Port 0 = random. */
@@ -18,7 +18,8 @@ export function listen(
   return new Promise((resolve) => {
     const server = serve(
       {
-        fetch: (req: Request) => app.fetch(req),
+        // The bindings carry the socket: Studio's no-token mode checks who is really calling.
+        fetch: (req: Request, env: unknown) => app.fetch(req, env),
         port: options.port ?? 3000,
         hostname: options.hostname ?? '127.0.0.1',
       },

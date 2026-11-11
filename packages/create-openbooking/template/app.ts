@@ -25,7 +25,8 @@ export async function createApp() {
     ...(stores
       ? { serviceOptions: { idempotencyStore: stores.idempotency, guests: stores.guests } }
       : {}),
-    // Studio is open without a token on localhost only; set STUDIO_TOKEN anywhere else.
+    // Without a token Studio answers only your own machine (local development). On a host it
+    // stays locked until STUDIO_TOKEN is set, also when BASE_URL is missing.
     studio: {
       ...(env.STUDIO_TOKEN ? { token: env.STUDIO_TOKEN } : {}),
       ...(stores ? { activity: stores.activity } : {}),
