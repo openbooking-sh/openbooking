@@ -221,6 +221,15 @@ export const STUDIO_HTML = `<!doctype html>
         <button class="chip" data-status="cancelled">Cancelled</button>
         <button class="chip" data-status="expired">Expired</button>
       </div>
+      <div class="row" style="gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <label class="muted" for="source-filter">Source</label>
+        <select id="source-filter" style="height:34px;border:1px solid var(--line-2);border-radius:10px;padding:0 10px;background:var(--card)">
+          <option value="">All sources</option>
+          <option>ChatGPT</option><option>Gemini</option><option>Google</option><option>Claude</option><option>Perplexity</option><option>Copilot</option><option>Mistral</option><option>Other assistant</option>
+          <option>Website</option><option>Website embed</option><option>Phone</option><option>Walk-in</option><option>Other</option><option>Unknown</option>
+        </select>
+        <button class="btn btn-sm" id="bk-csv" type="button">Download CSV</button>
+      </div>
       <div class="card" style="padding:12px 8px"><div id="bookings"></div></div>
     </section>
     <section id="view-preshift" class="hidden"><div class="grid kpis" id="ps-kpis"></div><div class="card" style="padding:12px 8px;margin-top:14px"><div id="ps-list"></div></div><p class="muted" style="font-size:12.5px;padding:0 4px">Allergy notes are shown to staff only and are deleted shortly after the visit.</p></section>
@@ -231,6 +240,14 @@ export const STUDIO_HTML = `<!doctype html>
     </section>
     <section id="view-insights" class="hidden">
       <div class="grid kpis" id="kpis"></div>
+      <div class="card" style="margin-bottom:14px">
+        <h2>Bookings by source <span>when they were made</span></h2>
+        <div class="row" style="gap:10px;margin:8px 0 12px;flex-wrap:wrap">
+          <label class="muted" for="src-from">From</label><input type="date" id="src-from" style="height:34px;border:1px solid var(--line-2);border-radius:10px;padding:0 10px;background:var(--card)" />
+          <label class="muted" for="src-to">To</label><input type="date" id="src-to" style="height:34px;border:1px solid var(--line-2);border-radius:10px;padding:0 10px;background:var(--card)" />
+        </div>
+        <div id="sources"></div>
+      </div>
       <div class="grid two">
         <div class="card"><h2>Booking channels <span>where bookings came from</span></h2><div id="agents"></div></div>
         <div class="card"><h2>Latest agent calls</h2><div id="feed"></div></div>
@@ -254,6 +271,7 @@ export const STUDIO_HTML = `<!doctype html>
   var currency = '';
   var view = 'calendar';
   var statusFilter = '';
+  var sourceFilter = '';
   var calDate = null;
   var catalog = { offerings: [], resources: [] };
   var timer = null;
@@ -368,6 +386,22 @@ export const STUDIO_HTML = `<!doctype html>
     };
   });
 
+  $('source-filter').onchange = function () { sourceFilter = $('source-filter').value; loadBookings(); };
+  // The export carries the same filters as the list and only what the list shows.
+  $('bk-csv').onclick = function () {
+    var headers = token ? { authorization: 'Bearer ' + token } : {};
+    fetch(base + '/api/export/bookings.csv' + bookingQuery(), { headers: headers }).then(function (r) {
+      if (!r.ok) throw new Error('Could not download');
+      return r.blob();
+    }).then(function (blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'bookings.csv';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }).catch(function (e) { alert(e.message); });
+  };
+
   var TITLES = { calendar: 'Calendar', preshift: 'Pre-shift', bookings: 'Bookings', customers: 'Customers', services: 'Services & staff', insights: 'Insights', activity: 'Agent log', settings: 'Settings' };
   var VIEWS = ['calendar', 'preshift', 'bookings', 'customers', 'services', 'insights', 'activity', 'settings'];
   function go(v) {
@@ -465,14 +499,20 @@ export const STUDIO_HTML = `<!doctype html>
         '<td>' + (c ? esc(c.first_name + ' ' + c.last_name) : '<span class="muted">Not given yet</span>') + '</td>' +
         '<td class="hide-sm">' + esc(b.slot.offering.name) + (b.slot.party_size.total > 1 ? ' <span class="muted">· ' + b.slot.party_size.total + '</span>' : '') + '</td>' +
         '<td class="hide-sm">' + esc(b.slot.resource ? b.slot.resource.label : '') + '</td>' +
-        '<td>' + badge(b.status) + '</td><td>' + source(b.booked_via) + '</td></tr>';
+        '<td>' + badge(b.status) + '</td><td>' + source(b.source_label || 'Unknown') + '</td></tr>';
     });
     return h + '</tbody></table>';
   }
   function bindRows(el) { el.querySelectorAll('tr.click').forEach(function (tr) { tr.onclick = function () { openBooking(tr.getAttribute('data-id')); }; }); }
+  function bookingQuery() {
+    var q = [];
+    if (statusFilter) q.push('status=' + encodeURIComponent(statusFilter));
+    if (sourceFilter) q.push('source=' + encodeURIComponent(sourceFilter));
+    return q.length ? '?' + q.join('&') : '';
+  }
   function loadBookings() {
     $('subtitle').textContent = 'All bookings, newest first';
-    return api('/bookings' + (statusFilter ? '?status=' + statusFilter : '')).then(function (d) {
+    return api('/bookings' + bookingQuery()).then(function (d) {
       $('bookings').innerHTML = bookingTable(d.bookings); bindRows($('bookings'));
     }).catch(function (e) { if (e.message !== 'unauthorized') $('bookings').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
   }
@@ -567,9 +607,22 @@ export const STUDIO_HTML = `<!doctype html>
       $('agents').innerHTML = d.agents.length ? d.agents.map(function (a) {
         return '<div class="agent-row">' + source(a.agent) + '<div class="bar"><i style="width:' + Math.round((a.bookings / max) * 100) + '%"></i></div><div class="n">' + a.bookings + '<small>' + a.calls + ' calls</small></div></div>';
       }).join('') : '<div class="empty">No bookings yet.</div>';
-      return api('/activity?limit=8');
+      return loadSources().then(function () { return api('/activity?limit=8'); });
     }).then(function (a) { $('feed').innerHTML = feed(a.activity); });
   }
+  function loadSources() {
+    var q = [];
+    if ($('src-from').value) q.push('from=' + encodeURIComponent($('src-from').value));
+    if ($('src-to').value) q.push('to=' + encodeURIComponent($('src-to').value));
+    return api('/sources' + (q.length ? '?' + q.join('&') : '')).then(function (d) {
+      var max = Math.max.apply(null, [1].concat(d.sources.map(function (x) { return x.confirmed; })));
+      $('sources').innerHTML = d.sources.length ? d.sources.map(function (x) {
+        return '<div class="agent-row">' + source(x.source) + '<div class="bar"><i style="width:' + Math.round((x.confirmed / max) * 100) + '%"></i></div><div class="n">' + x.confirmed + '<small>' + x.cancelled + ' cancelled</small></div></div>';
+      }).join('') : '<div class="empty">No bookings in this period.</div>';
+    }).catch(function (e) { if (e.message !== 'unauthorized') $('sources').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
+  }
+  $('src-from').onchange = loadSources;
+  $('src-to').onchange = loadSources;
   function feed(list) {
     if (!list.length) return '<div class="empty">No agent calls yet.</div>';
     return list.map(function (e) {
@@ -611,7 +664,8 @@ export const STUDIO_HTML = `<!doctype html>
         ['Guest', guestSummary(d.guest)],
         ['Price', b.slot.price ? money(b.slot.price) : '<span class="muted">At venue</span>'],
         ['Deposit', b.slot.deposit ? money(b.slot.deposit.amount) + ' (' + esc(b.payment.status) + ')' : '<span class="muted">None</span>'],
-        ['Source', source(b.booked_via)],
+        ['Source', source(b.source_label || 'Unknown') + '<div class="muted" style="font-size:12px;margin-top:2px">' + esc(b.source_detail || '') + '. Assistant names are reported by the assistant itself and not verified.</div>'],
+        ['Credited to', source(b.booked_via)],
         ['Code', b.confirmation_code ? '<span class="mono">' + esc(b.confirmation_code) + '</span>' : '<span class="muted">-</span>'],
         ['Cancellation', esc(p.description)]
       ];
@@ -645,6 +699,7 @@ export const STUDIO_HTML = `<!doctype html>
       var isTables = cat.resources.some(function (r) { return r.capacity && r.capacity.max > 1; });
       openDrawer('<div class="drawer-head"><h1 style="font-size:20px">New booking</h1><button class="btn btn-sm" id="nb-close">Close</button></div>' +
         '<div class="muted" style="margin-bottom:18px">For phone calls and walk-ins.</div>' +
+        '<div class="field"><label for="nb-source">How did they book?</label><select id="nb-source"><option value="phone">Phone</option><option value="walk_in">Walk-in</option></select></div>' +
         (opts ? '<div class="field"><label for="nb-service">Service</label><select id="nb-service">' + opts + '</select></div>' : '') +
         '<div class="two-f"><div class="field"><label for="nb-date">Date</label><input type="date" id="nb-date" value="' + esc(calDate || '') + '" /></div>' +
         '<div class="field"><label for="nb-party">' + (isTables ? 'Guests' : 'People') + '</label><input type="number" id="nb-party" min="1" max="50" value="' + (isTables ? 2 : 1) + '" /></div></div>' +
@@ -687,7 +742,7 @@ export const STUDIO_HTML = `<!doctype html>
         if ($('nb-email').value.trim()) customer.email = $('nb-email').value.trim();
         $('nb-err').textContent = '';
         $('nb-save').disabled = true;
-        api('/bookings', { method: 'POST', body: JSON.stringify({ slot_id: chosen.slot_id, customer: customer, notes: $('nb-notes').value.trim() || undefined, dietary_notes: $('nb-diet').value.trim() || undefined, deposit_collected: $('nb-dep').checked }) })
+        api('/bookings', { method: 'POST', body: JSON.stringify({ slot_id: chosen.slot_id, customer: customer, notes: $('nb-notes').value.trim() || undefined, dietary_notes: $('nb-diet').value.trim() || undefined, deposit_collected: $('nb-dep').checked, source: $('nb-source').value }) })
           .then(function (r) {
             closeDrawer();
             calDate = localDate(r.booking.slot.start);

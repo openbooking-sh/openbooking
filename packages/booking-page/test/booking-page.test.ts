@@ -574,3 +574,70 @@ describe('confirm page (a booking an assistant is holding)', () => {
     expect(CONFIRM_SCRIPT).not.toContain('${');
   });
 });
+
+describe('booking source', () => {
+  const CHROME =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+
+  async function holdWith(
+    t: ReturnType<typeof setup>,
+    key: string,
+    headers: Record<string, string>,
+  ) {
+    const { body } = await t.get(`/api/availability?date=${DATE}&service=haircut&staff=maria`);
+    const hold = await t.post(
+      '/api/hold',
+      { slot_id: body.slots[0].slot_id, idempotency_key: key },
+      headers,
+    );
+    expect(hold.status).toBe(200);
+    return t.service.getBooking(hold.body.booking.booking_id);
+  }
+
+  it('records a visitor on the booking page as website, with the browser family only', async () => {
+    const t = setup();
+    const held = await holdWith(t, 'hold-key-1', { 'user-agent': CHROME });
+    expect(held.source).toEqual({ channel: 'website', agent: 'Chrome' });
+    // The raw User-Agent is not kept anywhere: not on the booking, not in the event log.
+    expect(JSON.stringify([held, t.events])).not.toContain('Mozilla');
+  });
+
+  it('records the business website embed as embed, and keeps it through confirm', async () => {
+    const t = setup();
+    const held = await holdWith(t, 'hold-key-2', {
+      'user-agent': CHROME,
+      'x-openbooking-agent': 'webmcp',
+      'x-openbooking-source': 'embed',
+    });
+    expect(held.source).toEqual({ channel: 'embed', agent: 'Chrome' });
+
+    const confirm = await t.post(
+      '/api/confirm',
+      {
+        booking_id: held.booking_id,
+        idempotency_key: 'confirm-key-2',
+        customer,
+        user_confirmed: true,
+      },
+      { 'user-agent': 'curl/8.4.0' },
+    );
+    expect(confirm.status).toBe(200);
+    expect((await t.service.getBooking(held.booking_id)).source).toEqual(held.source);
+  });
+
+  it('names an assistant that browses the page by its own User-Agent', async () => {
+    const t = setup();
+    const held = await holdWith(t, 'hold-key-3', { 'user-agent': 'Mozilla/5.0 ChatGPT-User/1.0' });
+    expect(held.source).toEqual({ channel: 'website', agent: 'ChatGPT' });
+  });
+
+  it('lets the embed script send the source header across origins, and sends it', async () => {
+    const t = setup();
+    const pre = await t.page.app.request('/api/hold', {
+      method: 'OPTIONS',
+      headers: { 'access-control-request-headers': 'content-type,x-openbooking-source' },
+    });
+    expect(pre.headers.get('access-control-allow-headers')).toContain('x-openbooking-source');
+    expect(await t.page.embed()).toContain("'x-openbooking-source': 'embed'");
+  });
+});

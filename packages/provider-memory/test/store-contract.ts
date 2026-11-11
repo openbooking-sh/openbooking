@@ -341,6 +341,34 @@ export function describeBookingStore(
       expect(await store.update('missing', NOW, (b) => b)).toBeUndefined();
     });
 
+    it('keeps the booking source through reads, updates and listing; old bookings have none', async () => {
+      const store = await factory();
+      const withSource = record({ id: 'src', resource: 'r1' });
+      withSource.booking.source = { channel: 'mcp', agent: 'claude-ai' };
+      await store.insertIfFree(withSource, NOW);
+      await store.insertIfFree(record({ id: 'old', resource: 'r2' }), NOW);
+
+      expect((await store.get('src', NOW))!.booking.source).toEqual({
+        channel: 'mcp',
+        agent: 'claude-ai',
+      });
+      const confirmed = await store.update('src', NOW, (b) => ({
+        ...b,
+        status: 'confirmed',
+        expires_at: null,
+      }));
+      expect(confirmed!.source).toEqual({ channel: 'mcp', agent: 'claude-ai' });
+      expect((await store.get('src', NOW))!.booking.source).toEqual({
+        channel: 'mcp',
+        agent: 'claude-ai',
+      });
+      expect((await store.get('old', NOW))!.booking.source).toBeUndefined();
+      const listed = await store.list({ venue_id: 'v1' }, NOW);
+      expect(listed.find((r) => r.booking.booking_id === 'src')!.booking.source?.channel).toBe(
+        'mcp',
+      );
+    });
+
     it('a late confirm cannot take a slot that was re-booked after its hold lapsed', async () => {
       const store = await factory();
       await store.insertIfFree(record({ id: 'first', expires: T0 - 2 * MIN }), NOW);

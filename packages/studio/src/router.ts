@@ -25,6 +25,7 @@ import {
 } from './guests';
 import { paymentSummary } from './payment-summary';
 import { BusinessSettingsSchema, type StudioSettingsAdapter } from './settings';
+import { bookingsCsv, countBySource, sourceDetail, sourceLabel } from './sources';
 import { computeOverview } from './stats';
 import { studioHtml, type StudioLegal } from './ui';
 
@@ -106,6 +107,8 @@ export function createStudio(options: StudioOptions): Studio {
     return bookings.map((b) => ({
       ...b,
       booked_via: via.get(b.booking_id) ?? null,
+      source_label: sourceLabel(b.source),
+      source_detail: sourceDetail(b.source),
       ...(flags.has(b.booking_id) ? { risk_flags: flags.get(b.booking_id) } : {}),
     }));
   };
@@ -115,6 +118,19 @@ export function createStudio(options: StudioOptions): Studio {
   const guests = service.guests;
   const allBookings = async () =>
     service.listBookings({ limit: 5000 }).catch(() => [] as Booking[]);
+
+  /** Bookings by ?status=, ?source= (a Studio source name such as ChatGPT or Phone) and ?limit=. */
+  const listFiltered = async (c: Context, defaultLimit = 200) => {
+    const status = c.req.query('status');
+    const source = c.req.query('source');
+    const limit = Number(c.req.query('limit') ?? defaultLimit);
+    const list = await service.listBookings({
+      ...(status ? { status: status.split(',') as Booking['status'][] } : {}),
+      // A source filter applies after listing, so take everything first and cut afterwards.
+      limit: source ? 5000 : limit,
+    });
+    return source ? list.filter((b) => sourceLabel(b.source) === source).slice(0, limit) : list;
+  };
 
   const html = studioHtml(options.legal);
   app.get('/', (c) => c.html(html));
@@ -175,12 +191,45 @@ export function createStudio(options: StudioOptions): Studio {
 
   app.get('/api/bookings', (c) =>
     json(c, async () => {
-      const status = c.req.query('status');
-      const list = await service.listBookings({
-        ...(status ? { status: status.split(',') as Booking['status'][] } : {}),
-        limit: Number(c.req.query('limit') ?? 200),
-      });
+      const list = await listFiltered(c);
       return { bookings: await withVia(list) };
+    }),
+  );
+
+  // The same filters as the list, as a spreadsheet. Only what the list shows: no contact details.
+  app.get('/api/export/bookings.csv', async (c) => {
+    if (!authorized(c))
+      return c.json({ error: { code: 'unauthorized', message: 'Unauthorized' } }, 401);
+    try {
+      await recorder.idle();
+      const [venue] = await service.listVenues();
+      const list = await runAsActor(STUDIO_ACTOR, () => listFiltered(c, 5000));
+      c.header('Content-Type', 'text/csv; charset=utf-8');
+      c.header('Content-Disposition', 'attachment; filename="bookings.csv"');
+      c.header('Cache-Control', 'no-store');
+      return c.body(bookingsCsv(list, venue?.timezone ?? 'UTC'));
+    } catch (e) {
+      const error = toErrorPayload(e);
+      return c.json({ error }, HTTP[error.code] ?? 500);
+    }
+  });
+
+  // Bookings per source for bookings created between two dates (venue-local, inclusive).
+  app.get('/api/sources', (c) =>
+    json(c, async () => {
+      const [venue] = await service.listVenues();
+      const { from, to } = c.req.query();
+      for (const d of [from, to]) {
+        if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          throw new BookingError('validation_error', 'from and to must be dates like 2026-11-01.');
+        }
+      }
+      const list = await service.listBookings({ limit: 5000 });
+      return {
+        from: from ?? null,
+        to: to ?? null,
+        sources: countBySource(list, venue?.timezone ?? 'UTC', { from, to }),
+      };
     }),
   );
 
@@ -500,15 +549,26 @@ export function createStudio(options: StudioOptions): Studio {
         dietary_notes?: string;
         deposit_collected?: boolean;
         idempotency_key?: string;
+        /** How the guest reached the venue: chosen by the staff member. */
+        source?: string;
       };
+      const channel = body.source ?? 'other';
+      if (!(['phone', 'walk_in', 'other'] as string[]).includes(channel)) {
+        throw new BookingError('validation_error', 'source must be phone, walk_in or other.');
+      }
       const key = body.idempotency_key ?? randomUUID();
-      const hold = await service.hold({
-        slot_id: body.slot_id ?? '',
-        idempotency_key: `${key}:hold`,
-        customer: body.customer as never,
-        ...(body.notes ? { notes: body.notes } : {}),
-        ...(body.dietary_notes ? { dietary_notes: body.dietary_notes } : {}),
-      });
+      // The source is fixed here, at the hold: the staff member's pick becomes the booking's channel.
+      const hold = await runAsActor(
+        { ...STUDIO_ACTOR, channel: channel as 'phone' | 'walk_in' | 'other' },
+        () =>
+          service.hold({
+            slot_id: body.slot_id ?? '',
+            idempotency_key: `${key}:hold`,
+            customer: body.customer as never,
+            ...(body.notes ? { notes: body.notes } : {}),
+            ...(body.dietary_notes ? { dietary_notes: body.dietary_notes } : {}),
+          }),
+      );
       const needsDeposit = hold.slot.deposit?.due === 'at_confirmation';
       if (needsDeposit && !body.deposit_collected) {
         await service.cancel({ booking_id: hold.booking_id, idempotency_key: `${key}:release` });

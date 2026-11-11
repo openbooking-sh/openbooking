@@ -4,6 +4,7 @@ export * from './provider';
 export * from './service';
 export * from './clock';
 export * from './actor';
+export * from './source';
 export * from './idempotency';
 export * from './cancellation';
 export * as time from './time';

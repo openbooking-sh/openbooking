@@ -3,7 +3,7 @@
  * attribution survive a "restart" (fresh provider + service on the same database).
  */
 import { describe, expect, it } from 'vitest';
-import { BookingService, ManualClock } from '@openbooking-sh/core';
+import { BookingService, ManualClock, runAsActor } from '@openbooking-sh/core';
 import { createDemoSalonProvider } from '@openbooking-sh/provider-memory';
 import { postgresStores, type Db } from '../src';
 import { freshDb, target } from './helpers';
@@ -65,6 +65,48 @@ describe(`demo salon on postgres (${target})`, () => {
     expect(replay.confirmation_code).toBe(confirmed.confirmation_code);
     const listed = await second.service.listBookings({ status: ['confirmed'] });
     expect(listed.map((b) => b.booking_id)).toEqual([hold.booking_id]);
+  });
+
+  it('keeps where a booking came from across a restart (old rows have none)', async () => {
+    const db = await freshDb();
+    const clock = new ManualClock(NOW);
+    const first = boot(db, clock);
+    const { slots } = await first.service.searchAvailability(SEARCH);
+    const hold = await runAsActor({ protocol: 'mcp', agent: 'Claude', client: 'claude-ai' }, () =>
+      first.service.hold({ slot_id: slots[0]!.slot_id, idempotency_key: 'src-hold-1' }),
+    );
+    expect(hold.source).toEqual({ channel: 'mcp', agent: 'claude-ai' });
+    // A different door confirms; the booking still came through the first.
+    await runAsActor({ protocol: 'web', agent: 'Booking page' }, () =>
+      first.service.confirm({
+        booking_id: hold.booking_id,
+        idempotency_key: 'src-confirm-1',
+        user_confirmed: true,
+        customer: CUSTOMER,
+      }),
+    );
+    // A row written before sources existed: no `source` key in its JSON.
+    const later = await first.service.searchAvailability({
+      ...SEARCH,
+      time_from: '16:00',
+      time_to: '16:00',
+    });
+    const plain = await first.service.hold({
+      slot_id: later.slots[0]!.slot_id,
+      idempotency_key: 'src-hold-2',
+    });
+    const { rows } = await db.query<{ data: Record<string, unknown> }>(
+      'select data from ob_bookings where booking_id = $1',
+      [plain.booking_id],
+    );
+    expect('source' in rows[0]!.data).toBe(false);
+
+    const second = boot(db, clock);
+    expect((await second.service.getBooking(hold.booking_id)).source).toEqual({
+      channel: 'mcp',
+      agent: 'claude-ai',
+    });
+    expect((await second.service.getBooking(plain.booking_id)).source).toBeUndefined();
   });
 
   it('announces each lapsed hold once across instances and restarts, never a confirmed one', async () => {

@@ -771,7 +771,14 @@ describe('analytics and operator notifications', () => {
     ]);
     expect(events[2]).toMatchObject({
       distinct_id: 'business:studio-nord',
-      properties: { channel: 'Booking page', protocol: 'web', business_id: 'studio-nord' },
+      properties: {
+        channel: 'Booking page',
+        protocol: 'web',
+        business_id: 'studio-nord',
+        // Only the channel and a coarse assistant group, never anything about the customer.
+        source_channel: 'website',
+        agent_group: null,
+      },
     });
 
     const slack = posted.filter((p) => p.url.includes('slack')).map((p) => p.body.text);

@@ -70,6 +70,7 @@ Its contract:
   - Replays return the **current** state of the booking.
 - **Hold TTL.** The engine computes `expires_at`; every hold response carries it. Reads present a past-expiry hold as `expired` even if the provider hasn't swept it yet.
 - **Expiry events.** Nothing runs when a hold lapses, so the engine announces it (`booking.expired`, operation `expire`) when something first notices: any read of the booking, or `service.sweepExpired()`, which a cron or timer should call so lapses nobody reads are still reported. A claim per booking (`expiryClaims`; hosted and `PostgresNotificationLog` use the email dedupe table) makes it at-most-once across instances. A crash between claim and delivery loses the event rather than repeating it. A hold confirmed or cancelled in time never emits. The event has no actor.
+- **Booking source.** The engine stamps `source` (channel plus the assistant's self-reported name, from the current actor) on the hold and passes it to the provider, which stores it on the booking. Later steps never change it. It is informational: the slot's price, deposit and terms are fixed by the slot id, so no channel can change what a guest pays. Studio shows, filters, counts and exports it.
 - **Consent.** `confirm` requires `user_confirmed === true`, as does cancelling a _confirmed_ booking. Releasing a hold doesn't need it.
 - **Prerequisites.**
   - Customer details (name plus email or phone) are required before confirmation.

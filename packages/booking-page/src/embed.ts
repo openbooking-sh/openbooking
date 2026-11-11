@@ -136,8 +136,8 @@ const EMBED_SCRIPT = String.raw`/* OpenBooking embed: https://openbooking.sh */
   // Draft API (W3C WebML CG); feature-detected and failure-tolerant.
   function call(path, body) {
     var init = body
-      ? { method: 'POST', headers: { 'content-type': 'application/json', 'x-openbooking-agent': 'webmcp' }, body: JSON.stringify(body) }
-      : { headers: { 'x-openbooking-agent': 'webmcp' } };
+      ? { method: 'POST', headers: { 'content-type': 'application/json', 'x-openbooking-agent': 'webmcp', 'x-openbooking-source': 'embed' }, body: JSON.stringify(body) }
+      : { headers: { 'x-openbooking-agent': 'webmcp', 'x-openbooking-source': 'embed' } };
     return fetch(C.api_url + path, init).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok) { var err = new Error((j.error && j.error.message) || 'Request failed'); err.payload = j.error; throw err; }

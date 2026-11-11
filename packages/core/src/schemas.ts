@@ -9,6 +9,7 @@
 import * as z from 'zod';
 import { DIETARY_NOTE_MAX } from './guests';
 import { VenueKnowledgeSchema } from './knowledge';
+import { BookingSourceSchema } from './source';
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -324,6 +325,12 @@ export const BookingSchema = z.object({
       refund: MoneySchema.nullable(),
     })
     .nullable(),
+  /**
+   * EXTENSION: where the booking came from, recorded when the hold is created and kept for life.
+   * Absent on bookings made before this existed ("unknown"). Informational only: it never
+   * changes price, deposit or cancellation terms.
+   */
+  source: BookingSourceSchema.optional(),
   created_at: DateTimeSchema,
   updated_at: DateTimeSchema,
   confirmed_at: DateTimeSchema.nullable(),
