@@ -15,8 +15,14 @@ import { BookingService } from '@openbooking-sh/core';
 
 const service = new BookingService({ provider: myProvider });
 
-const { slots } = await service.searchAvailability({ date: '2026-10-09', party_size: { total: 1 } });
-const hold = await service.hold({ slot_id: slots[0].slot_id, idempotency_key: crypto.randomUUID() });
+const { slots } = await service.searchAvailability({
+  date: '2026-10-09',
+  party_size: { total: 1 },
+});
+const hold = await service.hold({
+  slot_id: slots[0].slot_id,
+  idempotency_key: crypto.randomUUID(),
+});
 const booking = await service.confirm({
   booking_id: hold.booking_id,
   idempotency_key: crypto.randomUUID(),

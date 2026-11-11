@@ -11,7 +11,12 @@ npm install @openbooking-sh/google-calendar
 ## Usage
 
 ```ts
-import { googleAuthUrl, exchangeCode, attachCalendarSync, googleBusySource } from '@openbooking-sh/google-calendar';
+import {
+  googleAuthUrl,
+  exchangeCode,
+  attachCalendarSync,
+  googleBusySource,
+} from '@openbooking-sh/google-calendar';
 ```
 
 See `@openbooking-sh/hosted` for a complete wiring.
