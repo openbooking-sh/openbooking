@@ -13,3 +13,4 @@ export * from './payments';
 export * from './guard';
 export * from './guests';
 export * from './knowledge';
+export * from './waitlist';

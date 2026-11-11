@@ -415,15 +415,19 @@ export class BookingService {
   // Mutations
   // -------------------------------------------------------------------------
 
-  /** Reserve a slot for `holdTtlSeconds`. Returns a booking in status `held` with `expires_at`. */
-  async hold(input: HoldInput): Promise<Booking> {
+  /**
+   * Reserve a slot for `holdTtlSeconds` (or `options.ttlSeconds`, for callers such as the waitlist
+   * that hold for a different window). Returns a booking in status `held` with `expires_at`.
+   */
+  async hold(input: HoldInput, options: { ttlSeconds?: number } = {}): Promise<Booking> {
     return this.#track('hold', async (meta) => {
       // The dietary note stays out of `req`: it is fingerprinted and stored with the idempotency
       // record, which outlives the note.
       const { idempotency_key, dietary_notes, ...req } = parse(HoldInputSchema, input, 'hold_slot');
       return this.#idempotent(meta, idempotency_key, 'hold', req, async (ctx) => {
         await this.#checkHoldLimit();
-        const expires_at = new Date(ctx.now.getTime() + this.holdTtlSeconds * 1000);
+        const ttl = options.ttlSeconds ?? this.holdTtlSeconds;
+        const expires_at = new Date(ctx.now.getTime() + ttl * 1000);
         const booking = await this.provider.createHold(
           {
             slot_id: req.slot_id,
