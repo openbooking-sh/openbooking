@@ -92,7 +92,7 @@ const salon: MemoryProviderConfig = {
 const { app } = createOpenBookingApp({
   provider: new MemoryBookingProvider(salon),
   baseUrl: process.env.BASE_URL ?? 'http://localhost:3000',
-  studio: { token: process.env.STUDIO_TOKEN }, // Studio is open without a token on localhost only
+  studio: { token: process.env.STUDIO_TOKEN }, // without a token: open on your own machine only
 });
 await listen(app, { port: 3000 });
 ```
@@ -466,7 +466,8 @@ If you're an AI assistant adding OpenBooking to a project:
   terms (`user_confirmed: true`).
 - **Every hold and confirm needs a fresh `idempotency_key`** (8+ characters); reuse it only to
   retry the same request.
-- **Protect Studio with `STUDIO_TOKEN` anywhere but localhost.**
+- **Protect Studio with `STUDIO_TOKEN` anywhere but localhost.** Without a token, Studio answers
+  only requests from the machine it runs on, and stays locked on a host.
 
 ---
 
@@ -619,7 +620,7 @@ The booking system for the people running the business, at `/studio`:
 - **Services & staff:** what customers and AI assistants can book.
 - **Insights and agent log:** bookings per channel (Claude, ChatGPT, Studio…) and every agent call with its result.
 
-In local dev (`baseUrl` on localhost) the Studio opens without a login. Anywhere else, set a token: `createOpenBookingApp({ ..., studio: { token: process.env.STUDIO_TOKEN } })`. Without a token, the Studio API stays locked. Agent names are self-reported by clients, so use them for analytics only, never for access control.
+In local dev (`baseUrl` on localhost) the Studio opens without a login, for requests from your own machine only. Anywhere else, set a token: `createOpenBookingApp({ ..., studio: { token: process.env.STUDIO_TOKEN } })`. Without a token, the Studio API stays locked. That includes a deployed app whose `baseUrl` is still localhost (for example because `BASE_URL` was never set): `NODE_ENV=production`, a hosting platform's environment, or a request from another machine or through a proxy all keep it locked. Agent names are self-reported by clients, so use them for analytics only, never for access control.
 
 ## Hosted: many businesses, one deployment
 

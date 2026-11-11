@@ -38,6 +38,7 @@ import {
 import { hostHeaderValidation, originValidation } from '@modelcontextprotocol/hono';
 import type { McpHttpHandler } from '@modelcontextprotocol/server';
 import { Hono } from 'hono';
+import { isFromThisMachine, studioAccessWithoutToken } from './studio-access';
 
 export interface OpenBookingServerOptions {
   /** The booking system. Ignored if `service` is given. */
@@ -107,8 +108,10 @@ export interface OpenBookingServerOptions {
    */
   allowedHosts?: string[] | false;
   /**
-   * OpenBooking Studio dashboard at `studioPath` (default /studio). Requires `token` unless
-   * baseUrl is localhost (local development). `activity` makes its log durable (e.g. Postgres).
+   * OpenBooking Studio dashboard at `studioPath` (default /studio). Requires `token` unless this is
+   * local development: baseUrl is localhost, nothing says the app is deployed (NODE_ENV=production
+   * or a hosting platform's variable), and the request comes from this machine. `activity` makes
+   * its log durable (e.g. Postgres).
    * Pass `false` to disable.
    */
   studio?: { token?: string; path?: string; activity?: ActivityLog } | false;
@@ -361,15 +364,40 @@ export function createOpenBookingApp(options: OpenBookingServerOptions): OpenBoo
   let studio: Studio | undefined;
   if (options.studio !== false) {
     const studioPath = options.studio?.path ?? '/studio';
-    const local = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(baseUrl).hostname);
     const token = options.studio?.token;
     const activity = options.studio?.activity;
+    const access = token ? { open: false as const } : studioAccessWithoutToken(baseUrl);
+    if (!access.open && access.reason) {
+      // A localhost baseUrl on a host usually means BASE_URL was never set. Say so, or the owner
+      // only sees a locked Studio.
+      console.warn(
+        `[openbooking] Studio is locked: baseUrl is ${baseUrl}, but ${access.reason}. ` +
+          'Set a Studio token (e.g. STUDIO_TOKEN) and the public baseUrl (e.g. BASE_URL).',
+      );
+    }
     studio = createStudio({
       service,
       name,
       ...(activity ? { activity } : {}),
-      ...(token ? { token } : { insecureNoAuth: local }),
+      ...(token ? { token } : { insecureNoAuth: access.open }),
     });
+    if (access.open) {
+      // Open for local development, so only for callers on this machine. Registered before the
+      // Studio routes: it answers first.
+      app.use(`${studioPath}/api/*`, async (c, next) => {
+        if (isFromThisMachine(c.req.raw, c.env)) return next();
+        return c.json(
+          {
+            error: {
+              code: 'unauthorized',
+              message:
+                'Studio is open without a token only from this machine. Start the server with a Studio token (e.g. STUDIO_TOKEN) to use it from elsewhere.',
+            },
+          },
+          401,
+        );
+      });
+    }
     app.get(`${studioPath}/`, (c) => c.redirect(studioPath));
     app.route(studioPath, studio.app);
   }
