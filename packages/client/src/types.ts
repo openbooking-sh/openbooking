@@ -45,6 +45,45 @@ export interface Customer {
 
 export type BookingStatus = 'held' | 'confirmed' | 'cancelled' | 'expired';
 
+export type DietaryOption =
+  'vegetarian' | 'vegan' | 'pescatarian' | 'gluten_free' | 'dairy_free' | 'halal' | 'kosher';
+
+export type AccessibilityFeature =
+  | 'step_free_entrance'
+  | 'step_free_interior'
+  | 'accessible_toilet'
+  | 'lift'
+  | 'wheelchair_accessible_tables'
+  | 'accessible_parking'
+  | 'hearing_loop'
+  | 'assistance_dogs_welcome';
+
+export interface VenueKnowledge {
+  cuisine?: string[];
+  about?: string;
+  menu?: {
+    url?: string;
+    items?: Array<{
+      name: string;
+      description?: string;
+      /** Minor units. */
+      price?: { amount: number; currency: string };
+      /** Options the dish is offered as. Not an allergen guarantee. */
+      dietary: DietaryOption[];
+    }>;
+  };
+  dietary?: { options: DietaryOption[]; notes?: string };
+  atmosphere?: string;
+  accessibility?: { features: AccessibilityFeature[]; notes?: string };
+  parking?: string;
+  dress_code?: string;
+  /** BCP 47 tags of the languages staff speak. */
+  languages?: string[];
+  children?: string;
+  /** Tell the guest to confirm allergies and health needs with the venue. */
+  safety_note: string;
+}
+
 export interface Info {
   venue: {
     name: string;
@@ -63,6 +102,8 @@ export interface Info {
     /** Per person. `null` = priced at the venue. */
     price: Money | null;
   }>;
+  /** Facts the business gave about the place. Facts, not guarantees: confirm allergies with the venue. */
+  knowledge?: VenueKnowledge;
   staff: Array<{ id: string; name: string }>;
   profile: { category?: string; email?: string; website?: string };
   /** The public booking page, for people. */

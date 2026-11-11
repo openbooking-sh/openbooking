@@ -46,6 +46,48 @@ export function demoRestaurantVenue(): VenueConfig {
       },
       phone_number: '+4700000000',
       description: 'Fictional neighbourhood bistro used for OpenBooking demos.',
+      knowledge: {
+        cuisine: ['Modern Nordic', 'Bistro'],
+        about:
+          'A small neighbourhood bistro with a short seasonal menu and a tasting menu on Fridays and Saturdays.',
+        menu: {
+          url: 'https://example.com/demo-bistro/menu',
+          items: [
+            {
+              name: 'Beetroot and goat cheese salad',
+              description: 'Roasted beetroot, hazelnuts, pickled shallot.',
+              price: { amount: 14500, currency: 'NOK' },
+              dietary: ['vegetarian'],
+            },
+            {
+              name: 'Pan-fried cod',
+              description: 'Cod, brown butter, new potatoes, seasonal greens.',
+              price: { amount: 28500, currency: 'NOK' },
+              dietary: ['pescatarian'],
+            },
+            {
+              name: 'Celeriac steak',
+              description: 'Slow-roasted celeriac, mushroom jus, herb oil.',
+              price: { amount: 24500, currency: 'NOK' },
+              dietary: ['vegetarian', 'vegan'],
+            },
+          ],
+        },
+        dietary: {
+          options: ['vegetarian', 'vegan', 'gluten_free'],
+          notes: 'Vegan and gluten-free versions of most dishes on request; tell us when you book.',
+        },
+        atmosphere: 'Relaxed and candle-lit, with music at a low volume. Outdoor tables in summer.',
+        accessibility: {
+          features: ['step_free_entrance', 'accessible_toilet'],
+          notes: 'The private room is up one flight of stairs.',
+        },
+        parking:
+          'No parking at the restaurant. Public car park two minutes away on Eksempelgata 12.',
+        dress_code: 'Casual',
+        languages: ['nb', 'en'],
+        children: 'Children are welcome. High chairs and a kids menu are available.',
+      },
     },
     currency: 'NOK',
     resources: [

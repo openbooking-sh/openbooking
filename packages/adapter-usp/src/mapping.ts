@@ -10,6 +10,7 @@ import {
   type Offering,
   type Resource,
   type Slot,
+  knowledgeForAgents,
   type Venue,
   type VenueInfo,
 } from '@openbooking-sh/core';
@@ -68,6 +69,7 @@ export function toService(offering: Offering, ctx: ServiceContext) {
   const staff = staffOf(resources);
   const type = ctx.details?.type ?? (tables.length ? 'reservation' : 'appointment');
   const description = ctx.details?.description ?? offering.description;
+  const knowledge = knowledgeForAgents(venue.knowledge);
 
   // USP forces `free` whenever nothing is payable, so a service priced at the venue (or at an
   // unknown price) must say "payment at service" instead of pretending to be free. OpenBooking has
@@ -126,6 +128,9 @@ export function toService(offering: Offering, ctx: ServiceContext) {
       requires_payment: true,
       payment_timing: 'at_service',
     },
+    // USP has no field for venue facts. `metadata` is its open, pass-through object for
+    // business-defined data, so the facts go there under our namespace, with the safety note.
+    ...(knowledge ? { metadata: { 'sh.openbooking.venue_knowledge': knowledge } } : {}),
     status: 'active',
   };
 }
