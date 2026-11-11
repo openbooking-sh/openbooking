@@ -550,15 +550,21 @@ export class BookingService {
             }
           }
 
-          const confirmed = await this.provider.confirmHold(
-            {
-              booking_id: booking.booking_id,
-              customer,
-              payment_token: req.payment_token ?? null,
-              ...(payment ? { payment } : {}),
-            },
-            ctx,
-          );
+          const confirmed = await this.provider
+            .confirmHold(
+              {
+                booking_id: booking.booking_id,
+                customer,
+                payment_token: req.payment_token ?? null,
+                ...(payment ? { payment } : {}),
+              },
+              ctx,
+            )
+            .catch(async (cause: unknown) => {
+              // The customer has paid: if the booking is now out of reach, say so and refund here.
+              if (payment) await this.#refundLostDeposit(booking, payment, cause);
+              throw cause;
+            });
           await this.#settleGuard(confirmed, customer, ctx);
           return this.#observe(confirmed);
         });
@@ -836,6 +842,59 @@ export class BookingService {
         { cause },
       );
     }
+  }
+
+  /**
+   * The deposit was paid and confirming then failed. If the booking can no longer happen, refund
+   * now and throw an error that says so, instead of leaving the money until a retry or a webhook
+   * that may never come. Whether it can still happen is read from the booking as it is now, never
+   * from the error: a confirm that timed out may have gone through, and a hold that is still live
+   * can still be confirmed with this payment. In those cases this returns and nothing is refunded.
+   */
+  async #refundLostDeposit(
+    booking: Booking,
+    payment: { reference: string; amount: Money },
+    cause: unknown,
+  ): Promise<void> {
+    const current = await this.#load(booking.booking_id).catch(() => undefined);
+    const lost =
+      current?.status === 'expired' ||
+      (current?.status === 'cancelled' && current.payment.status !== 'paid');
+    if (!lost) return;
+    const what = `The booking was not made: the hold on ${booking.booking_id} ended before it could be confirmed.`;
+    const deposit = `deposit of ${formatMoney(payment.amount)}`;
+    const again =
+      'To book another time, start again with search_availability and hold_slot; that booking needs a new payment.';
+    try {
+      // The same key as the refund on a retry and from the webhook: the provider pays it once.
+      await this.payments!.refund({
+        ...payment,
+        idempotency_key: `refund:${booking.booking_id}`,
+      });
+    } catch {
+      // For the business: the booking and payment ids only, never who the customer is.
+      console.error(
+        `[openbooking] Booking ${booking.booking_id} was not made, and refunding its deposit (payment ${payment.reference}) failed. Refund it by hand if it does not go through.`,
+      );
+      throw new BookingError(
+        'refund_failed',
+        `${what} The ${deposit} has not gone back yet: it will be refunded.`,
+        {
+          suggested_next_action: `Tell the user plainly that the booking was not made and that their ${deposit} will be refunded: the automatic refund did not go through yet and the business has been told. Call confirm_booking again with the same idempotency_key to retry the refund. ${again}`,
+          details: { refund: payment.amount, refunded: false },
+          cause,
+        },
+      );
+    }
+    throw new BookingError(
+      current.status === 'expired' ? 'hold_expired' : 'invalid_state',
+      `${what} The ${deposit} is being refunded.`,
+      {
+        suggested_next_action: `Tell the user plainly that the booking was not made and that their ${deposit} is being refunded. Do not use this payment_token again. ${again}`,
+        details: { refund: payment.amount, refunded: true },
+        cause,
+      },
+    );
   }
 
   /** The customer paid after the hold ran out: give the money back instead of keeping it. */

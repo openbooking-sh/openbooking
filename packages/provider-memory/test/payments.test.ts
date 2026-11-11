@@ -21,6 +21,8 @@ class FakePayments implements PaymentProvider {
   sessions = new Map<string, PaymentVerification>();
   refunds: RefundRequest[] = [];
   failRefunds = 0;
+  /** Runs once, while the engine is checking a payment: what happens in the meantime. */
+  duringVerify: (() => Promise<void>) | undefined;
 
   async createCheckout(req: CheckoutRequest): Promise<Checkout> {
     const token = `cs_${req.idempotency_key}`;
@@ -36,6 +38,9 @@ class FakePayments implements PaymentProvider {
     this.sessions.set(token, { ...this.sessions.get(token)!, paid: true, ...over });
   }
   async verify(token: string): Promise<PaymentVerification> {
+    const meanwhile = this.duringVerify;
+    this.duringVerify = undefined;
+    await meanwhile?.();
     return (
       this.sessions.get(token) ?? {
         paid: false,
@@ -235,6 +240,138 @@ describe('deposits through a payment provider', () => {
       idempotency_key: key(),
       user_confirmed: true,
     });
+    expect(payments.refunds).toEqual([]);
+  });
+});
+
+describe('a deposit that was paid for a booking that then cannot be confirmed', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Hold, ask for the payment page and pay it. The booking is not confirmed yet. */
+  async function paidHold(service: BookingService, payments: FakePayments) {
+    const hold = await holdDepositSlot(service);
+    const confirmWith = (idempotency_key: string, payment_token?: string) =>
+      service
+        .confirm({
+          booking_id: hold.booking_id,
+          idempotency_key,
+          user_confirmed: true,
+          customer: CUSTOMER,
+          ...(payment_token ? { payment_token } : {}),
+        })
+        .catch((e: BookingError) => e);
+    const asked = (await confirmWith(key())) as BookingError;
+    const token = (asked.details as { payment_token: string }).payment_token;
+    payments.pay(token);
+    return { hold, token, confirm: (k: string) => confirmWith(k, token) };
+  }
+
+  /** While the payment is being checked the hold runs out and someone else takes the time. */
+  function loseSlotDuringVerify({ clock, payments, service }: ReturnType<typeof setup>) {
+    payments.duringVerify = async () => {
+      clock.set(new Date(clock.now().getTime() + 11 * 60_000).toISOString());
+      await holdDepositSlot(service);
+    };
+  }
+
+  it('refunds in the same call and says plainly that nothing was booked', async () => {
+    const s = setup();
+    const { hold, confirm } = await paidHold(s.service, s.payments);
+    loseSlotDuringVerify(s);
+
+    const err = (await confirm(key())) as BookingError;
+    expect(err.code).toBe('hold_expired');
+    expect(err.message).toMatch(/not made/);
+    expect(err.message).toMatch(/300\.00 NOK is being refunded/);
+    expect(err.suggested_next_action).toMatch(/not made/);
+    expect(err.suggested_next_action).toMatch(/refunded/);
+    expect(s.payments.refunds).toEqual([
+      {
+        reference: `pi_${hold.booking_id}`,
+        amount: { amount: 30000, currency: 'NOK' },
+        idempotency_key: `refund:${hold.booking_id}`,
+      },
+    ]);
+    expect((await s.service.getBooking(hold.booking_id)).status).toBe('expired');
+  });
+
+  it('never refunds twice: a retry with the same key and the webhook reuse the one refund key', async () => {
+    const s = setup();
+    const { hold, token, confirm } = await paidHold(s.service, s.payments);
+    loseSlotDuringVerify(s);
+    const sameKey = key();
+
+    await confirm(sameKey);
+    expect(s.payments.refunds).toHaveLength(1);
+
+    expect(((await confirm(sameKey)) as BookingError).code).toBe('hold_expired');
+    expect(await s.service.reconcilePayment(hold.booking_id, token)).toBe('refunded');
+    // Every later attempt carries the first refund's key, which the payment provider pays once.
+    for (const refund of s.payments.refunds) expect(refund).toEqual(s.payments.refunds[0]);
+  });
+
+  it('says so, and tells the business, when the refund itself fails; a retry tries again', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup();
+    const { hold, confirm } = await paidHold(s.service, s.payments);
+    loseSlotDuringVerify(s);
+    s.payments.failRefunds = 1;
+    const sameKey = key();
+
+    const err = (await confirm(sameKey)) as BookingError;
+    expect(err.code).toBe('refund_failed');
+    expect(err.retryable).toBe(true);
+    expect(err.message).toMatch(/not made/);
+    expect(err.message).toMatch(/will be refunded/);
+    expect(err.suggested_next_action).toMatch(/business has been told/);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]![0])).toContain(hold.booking_id);
+    expect(JSON.stringify(error.mock.calls)).not.toContain(CUSTOMER.email);
+    expect(JSON.stringify(error.mock.calls)).not.toContain(CUSTOMER.last_name);
+
+    expect(((await confirm(sameKey)) as BookingError).code).toBe('hold_expired');
+    expect(s.payments.refunds).toHaveLength(2);
+    expect(s.payments.refunds[1]).toEqual(s.payments.refunds[0]);
+  });
+
+  /** A service whose booking system fails `confirmHold` the way `fail` says, until switched off. */
+  function flaky(fail: 'after_confirming' | 'before_confirming') {
+    const payments = new FakePayments();
+    const provider = createDemoSalonProvider();
+    const confirmHold = provider.confirmHold.bind(provider);
+    const state = { failing: true };
+    provider.confirmHold = async (req, ctx) => {
+      if (state.failing && fail === 'before_confirming') throw new Error('database is down');
+      const confirmed = await confirmHold(req, ctx);
+      if (state.failing) throw new Error('timed out');
+      return confirmed;
+    };
+    const service = new BookingService({ provider, clock: new ManualClock(NOW), payments });
+    return { payments, service, state };
+  }
+
+  it('never refunds a confirm that went through, even when the call reported a failure', async () => {
+    const { payments, service, state } = flaky('after_confirming');
+    const { hold, confirm } = await paidHold(service, payments);
+
+    expect(((await confirm('lost-answer')) as BookingError).code).toBe('provider_error');
+    expect(payments.refunds).toEqual([]);
+    expect((await service.getBooking(hold.booking_id)).status).toBe('confirmed');
+
+    state.failing = false;
+    expect(await confirm('lost-answer')).toMatchObject({ status: 'confirmed' });
+    expect(payments.refunds).toEqual([]);
+  });
+
+  it('keeps the money while the hold is still live: the booking can still be confirmed', async () => {
+    const { payments, service, state } = flaky('before_confirming');
+    const { confirm } = await paidHold(service, payments);
+
+    expect(((await confirm('transient-blip')) as BookingError).code).toBe('provider_error');
+    expect(payments.refunds).toEqual([]);
+
+    state.failing = false;
+    expect(await confirm('transient-blip')).toMatchObject({ status: 'confirmed' });
     expect(payments.refunds).toEqual([]);
   });
 });
