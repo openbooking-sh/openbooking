@@ -5,6 +5,7 @@ import {
   evaluateBookingCancellation,
   formatMoney,
   isBookingError,
+  knowledgeForAgents,
   runAsActor,
   toErrorPayload,
   userAgentFamily,
@@ -250,6 +251,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
   app.get('/api/info', (c) =>
     json(c, async () => {
       const [{ venue, offerings, staff }, prof] = await Promise.all([catalog(), profile()]);
+      const knowledge = knowledgeForAgents(venue.knowledge);
       return {
         venue: {
           name: venue.name,
@@ -266,6 +268,7 @@ export function createBookingPage(options: BookingPageOptions): BookingPage {
           duration_minutes: o.duration_minutes,
           price: o.price_per_person,
         })),
+        ...(knowledge ? { knowledge } : {}),
         staff,
         profile: prof,
         booking_page: pageUrl,
