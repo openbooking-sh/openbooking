@@ -7,6 +7,7 @@
  * Anything without a UCP equivalent is marked `EXTENSION:` and listed in docs/SPEC-NOTES.md.
  */
 import * as z from 'zod';
+import { DIETARY_NOTE_MAX } from './guests';
 import { VenueKnowledgeSchema } from './knowledge';
 import { BookingSourceSchema } from './source';
 
@@ -349,6 +350,11 @@ export const HoldInputSchema = z.object({
   idempotency_key: IdempotencyKeySchema,
   customer: CustomerSchema.optional(),
   notes: z.string().max(500).optional(),
+  /**
+   * Allergies or dietary needs the guest said they have. Optional. Kept apart from the booking,
+   * shown to staff only, and deleted shortly after the visit (see GuestStore).
+   */
+  dietary_notes: z.string().max(DIETARY_NOTE_MAX).optional(),
 });
 export type HoldInput = z.input<typeof HoldInputSchema>;
 
@@ -368,10 +374,15 @@ export const UpdateInputSchema = z
     idempotency_key: IdempotencyKeySchema,
     customer: CustomerSchema.optional(),
     notes: z.string().max(500).nullable().optional(),
+    /** Replaces the dietary note; null or empty removes it. */
+    dietary_notes: z.string().max(DIETARY_NOTE_MAX).nullable().optional(),
   })
-  .refine((u) => u.customer !== undefined || u.notes !== undefined, {
-    message: 'Nothing to update: provide customer and/or notes',
-  });
+  .refine(
+    (u) => u.customer !== undefined || u.notes !== undefined || u.dietary_notes !== undefined,
+    {
+      message: 'Nothing to update: provide customer and/or notes',
+    },
+  );
 export type UpdateInput = z.input<typeof UpdateInputSchema>;
 
 export const CancelInputSchema = z.object({

@@ -288,12 +288,46 @@ email addresses ignore case.
 - **Self-hosted servers** can offer the same by passing `dataRights` to `createStudio`; the
   stores' `anonymize()` does the work.
 
+### Guest profiles and allergy notes
+
+Studio keeps two kinds of staff-only data apart from the bookings themselves. Neither is returned by
+the booking page API, MCP, UCP, USP or A2A, and neither goes into emails, webhook events, activity
+entries, analytics, Slack or logs (a test scans every public response, the emails and the events for
+a sentinel string).
+
+- **Allergy and dietary notes** (health data under GDPR art. 9). A guest types them on the booking
+  page, an AI assistant passes `dietary_notes` to `hold_slot` (its description says: optional, only
+  what the guest said, never guess), or staff add them in Studio. At most 300 characters, stored on
+  the booking id only, shown to staff on the booking and in the pre-shift summary.
+  - **Deleted** `dietaryNoteRetentionDays` after the visit ends (default 1) by the daily purge, so it
+    can take up to one cron period longer; at once when the booking is cancelled; with the customer's
+    erasure (an upcoming booking keeps its note, like the booking); and with the account.
+  - Allergy notes are in the customer's data export, because they are about that customer.
+- **Guest profile**: tags, staff notes and a VIP flag per guest, edited in the booking drawer or
+  under Customers. The guest is a SHA-256 of the business id and the guest's email (or, without one,
+  phone digits), so the key differs for every business and the profile table holds no contact
+  detail. It is pseudonymous, not anonymous (an address can be guessed and hashed), so profiles are
+  personal data: in the customer export, removed on erasure, removed when the retention purge
+  anonymises the last booking with that guest's details, and with the account. Visit count and last
+  visit come from the business's own bookings.
+- **Pre-shift summary**: `GET /studio/api/preshift?date=YYYY-MM-DD` (default today at the venue):
+  covers, party sizes, VIPs, first-time versus returning guests, and per booking the allergy note,
+  tags and staff notes.
+- **Storage.** Postgres migration 8 (`ob_dietary_notes`, `ob_guest_profiles`, row level security on,
+  every query names the business). Pass `postgresStores(db).guests` as `guests` to `createHostedApp`
+  (the Vercel entry does); without it they live in memory and are lost on restart.
+- **Not reached**: Google Calendar events and emails never contain them, so there is nothing to
+  clean there. Staff who copy an allergy elsewhere are outside OpenBooking's storage.
+- **Privacy policy and DPA.** The wording (art. 9 consent or its legal basis, retention periods, the
+  per-business pseudonymous key) must be reviewed by the lawyer (OPE-29) before real businesses use
+  this.
+
 ### The owner's own data
 
 Under **Settings, Your account** the owner can download everything stored about the business
-(account, settings and every booking, as JSON; never the password hash or Google tokens) and close
+(account, settings, every booking, guest profiles and allergy notes, as JSON; never the password hash or Google tokens) and close
 the account. Closing asks for the password and deletes, in this order: calendar links, activity and
-booked-via attribution, idempotency records, all bookings, and last the account itself, so a failure
+booked-via attribution, idempotency records, guest profiles and allergy notes, all bookings, and last the account itself, so a failure
 half way leaves an account the owner can still log into and retry. The booking page stops working
 and the id is free to register again.
 

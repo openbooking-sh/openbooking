@@ -202,6 +202,8 @@ export interface ConfirmInput extends WriteOptions {
   user_confirmed: true;
   customer: Customer;
   notes?: string;
+  /** Allergies or dietary needs the customer typed. Optional; staff only, never returned. */
+  dietary_notes?: string;
   /** The Stripe session id the customer came back with, for bookings with an online deposit. */
   payment_token?: string;
 }

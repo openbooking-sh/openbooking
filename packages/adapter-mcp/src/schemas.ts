@@ -63,7 +63,16 @@ export const HoldSlotInput = z.object({
     .string()
     .max(500)
     .optional()
-    .describe('Notes for the business, e.g. "short on the sides", allergies or a high chair'),
+    .describe(
+      'Notes for the business, e.g. "short on the sides" or a high chair. Not for allergies: use dietary_notes',
+    ),
+  dietary_notes: z
+    .string()
+    .max(300)
+    .optional()
+    .describe(
+      'Optional. Allergies or dietary needs, only if the guest said so themselves: use their words, never guess or infer. It is health data: staff see it, it is never sent back to you and it is deleted after the visit. Omit if the guest mentioned none.',
+    ),
 });
 
 export const ConfirmBookingInput = z.object({

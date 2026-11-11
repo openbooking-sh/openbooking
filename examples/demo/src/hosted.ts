@@ -41,6 +41,7 @@ const hosted = createHostedApp({
         notificationLog: stores.notificationLog,
         suppressions: stores.suppressions,
         apiKeys: stores.apiKeys,
+        guests: stores.guests,
         rateLimiter: stores.rateLimiter,
       }
     : {}),

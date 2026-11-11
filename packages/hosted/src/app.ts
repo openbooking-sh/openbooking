@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BookingError,
   isBookingError,
+  MemoryGuestStore,
   MemoryIdempotencyStore,
   coarseSource,
   runAsActor,
@@ -10,6 +11,7 @@ import {
   toErrorPayload,
   type BookingEvent,
   type Clock,
+  type GuestStore,
   type IdempotencyStore,
 } from '@openbooking-sh/core';
 import {
@@ -33,6 +35,7 @@ import { MemoryBookingStore, type BookingRecordStore } from '@openbooking-sh/pro
 import {
   ActivityStore,
   studioHtml,
+  pruneGuestProfiles,
   actorFromRequest,
   type ActivityLog,
 } from '@openbooking-sh/studio';
@@ -156,6 +159,16 @@ export interface HostedOptions {
    * restart: use `stores.apiKeys` from @openbooking-sh/postgres in production.
    */
   apiKeys?: ApiKeyStore;
+  /**
+   * Dietary notes and guest profiles (staff only), kept per business. Memory by default, which
+   * forgets on restart: use `stores.guests` from @openbooking-sh/postgres in production.
+   */
+  guests?: GuestStore;
+  /**
+   * Days after a visit that its dietary note (allergies: health data) is deleted. Default 1; the
+   * purge cron does it, so it can take up to one cron period longer.
+   */
+  dietaryNoteRetentionDays?: number;
   /** Google OAuth client (Calendar API enabled). The redirect URI is `{baseUrl}/oauth/google/callback`. */
   google?: { clientId: string; clientSecret: string; fetch?: typeof fetch };
   /** Test hook: the fetch calls to Stripe go through. */
@@ -208,7 +221,12 @@ export interface HostedApp {
   /** Wait for background work (activity, emails, calendar sync) of every loaded business. */
   idle(): Promise<void>;
   /** Remove personal data from bookings past the retention period. Safe to run any time. */
-  purgeExpiredData(): Promise<{ businesses: number; anonymized: number }>;
+  purgeExpiredData(): Promise<{
+    businesses: number;
+    anonymized: number;
+    dietary_notes_removed: number;
+    guest_profiles_removed: number;
+  }>;
   /** Announce lapsed holds (`booking.expired`) for every business. Safe to run any time, from any instance. */
   sweepExpiredHolds(): Promise<{ businesses: number; announced: number }>;
   close(): Promise<void>;
@@ -275,6 +293,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   const suppressions = options.suppressions ?? new MemorySuppressionList();
   const apiKeys = options.apiKeys ?? new MemoryApiKeyStore();
+  const guests = options.guests ?? new MemoryGuestStore();
 
   const deps: TenantDeps = {
     baseUrl,
@@ -294,6 +313,10 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     notificationLog: options.notificationLog ?? new MemoryNotificationLog(),
     suppressions,
     apiKeys,
+    guests,
+    ...(options.dietaryNoteRetentionDays !== undefined
+      ? { dietaryNoteRetentionDays: options.dietaryNoteRetentionDays }
+      : {}),
     unsubscribeUrl: (businessId, email) =>
       `${baseUrl}/unsubscribe?token=${encodeURIComponent(
         signer.sign(
@@ -1121,16 +1144,30 @@ export function createHostedApp(options: HostedOptions): HostedApp {
   const purgeExpiredData = async () => {
     // Rate-limit windows are keyed by IP address; once a window is over there is no reason to keep it.
     await limiter.purge?.();
+    // Allergy notes go first and on their own short clock: they must not wait for retentionDays.
+    const dietary_notes_removed = await guests.purgeDietaryNotes(
+      new Date(clock.now().getTime() - (options.dietaryNoteRetentionDays ?? 1) * 86_400_000),
+    );
     const store = deps.bookings;
-    if (!store.anonymize || retentionDays <= 0) return { businesses: 0, anonymized: 0 };
+    if (!store.anonymize || retentionDays <= 0) {
+      return { businesses: 0, anonymized: 0, dietary_notes_removed, guest_profiles_removed: 0 };
+    }
     const cutoff = new Date(clock.now().getTime() - retentionDays * 86_400_000);
     const all = await businesses.list();
     let anonymized = 0;
+    let guest_profiles_removed = 0;
     for (const b of all) {
       const r = await store.anonymize({ venue_id: b.id, ended_before: cutoff }, clock.now());
       anonymized += r.anonymized;
+      // A guest profile must not outlive the bookings that name the guest.
+      const records = await store.list({ venue_id: b.id, limit: 100_000 }, clock.now());
+      guest_profiles_removed += await pruneGuestProfiles(
+        guests,
+        b.id,
+        records.map((x) => x.booking),
+      );
     }
-    return { businesses: all.length, anonymized };
+    return { businesses: all.length, anonymized, dietary_notes_removed, guest_profiles_removed };
   };
   // Nobody runs a job when a hold lapses, so tell each business's integrators (webhooks, emails)
   // by asking its engine to look. One failing business must not stop the others.

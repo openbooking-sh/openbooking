@@ -133,6 +133,7 @@ async function boot(): Promise<Runtime> {
             notificationLog: stores.notificationLog,
             suppressions: stores.suppressions,
             apiKeys: stores.apiKeys,
+            guests: stores.guests,
             rateLimiter: stores.rateLimiter,
           }
         : {}),
@@ -194,7 +195,9 @@ async function boot(): Promise<Runtime> {
       ...(env.STUDIO_TOKEN ? { token: env.STUDIO_TOKEN } : {}),
       ...(stores ? { activity: stores.activity } : {}),
     },
-    ...(stores ? { serviceOptions: { idempotencyStore: stores.idempotency } } : {}),
+    ...(stores
+      ? { serviceOptions: { idempotencyStore: stores.idempotency, guests: stores.guests } }
+      : {}),
     allowedHosts,
   });
   timer.mark('app');
