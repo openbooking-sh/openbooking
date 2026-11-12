@@ -23,8 +23,11 @@ export {
 export {
   MemoryCalendarLinkStore,
   attachCalendarSync,
+  removeBookingEvents,
   type CalendarLink,
   type CalendarLinkStore,
+  type CalendarRemovalFailure,
+  type CalendarRemovalResult,
   type CalendarSync,
   type CalendarSyncOptions,
 } from './sync';

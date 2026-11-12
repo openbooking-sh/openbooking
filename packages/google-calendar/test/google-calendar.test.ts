@@ -5,10 +5,12 @@ import {
   GoogleApiError,
   GoogleAuthError,
   GoogleCalendarClient,
+  MemoryCalendarLinkStore,
   attachCalendarSync,
   exchangeCode,
   googleAuthUrl,
   googleBusySource,
+  removeBookingEvents,
   type GoogleTokens,
 } from '../src';
 import { createFakeGoogle, memoryTokens } from './fake-google';
@@ -402,5 +404,79 @@ describe('attachCalendarSync', () => {
     expect(booking.status).toBe('confirmed');
     await sync.idle();
     expect(onError).toHaveBeenCalledWith(expect.any(GoogleAuthError));
+  });
+});
+
+describe('removeBookingEvents', () => {
+  /** A confirmed booking mirrored into Maria's calendar, with the link store that knows its event. */
+  async function synced() {
+    const env = setupClient();
+    const service = new BookingService({
+      provider: new MemoryBookingProvider(demoSalonConfig()),
+      clock: env.clock,
+    });
+    const links = new MemoryCalendarLinkStore();
+    const sync = attachCalendarSync({ service, client: env.client, config: () => CONFIG, links });
+    const [slot] = (await search(service, 'maria')).slots;
+    const hold = await service.hold({
+      slot_id: slot!.slot_id,
+      idempotency_key: key(),
+      customer: { ...CUSTOMER, phone_number: '+4712345678' },
+      notes: 'Short on the sides',
+    });
+    await service.confirm({
+      booking_id: hold.booking_id,
+      idempotency_key: key(),
+      user_confirmed: true,
+    });
+    await sync.idle();
+    expect(JSON.stringify(env.google.events.get('maria@cal'))).toContain('Ada Lovelace');
+    return { ...env, links, bookingIds: [hold.booking_id, 'never-synced'] };
+  }
+
+  it('deletes the event that names the customer and forgets the link', async () => {
+    const { google, client, links, bookingIds } = await synced();
+    const result = await removeBookingEvents({ links, client, bookingIds });
+    expect(result).toEqual({ removed: 1, failed: [] });
+    expect(google.events.get('maria@cal')).toEqual([]);
+    expect(await links.get(bookingIds[0]!)).toBeUndefined();
+    // Nothing left to do the second time.
+    expect(await removeBookingEvents({ links, client, bookingIds })).toEqual({
+      removed: 0,
+      failed: [],
+    });
+  });
+
+  it('reports a Google failure instead of throwing, and keeps the link for another try', async () => {
+    const { google, client, links, bookingIds } = await synced();
+    google.deleteStatus = 500;
+    const result = await removeBookingEvents({ links, client, bookingIds });
+    expect(result).toEqual({
+      removed: 0,
+      failed: [{ booking_id: bookingIds[0], reason: 'calendar_event_not_removed' }],
+    });
+    expect(JSON.stringify(result)).not.toMatch(/Ada|Lovelace|ada@example|4712345678/);
+    expect(await links.get(bookingIds[0]!)).toBeDefined();
+
+    google.deleteStatus = 204;
+    expect((await removeBookingEvents({ links, client, bookingIds })).removed).toBe(1);
+    expect(google.events.get('maria@cal')).toEqual([]);
+  });
+
+  it('reports linked events as not removed when Google is disconnected or revoked', async () => {
+    const { google, client, links, bookingIds } = await synced();
+    expect(await removeBookingEvents({ links, bookingIds })).toEqual({
+      removed: 0,
+      failed: [{ booking_id: bookingIds[0], reason: 'calendar_not_connected' }],
+    });
+
+    google.revoked = true;
+    google.accessToken = 'rotated-elsewhere';
+    const revoked = await removeBookingEvents({ links, client, bookingIds });
+    expect(revoked.authError).toBeInstanceOf(GoogleAuthError);
+    expect(revoked.failed).toEqual([
+      { booking_id: bookingIds[0], reason: 'calendar_not_connected' },
+    ]);
+    expect(google.events.get('maria@cal')).toHaveLength(1);
   });
 });

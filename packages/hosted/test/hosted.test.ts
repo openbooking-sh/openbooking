@@ -902,6 +902,129 @@ describe('customer data rights', () => {
     expect(booking.slot.offering.id).toBe('haircut');
   });
 
+  const connectGoogle = async (req: ReturnType<typeof setup>['req'], token: string) => {
+    const connect = await req('/studio/api/integrations/google/connect', { body: {}, token });
+    const state = new URL(connect.json.url).searchParams.get('state')!;
+    const back = await req(
+      `/oauth/google/callback?code=good-code&state=${encodeURIComponent(state)}`,
+    );
+    expect(back.headers.get('location')).toContain('google=connected');
+  };
+  /** The events OpenBooking wrote to the owner's calendar. */
+  const synced = (google: ReturnType<typeof setup>['google']) =>
+    (google.events.get('primary') ?? []).filter((e) => e.body.extendedProperties);
+  const PERSONAL = /Ada|Lovelace|ada@example\.com|Allergic to latex/;
+
+  it('erasing a customer also deletes the Google Calendar event that names them', async () => {
+    const { hosted, clock, google, req, signup } = setup();
+    const { token, business_id } = await signup();
+    await connectGoogle(req, token);
+    await book(req, business_id, 'first', ada, 'Allergic to latex');
+    await hosted.idle();
+    expect(synced(google)).toHaveLength(1);
+    expect(JSON.stringify(synced(google))).toMatch(PERSONAL);
+
+    clock.set('2026-10-09T08:00:00Z'); // the visit is over
+    const erased = await req('/studio/api/customers/erase', {
+      token,
+      body: { email: 'ada@example.com' },
+    });
+    expect(erased.json).toEqual({
+      anonymized: 1,
+      kept_upcoming: 0,
+      calendar_events_removed: 1,
+      calendar_events_failed: 0,
+    });
+    expect(synced(google)).toEqual([]);
+  });
+
+  it('erases our own data when Google fails, and tells the business which event to delete by hand', async () => {
+    const { hosted, clock, google, req, signup } = setup();
+    const { token, business_id } = await signup();
+    await connectGoogle(req, token);
+    const bookingId = await book(req, business_id, 'first', ada, 'Allergic to latex');
+    await hosted.idle();
+
+    clock.set('2026-10-09T08:00:00Z');
+    google.deleteStatus = 500;
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const erased = await req('/studio/api/customers/erase', {
+      token,
+      body: { email: 'ada@example.com' },
+    });
+    const logLines = JSON.stringify(logged.mock.calls);
+    logged.mockRestore();
+
+    expect(erased.status).toBe(200);
+    expect(erased.json).toEqual({
+      anonymized: 1,
+      kept_upcoming: 0,
+      calendar_events_removed: 0,
+      calendar_events_failed: 1,
+    });
+    const booking = (await req(`/studio/api/bookings/${bookingId}`, { token })).json.booking;
+    expect(booking.customer).toBeNull();
+    expect(booking.notes).toBeNull();
+    // The event is still at Google: the activity log names the booking, never the customer.
+    expect(synced(google)).toHaveLength(1);
+    const activity = (await req('/studio/api/activity', { token })).json.activity;
+    const entry = activity.find((e: any) => e.operation === 'calendar_cleanup');
+    expect(entry).toMatchObject({
+      ok: false,
+      booking_id: bookingId,
+      error_code: 'calendar_event_not_removed',
+    });
+    expect(JSON.stringify(entry)).not.toMatch(PERSONAL);
+    expect(logLines).toContain('were not deleted');
+    expect(logLines).not.toMatch(PERSONAL);
+  });
+
+  it('says so when the calendar was disconnected before the customer was erased', async () => {
+    const { hosted, clock, google, req, signup } = setup();
+    const { token, business_id } = await signup();
+    await connectGoogle(req, token);
+    const bookingId = await book(req, business_id, 'first', ada, 'Allergic to latex');
+    await hosted.idle();
+    await req('/studio/api/integrations/google/disconnect', { body: {}, token });
+
+    clock.set('2026-10-09T08:00:00Z');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const erased = await req('/studio/api/customers/erase', {
+      token,
+      body: { email: 'ada@example.com' },
+    });
+    logged.mockRestore();
+    expect(erased.json).toMatchObject({ anonymized: 1, calendar_events_failed: 1 });
+    expect(synced(google)).toHaveLength(1);
+    const activity = (await req('/studio/api/activity', { token })).json.activity;
+    expect(activity.find((e: any) => e.operation === 'calendar_cleanup')).toMatchObject({
+      booking_id: bookingId,
+      error_code: 'calendar_not_connected',
+    });
+  });
+
+  it('the retention purge deletes the Google Calendar events of the bookings it cleans', async () => {
+    const { hosted, clock, google, req, signup } = setup({ cronSecret: 's3cret-value' });
+    const { token, business_id } = await signup();
+    await connectGoogle(req, token);
+    await book(req, business_id, 'first', ada, 'Allergic to latex');
+    await hosted.idle();
+    expect(JSON.stringify(synced(google))).toMatch(PERSONAL);
+
+    const early = await req('/api/maintenance/purge', { token: 's3cret-value' });
+    expect(early.json).toMatchObject({ anonymized: 0, calendar_events_removed: 0 });
+    expect(synced(google)).toHaveLength(1);
+
+    clock.set('2028-12-01T08:00:00Z');
+    const late = await req('/api/maintenance/purge', { token: 's3cret-value' });
+    expect(late.json).toMatchObject({
+      anonymized: 1,
+      calendar_events_removed: 1,
+      calendar_events_failed: 0,
+    });
+    expect(synced(google)).toEqual([]);
+  });
+
   it('lets the owner download everything stored about the business, without secrets', async () => {
     const { req, signup } = setup();
     const { token, business_id } = await signup();

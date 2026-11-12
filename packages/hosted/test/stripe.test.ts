@@ -304,6 +304,22 @@ describe('Stripe webhooks', () => {
       true,
     );
 
+    // Closing the account removes the endpoint too: Stripe would keep calling a page that is gone.
+    const closing = setup();
+    const t3 = await signup(closing.req);
+    await closing.req('/studio/api/integrations/stripe/connect', {
+      body: { secret_key: KEY },
+      token: t3,
+    });
+    const closed = await closing.req('/studio/api/account/delete', {
+      body: { password: 'correct horse' },
+      token: t3,
+    });
+    expect(closed.status).toBe(200);
+    expect(closing.stripe.calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/we_1'))).toBe(
+      true,
+    );
+
     const limited = setup({ webhooks: false });
     const t2 = await signup(limited.req);
     const connected = await limited.req('/studio/api/integrations/stripe/connect', {

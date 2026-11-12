@@ -3,7 +3,11 @@ import type { BookingEvent, BookingService, ConsentEvidence } from '@openbooking
 export interface ActivityEntry {
   id: number;
   at: string;
-  operation: BookingEvent['operation'];
+  /**
+   * `calendar_cleanup`: a customer's data was erased but the booking's Google Calendar event could
+   * not be deleted (`error_code` says why), so the business has to delete it by hand.
+   */
+  operation: BookingEvent['operation'] | 'calendar_cleanup';
   ok: boolean;
   booking_id?: string;
   status?: string;
