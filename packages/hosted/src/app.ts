@@ -31,7 +31,11 @@ import {
   type NotificationLog,
   type SuppressionList,
 } from '@openbooking-sh/notifications';
-import { MemoryBookingStore, type BookingRecordStore } from '@openbooking-sh/provider-memory';
+import {
+  MemoryBookingStore,
+  selectForAnonymizing,
+  type BookingRecordStore,
+} from '@openbooking-sh/provider-memory';
 import {
   ActivityStore,
   studioHtml,
@@ -226,6 +230,10 @@ export interface HostedApp {
     anonymized: number;
     dietary_notes_removed: number;
     guest_profiles_removed: number;
+    /** Google Calendar events of the cleaned bookings that were deleted. */
+    calendar_events_removed: number;
+    /** Events that could not be deleted: each is in its business's activity log. */
+    calendar_events_failed: number;
   }>;
   /** Announce lapsed holds (`booking.expired`) for every business. Safe to run any time, from any instance. */
   sweepExpiredHolds(): Promise<{ businesses: number; announced: number }>;
@@ -884,11 +892,14 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         501,
       );
     }
+    const stripe = t.business.stripe;
     await t.idle();
     await t.eraseData();
     tenants.delete(t.id);
     activity.delete(t.id);
     await t.close();
+    // After the data is gone, so a deletion that failed half way keeps a working webhook.
+    await removeStripeWebhook(stripe, t.pageUrl);
     track('account_deleted', t.id);
     options.ops?.notify(':wave: A business closed its account.');
     return c.json({ ok: true });
@@ -900,6 +911,19 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     if (saved) t.sync(saved);
     return c.json({ ok: true });
   });
+
+  // Best effort: a webhook left behind is refused by us anyway (no secret to check it with).
+  const removeStripeWebhook = async (stripe: Business['stripe'], pageUrl: string) => {
+    if (!stripe?.webhook) return;
+    await new StripePayments({
+      secretKey: stripe.secret_key,
+      successUrl: pageUrl,
+      cancelUrl: pageUrl,
+      ...(options.stripeFetch ? { fetch: options.stripeFetch } : {}),
+    })
+      .deleteWebhook(stripe.webhook.id)
+      .catch(() => undefined);
+  };
 
   // The owner's own Stripe account: deposits go straight to them. The key is checked with Stripe
   // before it is saved and is never sent back to Studio, only its last four characters.
@@ -940,18 +964,7 @@ export function createHostedApp(options: HostedOptions): HostedApp {
 
   app.post(`${STUDIO_PATH}/api/integrations/stripe/disconnect`, async (c) => {
     const t = c.get('tenant');
-    const old = t.business.stripe;
-    if (old?.webhook) {
-      // Best effort: a webhook left behind is refused by us anyway (no secret to check it with).
-      await new StripePayments({
-        secretKey: old.secret_key,
-        successUrl: t.pageUrl,
-        cancelUrl: t.pageUrl,
-        ...(options.stripeFetch ? { fetch: options.stripeFetch } : {}),
-      })
-        .deleteWebhook(old.webhook.id)
-        .catch(() => undefined);
-    }
+    await removeStripeWebhook(t.business.stripe, t.pageUrl);
     const saved = await businesses.update(t.id, ({ stripe: _, ...rest }) => ({
       ...rest,
       version: rest.version + 1,
@@ -1150,15 +1163,47 @@ export function createHostedApp(options: HostedOptions): HostedApp {
     );
     const store = deps.bookings;
     if (!store.anonymize || retentionDays <= 0) {
-      return { businesses: 0, anonymized: 0, dietary_notes_removed, guest_profiles_removed: 0 };
+      return {
+        businesses: 0,
+        anonymized: 0,
+        dietary_notes_removed,
+        guest_profiles_removed: 0,
+        calendar_events_removed: 0,
+        calendar_events_failed: 0,
+      };
     }
     const cutoff = new Date(clock.now().getTime() - retentionDays * 86_400_000);
     const all = await businesses.list();
     let anonymized = 0;
     let guest_profiles_removed = 0;
+    let calendar_events_removed = 0;
+    let calendar_events_failed = 0;
     for (const b of all) {
-      const r = await store.anonymize({ venue_id: b.id, ended_before: cutoff }, clock.now());
+      const query = { venue_id: b.id, ended_before: cutoff };
+      // Which bookings this is about to clean, asked first: afterwards they look like any other
+      // booking without a customer. Same rule as the stores (selectForAnonymizing).
+      const ids = selectForAnonymizing(
+        await store.list({ venue_id: b.id, limit: 100_000 }, clock.now()),
+        query,
+        clock.now(),
+      ).ids;
+      const r = await store.anonymize(query, clock.now());
       anonymized += r.anonymized;
+      // Their Google Calendar events name the customer too. Never in the way of the purge itself:
+      // a business whose runtime or calendar fails is counted, logged and left for its owner.
+      if (ids.length) {
+        try {
+          const t = await tenant(b.id);
+          const calendar = await t?.removeCalendarEvents(ids);
+          calendar_events_removed += calendar?.removed ?? 0;
+          calendar_events_failed += calendar?.failed ?? 0;
+        } catch {
+          calendar_events_failed += ids.length;
+          console.error(
+            `[openbooking] could not check the Google Calendar events of business ${b.id} after the retention purge`,
+          );
+        }
+      }
       // A guest profile must not outlive the bookings that name the guest.
       const records = await store.list({ venue_id: b.id, limit: 100_000 }, clock.now());
       guest_profiles_removed += await pruneGuestProfiles(
@@ -1167,7 +1212,14 @@ export function createHostedApp(options: HostedOptions): HostedApp {
         records.map((x) => x.booking),
       );
     }
-    return { businesses: all.length, anonymized, dietary_notes_removed, guest_profiles_removed };
+    return {
+      businesses: all.length,
+      anonymized,
+      dietary_notes_removed,
+      guest_profiles_removed,
+      calendar_events_removed,
+      calendar_events_failed,
+    };
   };
   // Nobody runs a job when a hold lapses, so tell each business's integrators (webhooks, emails)
   // by asking its engine to look. One failing business must not stop the others.

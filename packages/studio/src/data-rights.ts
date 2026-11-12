@@ -23,6 +23,14 @@ export interface DataRightsAdapter {
   /**
    * Remove name, contact details and notes from this customer's bookings. Bookings that are still
    * ahead (held or confirmed) are kept and counted: cancel them first to erase them too.
+   *
+   * An adapter that mirrors bookings somewhere else (Google Calendar) reports how many of those
+   * copies it deleted, and how many it could not: the owner has to delete those by hand.
    */
-  eraseCustomer(customer: CustomerRef): Promise<{ anonymized: number; kept_upcoming: number }>;
+  eraseCustomer(customer: CustomerRef): Promise<{
+    anonymized: number;
+    kept_upcoming: number;
+    calendar_events_removed?: number;
+    calendar_events_failed?: number;
+  }>;
 }

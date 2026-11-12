@@ -268,7 +268,8 @@ field. Make a key with `node -e "console.log(require('crypto').randomBytes(32).t
 A customer can ask the business what it holds about them, or to delete it. The owner does it in
 Studio, under **Settings, Customer data**: enter the customer's email address or phone number, then
 download their data (a JSON file of their bookings) or delete it. Deleting removes the name,
-contact details and notes from their bookings. The bookings themselves (time, service, status)
+contact details and notes from their bookings, and deletes those bookings' events from a connected
+Google Calendar. The bookings themselves (time, service, status)
 stay, so the calendar history and statistics remain right. Phone numbers match on their digits,
 email addresses ignore case.
 
@@ -282,9 +283,24 @@ email addresses ignore case.
   something notices. The same daily purge now sweeps every business for lapsed holds, and
   `GET /api/maintenance/sweep` (same secret) does only that, for a more frequent cron. Vercel Hobby
   allows daily crons only; add a minute-level cron on Pro, or call the endpoint from any scheduler.
-- **What this does not reach.** Events already written to the owner's Google Calendar, emails
-  already sent, and anything a webhook already delivered to an integrator are outside OpenBooking's
-  storage. The owner has to remove those themselves.
+- **Google Calendar events are deleted.** A synced event names the customer and carries their
+  phone number, email address and notes. When a booking is cleaned (by the owner's erasure or by
+  the retention purge) its event is deleted from the business's Google Calendar. It is deleted and
+  not rewritten: the sync only ever creates and deletes events, a delete also removes anything
+  staff typed into the event, and the booking itself (time, service, status) stays in Studio.
+  - **When Google cannot be reached** (disconnected, access revoked, an error from Google) the
+    booking is cleaned anyway and the event stays. Studio says how many events are left, the
+    purge answer counts them (`calendar_events_removed`, `calendar_events_failed`), and the Agent
+    log gets one `calendar_cleanup` entry per booking with the reason (`calendar_not_connected` or
+    `calendar_event_not_removed`). The entry names the booking, never the customer. The owner has
+    to delete those events in Google Calendar; nothing retries them later.
+  - Only the event OpenBooking created is deleted. Copies of it (an event the owner duplicated or
+    moved to another calendar, invitations they forwarded) are not found.
+- **What this does not reach.** Emails already sent, anything a webhook already delivered to an
+  integrator and a payment's record in the owner's Stripe account are outside OpenBooking's
+  storage. So are events in a Google account the business has since swapped for another one:
+  the new account answers "no such event", which counts as deleted. The owner has to remove
+  those themselves.
 - **Self-hosted servers** can offer the same by passing `dataRights` to `createStudio`; the
   stores' `anonymize()` does the work.
 
@@ -334,7 +350,15 @@ and the id is free to register again.
 - Upcoming bookings are not cancelled and customers are not told. The owner should cancel or move
   them first.
 - The Google connection stays authorized in the owner's Google account until they remove it at
-  myaccount.google.com/permissions; events already in their calendar are theirs and stay.
+  myaccount.google.com/permissions. Closing the account does **not** delete events from the
+  owner's Google Calendar (unlike erasing a customer): they are in the owner's own calendar, still
+  name the customers, and stay until the owner deletes them.
+- The Stripe webhook endpoint OpenBooking registered is removed from the owner's Stripe account
+  (best effort, after the data is gone). Payments and refunds stay in Stripe.
+- **Not removed yet:** USP state for the business's bookings (which assistant platform made a
+  booking, booking-scoped credential hashes, replay memory). It holds booking ids and platform
+  identities, no customer details; credentials and replay memory expire on their own, owner rows
+  and platform key bindings do not.
 - Expired rate-limit windows (keyed by IP address) are deleted by the same daily purge.
 - A store that lacks `BookingRecordStore.deleteVenue` or `BusinessStore.delete` makes closing
   refuse with 501 before anything is touched.

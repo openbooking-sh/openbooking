@@ -33,6 +33,63 @@ export class MemoryCalendarLinkStore implements CalendarLinkStore {
   }
 }
 
+/** Why a booking's calendar event is still there. Never holds anything about the customer. */
+export type CalendarRemovalFailure =
+  /** There is no working Google connection to delete it with. */
+  | 'calendar_not_connected'
+  /** Google refused or failed; the link is kept so it can be tried again. */
+  | 'calendar_event_not_removed';
+
+export interface CalendarRemovalResult {
+  /** Events deleted (or already gone at Google). */
+  removed: number;
+  /** Bookings whose event may still be in the calendar: someone has to delete it by hand. */
+  failed: Array<{ booking_id: string; reason: CalendarRemovalFailure }>;
+  /** Set when Google no longer accepts the connection. */
+  authError?: GoogleAuthError;
+}
+
+/**
+ * Delete the calendar events of these bookings: they carry the customer's name, contact details
+ * and notes, so erasing a customer has to reach them too. The event is deleted, not rewritten:
+ * that is the only change the sync ever makes to an event, it also removes anything staff typed
+ * into it, and the booking itself (time, service, status) stays in OpenBooking.
+ *
+ * Never throws: erasing our own data must not wait for Google. A failed booking keeps its link.
+ */
+export async function removeBookingEvents(opts: {
+  links: CalendarLinkStore;
+  /** Leave out when Google is not connected: linked events are then reported as failed. */
+  client?: Pick<GoogleCalendarClient, 'deleteEvent'> | undefined;
+  bookingIds: readonly string[];
+}): Promise<CalendarRemovalResult> {
+  const result: CalendarRemovalResult = { removed: 0, failed: [] };
+  let client = opts.client;
+  for (const booking_id of opts.bookingIds) {
+    try {
+      const link = await opts.links.get(booking_id);
+      if (!link) continue;
+      if (!client) {
+        result.failed.push({ booking_id, reason: 'calendar_not_connected' });
+        continue;
+      }
+      await client.deleteEvent(link.calendar_id, link.event_id);
+      await opts.links.delete(booking_id);
+      result.removed++;
+    } catch (error) {
+      if (error instanceof GoogleAuthError) {
+        // Every later call would fail the same way: stop asking Google.
+        result.authError = error;
+        client = undefined;
+        result.failed.push({ booking_id, reason: 'calendar_not_connected' });
+      } else {
+        result.failed.push({ booking_id, reason: 'calendar_event_not_removed' });
+      }
+    }
+  }
+  return result;
+}
+
 export interface CalendarSyncOptions {
   service: BookingService;
   client: GoogleCalendarClient;

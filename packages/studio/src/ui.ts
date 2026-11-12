@@ -329,7 +329,7 @@ export const STUDIO_HTML = `<!doctype html>
     var icon = LOGOS[n] ? '<img class="ai-ico" src="' + LOGOS[n] + '" alt="" />' : '<span class="ini">' + esc(n.charAt(0).toUpperCase()) + '</span>';
     return '<span class="src-l">' + icon + esc(n) + '</span>';
   }
-  var OPS = { search: 'searched availability', hold: 'held a slot', confirm: 'confirmed a booking', cancel: 'cancelled', get: 'looked up a booking', update: 'updated a booking', reschedule: 'moved a booking', list: 'listed bookings', expire: 'hold expired' };
+  var OPS = { search: 'searched availability', hold: 'held a slot', confirm: 'confirmed a booking', cancel: 'cancelled', get: 'looked up a booking', update: 'updated a booking', reschedule: 'moved a booking', list: 'listed bookings', expire: 'hold expired', calendar_cleanup: 'Google Calendar event not deleted after erasing customer data: delete it by hand' };
   // The terms the user approved, as the agent sent user_confirmed. No customer details in it.
   function consentLine(e) {
     var c = e.consent;
@@ -882,7 +882,7 @@ export const STUDIO_HTML = `<!doctype html>
         '<p class="hint" id="key-msg" role="status" aria-live="polite" style="margin-top:10px"></p></div>';
     }
     if (dataRights) {
-      h += '<div class="card"><h2>Customer data</h2><p class="hint">A customer asks what you hold about them, or asks you to delete it. Enter their email address or phone number. Deleting removes name, contact details and notes from their bookings; the bookings themselves stay in your calendar history. Upcoming bookings are kept: cancel them first.</p>' +
+      h += '<div class="card"><h2>Customer data</h2><p class="hint">A customer asks what you hold about them, or asks you to delete it. Enter their email address or phone number. Deleting removes name, contact details and notes from their bookings; the bookings themselves stay in your calendar history here. Their events in a connected Google Calendar are deleted. Upcoming bookings are kept: cancel them first.</p>' +
         '<div class="two-f">' + field('Email', 'cd-email', '', 'type="email"') + field('Phone', 'cd-phone', '', 'placeholder="+47..."') + '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="cd-export" type="button">Download their data</button><button class="btn btn-sm btn-danger" id="cd-erase" type="button">Delete their data</button></div>' +
         '<p class="hint" id="cd-msg" role="status" aria-live="polite" style="margin-top:10px"></p></div>';
@@ -963,7 +963,9 @@ export const STUDIO_HTML = `<!doctype html>
         if (!named(w)) return;
         if (!confirm('Delete name, contact details and notes from every past booking of this customer? This cannot be undone.')) return;
         api('/customers/erase', { method: 'POST', body: JSON.stringify(w) }).then(function (d) {
-          $('cd-msg').textContent = d.anonymized + ' booking(s) cleaned.' + (d.kept_upcoming ? ' ' + d.kept_upcoming + ' upcoming booking(s) kept: cancel them first to delete those too.' : '');
+          $('cd-msg').textContent = d.anonymized + ' booking(s) cleaned.' + (d.kept_upcoming ? ' ' + d.kept_upcoming + ' upcoming booking(s) kept: cancel them first to delete those too.' : '') +
+            (d.calendar_events_removed ? ' ' + d.calendar_events_removed + ' Google Calendar event(s) deleted.' : '') +
+            (d.calendar_events_failed ? ' ' + d.calendar_events_failed + ' Google Calendar event(s) could NOT be deleted and still show the customer: delete them in Google Calendar yourself. The Agent log lists the bookings.' : '');
         }).catch(function (e) { $('cd-msg').textContent = e.message; });
       };
     }

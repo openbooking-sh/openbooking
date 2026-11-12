@@ -23,6 +23,8 @@ export function createFakeGoogle() {
     /** HTTP status for events.list (200 = normal). */
     eventsStatus: 200,
     listCalls: 0,
+    /** HTTP status for events.delete (204 = normal). */
+    deleteStatus: 204,
     /** events.list page size, to exercise pagination. */
     pageSize: 250,
     events: new Map<string, FakeEvent[]>(),
@@ -145,6 +147,9 @@ export function createFakeGoogle() {
           return json(200, { id: event.id, ...event.body });
         }
         if (method === 'DELETE') {
+          if (google.deleteStatus !== 204) {
+            return json(google.deleteStatus, { error: { message: 'Backend Error' } });
+          }
           const i = list.findIndex((e) => e.id === decodeURIComponent(ev[2]!));
           if (i < 0) return json(410, { error: { message: 'Resource has been deleted' } });
           list.splice(i, 1);

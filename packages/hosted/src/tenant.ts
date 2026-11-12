@@ -28,6 +28,7 @@ import {
   GoogleCalendarClient,
   attachCalendarSync,
   googleBusySource,
+  removeBookingEvents,
   type CalendarLinkStore,
   type CalendarSync,
   type CalendarSyncConfig,
@@ -44,6 +45,8 @@ import {
 import {
   MemoryBookingProvider,
   matchesCustomer,
+  selectForAnonymizing,
+  type AnonymizeQuery,
   type BookingListQuery,
   type CustomerMatch,
   type BookingRecordStore,
@@ -118,7 +121,9 @@ export class Tenant {
   #app: OpenBookingApp;
   #appVersion: number;
   #notifications: NotificationHandle | undefined;
-  #google: { key: string; client: GoogleCalendarClient; sync: CalendarSync } | undefined;
+  #google:
+    | { key: string; client: GoogleCalendarClient; sync: CalendarSync; onAuthError: () => void }
+    | undefined;
   #googleBusy: BusySource | undefined;
   #stripe: { key: string; payments: StripePayments } | undefined;
   readonly #deps: TenantDeps;
@@ -275,7 +280,70 @@ export class Tenant {
         'This storage cannot erase customer data yet.',
       );
     }
-    return store.anonymize({ venue_id: this.id, customer: who }, this.service.clock.now());
+    const query = { venue_id: this.id, customer: who };
+    const ids = await this.#anonymizableIds(query);
+    const result = await store.anonymize(query, this.service.clock.now());
+    const calendar = await this.removeCalendarEvents(ids);
+    // Only mentioned when the customer had events in Google Calendar.
+    return calendar.removed || calendar.failed
+      ? {
+          ...result,
+          calendar_events_removed: calendar.removed,
+          calendar_events_failed: calendar.failed,
+        }
+      : result;
+  }
+
+  /**
+   * The bookings `anonymize` is about to clean, by the rule the stores use. Asked first, because
+   * afterwards nothing tells an erased booking from one that never had a customer.
+   */
+  async #anonymizableIds(query: AnonymizeQuery): Promise<string[]> {
+    const now = this.service.clock.now();
+    const records = await this.#deps.bookings.list({ venue_id: this.id, limit: 100_000 }, now);
+    return selectForAnonymizing(records, query, now).ids;
+  }
+
+  /**
+   * Delete the Google Calendar events of bookings whose personal data was just removed: the
+   * event names the customer and carries their phone, email and notes. Never throws, so Google
+   * being down or disconnected cannot stop the erasure of our own data. Each event that could not
+   * be deleted gets an activity entry naming the booking (never the customer), so the business
+   * can delete it by hand.
+   */
+  async removeCalendarEvents(bookingIds: string[]): Promise<{ removed: number; failed: number }> {
+    if (!bookingIds.length) return { removed: 0, failed: 0 };
+    const google = this.#google;
+    // A cancellation still on its way to Google deletes the same event: let it finish first.
+    await google?.sync.idle();
+    const result = await removeBookingEvents({
+      links: this.#deps.calendarLinks,
+      client: google?.client,
+      bookingIds,
+    });
+    if (result.authError) google?.onAuthError();
+    if (result.failed.length) {
+      const log = this.#deps.activityFor(this.id);
+      const at = this.service.clock.now().toISOString();
+      for (const f of result.failed) {
+        await log
+          .add({
+            at,
+            operation: 'calendar_cleanup',
+            ok: false,
+            booking_id: f.booking_id,
+            error_code: f.reason,
+            agent: 'System',
+            protocol: 'system',
+          })
+          .catch(() => undefined);
+      }
+      // Booking ids only: nothing here says who the customer was.
+      console.error(
+        `[openbooking] ${result.failed.length} Google Calendar event(s) of business ${this.id} were not deleted after erasing customer data`,
+      );
+    }
+    return { removed: result.removed, failed: result.failed.length };
   }
 
   get pageUrl(): string {
@@ -463,7 +531,7 @@ export class Tenant {
       links: this.#deps.calendarLinks,
       onAuthError,
     });
-    this.#google = { key, client, sync };
+    this.#google = { key, client, sync, onAuthError };
   }
 
   /** How assistants may book through USP. Businesses saved before the setting have no block. */
